@@ -1,0 +1,72 @@
+.effect-manager {
+  padding: 20px;
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+
+.effect-section {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.effect-section h3 {
+  margin: 0 0 16px 0;
+  color: #333;
+  font-size: 1.2em;
+}
+
+.setting-group {
+  margin-bottom: 16px;
+}
+
+.setting-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9em;
+  color: #666;
+}
+
+.setting-group input[type="range"] {
+  flex: 1;
+  min-width: 100px;
+}
+
+.setting-group input[type="color"] {
+  width: 50px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.setting-group select {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+}
+
+.setting-group input[type="file"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px dashed #ddd;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.setting-group span {
+  min-width: 40px;
+  text-align: right;
+  color: #999;
+}
+
+.error-message {
+  color: #ff4444;
+  font-size: 0.9em;
+  margin-top: 4px;
+} 

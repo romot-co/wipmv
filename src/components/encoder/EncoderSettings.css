@@ -1,0 +1,79 @@
+.encoder-settings {
+  padding: 1rem;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.encoder-settings h3 {
+  margin: 0 0 1rem;
+  color: #333;
+  font-size: 1.5rem;
+}
+
+.encoder-settings h4 {
+  margin: 1rem 0 0.5rem;
+  color: #666;
+  font-size: 1.2rem;
+}
+
+.settings-section {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background-color: white;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.setting-item label {
+  min-width: 150px;
+  margin-right: 1rem;
+  color: #555;
+}
+
+.setting-item input[type="number"],
+.setting-item input[type="text"],
+.setting-item select {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  min-width: 100px;
+}
+
+.setting-item input[type="number"] {
+  width: 80px;
+}
+
+.setting-item input[type="text"] {
+  flex: 1;
+}
+
+.setting-item select {
+  background-color: white;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 600px) {
+  .setting-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .setting-item label {
+    margin-bottom: 0.5rem;
+  }
+
+  .setting-item input[type="number"],
+  .setting-item input[type="text"],
+  .setting-item select {
+    width: 100%;
+  }
+} 
