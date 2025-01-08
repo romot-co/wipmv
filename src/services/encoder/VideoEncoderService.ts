@@ -1,79 +1,46 @@
-import { VideoEncoderConfig } from '../../types/encoder';
+import { VideoEncoderConfig } from '../../types';
 
 export class VideoEncoderService {
-  private encoder: VideoEncoder | null = null;
+  private encoder: VideoEncoder;
   private config: VideoEncoderConfig;
-  private frameCount: number = 0;
-  private keyFrameInterval: number;
 
   constructor(config: VideoEncoderConfig) {
     this.config = config;
-    this.keyFrameInterval = config.keyFrameInterval ?? 2;
+    this.encoder = new VideoEncoder({
+      output: (chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata) => {
+        if (this.config.onEncodedChunk) {
+          this.config.onEncodedChunk(chunk, meta);
+        }
+      },
+      error: (error: Error) => {
+        console.error('Video encoding error:', error);
+      }
+    });
   }
 
   async initialize(): Promise<void> {
-    // コーデックのサポートチェック
-    const support = await VideoEncoder.isConfigSupported({
+    const encoderConfig: VideoEncoderConfig = {
       codec: this.config.codec,
       width: this.config.width,
       height: this.config.height,
       bitrate: this.config.bitrate,
-      framerate: this.config.frameRate
-    });
+      framerate: this.config.framerate
+    };
 
+    const support = await VideoEncoder.isConfigSupported(encoderConfig);
     if (!support.supported) {
-      throw new Error(`Unsupported video configuration: ${support.reason}`);
+      throw new Error('Unsupported video encoder configuration');
     }
 
-    // エンコーダーの初期化
-    this.encoder = new VideoEncoder({
-      output: this.handleEncodedChunk.bind(this),
-      error: this.handleError.bind(this)
-    });
-
-    await this.encoder.configure({
-      codec: this.config.codec,
-      width: this.config.width,
-      height: this.config.height,
-      bitrate: this.config.bitrate,
-      framerate: this.config.frameRate
-    });
+    this.encoder.configure(encoderConfig);
   }
 
-  private handleEncodedChunk(chunk: EncodedVideoChunk): void {
-    // エンコード済みチャンクの処理
-    // MP4Multiplexerに渡すなどの処理を実装
-  }
-
-  private handleError(error: Error): void {
-    console.error('Video encoding error:', error);
-    throw error;
-  }
-
-  async encodeFrame(frame: VideoFrame): Promise<void> {
-    if (!this.encoder) {
-      throw new Error('Encoder not initialized');
-    }
-
-    // キーフレームの判定
-    const isKeyFrame = this.frameCount % (this.keyFrameInterval * this.config.frameRate) === 0;
-    
-    await this.encoder.encode(frame, {
-      keyFrame: isKeyFrame
-    });
-    
-    this.frameCount++;
-    frame.close();
+  async encodeFrame(frame: VideoFrame, options?: VideoEncoderEncodeOptions): Promise<void> {
+    this.encoder.encode(frame, options);
   }
 
   async flush(): Promise<void> {
-    if (!this.encoder) {
-      throw new Error('Encoder not initialized');
-    }
     await this.encoder.flush();
+    this.encoder.close();
   }
-
-  getConfig(): VideoEncoderConfig {
-    return { ...this.config };
-  }
-} 
+}
