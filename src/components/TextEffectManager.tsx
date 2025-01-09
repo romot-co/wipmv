@@ -4,10 +4,14 @@ import './TextEffectManager.css';
 
 interface TextEffectManagerProps {
   onTextEffectsChange: (effects: TextEffectData[]) => void;
+  initialEffects?: TextEffectData[];
 }
 
-export const TextEffectManager: React.FC<TextEffectManagerProps> = ({ onTextEffectsChange }) => {
-  const [textEffects, setTextEffects] = useState<TextEffectData[]>([]);
+export const TextEffectManager: React.FC<TextEffectManagerProps> = ({ 
+  onTextEffectsChange,
+  initialEffects = []
+}) => {
+  const [textEffects, setTextEffects] = useState<TextEffectData[]>(initialEffects);
 
   const addTextEffect = () => {
     const newEffect: TextEffectData = {

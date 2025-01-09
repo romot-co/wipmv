@@ -158,7 +158,11 @@ function App() {
   };
 
   // エフェクト変更のハンドラー
-  const handleEffectsChange = useCallback((newEffects: VisualEffect[]) => {
+  const handleEffectsChange = useCallback((baseEffects: VisualEffect[]) => {
+    // テキストエフェクトを最後に追加して常に最前面に表示
+    const textVisualEffects = createMultipleTextEffects(textEffects);
+    const newEffects = [...baseEffects, ...textVisualEffects];
+
     setEffects(newEffects);
     visualEffectManager.current = new VisualEffectManager();
     newEffects.forEach(effect => {
@@ -166,8 +170,8 @@ function App() {
     });
 
     // 設定の保存
-    const backgroundEffect = newEffects.find(effect => effect.getName() === 'background');
-    const waveformEffect = newEffects.find(effect => effect.getName() === 'waveform');
+    const backgroundEffect = baseEffects.find(effect => effect.getName() === 'background');
+    const waveformEffect = baseEffects.find(effect => effect.getName() === 'waveform');
 
     if (backgroundEffect) {
       const config = extractBackgroundConfig(backgroundEffect);
@@ -183,22 +187,28 @@ function App() {
       const config = extractWaveformConfig(waveformEffect);
       storageService.saveSettings({ waveform: config });
     }
-  }, []);
+  }, [textEffects]);
 
   // テキストエフェクト変更のハンドラー
   const handleTextEffectsChange = useCallback((newTextEffects: TextEffectData[]) => {
     setTextEffects(newTextEffects);
+    
+    // 既存のベースエフェクトを取得
+    const baseEffects = effects.filter(effect => !effect.getName().startsWith('text-'));
+    
+    // テキストエフェクトを最後に追加して更新
     const textVisualEffects = createMultipleTextEffects(newTextEffects);
+    const newEffects = [...baseEffects, ...textVisualEffects];
     
-    // 既存のエフェクトを保持しながら、テキストエフェクトのみを更新
-    const nonTextEffects = effects.filter(effect => !effect.getName().startsWith('text-'));
-    const newEffects = [...nonTextEffects, ...textVisualEffects];
-    
-    handleEffectsChange(newEffects);
+    setEffects(newEffects);
+    visualEffectManager.current = new VisualEffectManager();
+    newEffects.forEach(effect => {
+      visualEffectManager.current.registerEffect(effect);
+    });
 
     // テキスト設定の保存
     storageService.saveSettings({ textEffects: newTextEffects });
-  }, [effects, handleEffectsChange]);
+  }, [effects]);
 
   // 動画生成処理
   const generateVideo = async () => {

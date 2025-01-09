@@ -2,12 +2,10 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { BackgroundEffectSettings } from './BackgroundEffectSettings';
 import { WatermarkEffectSettings } from './WatermarkEffectSettings';
 import { WaveformEffectSettings } from './WaveformEffectSettings';
-import { TextEffectSettings } from './TextEffectSettings';
 import { createBackgroundEffect } from '../../services/effects/createBackgroundEffect';
 import { createWatermarkEffect } from '../../services/effects/createWatermarkEffect';
 import { createWaveformEffect } from '../../services/effects/createWaveformEffect';
-import { createTextEffect } from '../../services/effects/createTextEffect';
-import { BackgroundEffectConfig, WaveformEffectConfig, TextEffectConfig, CreateWatermarkEffectOptions } from '../../types/effects';
+import { BackgroundEffectConfig, WaveformEffectConfig, CreateWatermarkEffectOptions } from '../../types/effects';
 import { VisualEffect } from '../../services/effects/VisualEffect';
 import './EffectManager.css';
 
@@ -17,7 +15,6 @@ export interface EffectManagerProps {
     background?: BackgroundEffectConfig;
     watermark?: CreateWatermarkEffectOptions;
     waveform?: WaveformEffectConfig;
-    text?: TextEffectConfig;
   };
 }
 
@@ -29,7 +26,6 @@ export const EffectManager: React.FC<EffectManagerProps> = ({
     background?: BackgroundEffectConfig;
     watermark?: CreateWatermarkEffectOptions;
     waveform?: WaveformEffectConfig;
-    text?: TextEffectConfig;
   }>(initialEffects);
 
   const updateEffects = useCallback(() => {
@@ -47,10 +43,6 @@ export const EffectManager: React.FC<EffectManagerProps> = ({
     
     if (currentEffects.waveform) {
       effects.push(createWaveformEffect(currentEffects.waveform));
-    }
-    
-    if (currentEffects.text) {
-      effects.push(createTextEffect(currentEffects.text));
     }
     
     onEffectsChange(effects);
@@ -81,13 +73,6 @@ export const EffectManager: React.FC<EffectManagerProps> = ({
     }));
   }, []);
 
-  const handleTextChange = useCallback((config: TextEffectConfig) => {
-    setCurrentEffects(prev => ({
-      ...prev,
-      text: config
-    }));
-  }, []);
-
   return (
     <div className="effect-manager">
       <div className="effect-section">
@@ -108,13 +93,6 @@ export const EffectManager: React.FC<EffectManagerProps> = ({
         <WaveformEffectSettings 
           onChange={handleWaveformChange}
           initialConfig={currentEffects.waveform}
-        />
-      </div>
-
-      <div className="effect-section">
-        <TextEffectSettings 
-          onChange={handleTextChange}
-          initialConfig={currentEffects.text}
         />
       </div>
     </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { AudioSource } from '../../types/audio';
 import { VisualEffect } from '../../services/effects/VisualEffect';
 import { CanvasRenderer } from '../../services/effects/CanvasRenderer';
@@ -29,6 +29,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   // キャンバスレンダラーの初期化
   useEffect(() => {
     if (canvasRef.current) {
+      console.log('Initializing canvas renderer');
       const ctx = canvasRef.current.getContext('2d');
       if (ctx) {
         ctx.imageSmoothingEnabled = true;
@@ -36,11 +37,6 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       }
       canvasRendererRef.current = new CanvasRenderer(width, height, 30);
       canvasRendererRef.current.setCanvas(canvasRef.current);
-
-      // エフェクトの再初期化
-      effects.forEach(effect => {
-        effect.initialize(canvasRef.current!, ctx!);
-      });
     }
 
     return () => {
@@ -48,35 +44,49 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [width, height, effects]);
+  }, [width, height]);
 
   // エフェクトの更新と初期化
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current) {
+      console.warn('Canvas not ready');
+      return;
+    }
 
     const ctx = canvasRef.current.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      console.warn('Context not available');
+      return;
+    }
 
     console.log('Updating effects:', {
       effectsCount: effects.length,
-      effectTypes: effects.map(e => e.constructor.name)
+      effectTypes: effects.map(e => e.getName())
     });
 
-    effectManagerRef.current = new VisualEffectManager();
+    // エフェクトマネージャーの作成（未作成の場合のみ）
+    if (!effectManagerRef.current) {
+      effectManagerRef.current = new VisualEffectManager();
+    }
+
+    // 既存のエフェクトをクリア
+    effectManagerRef.current.clearEffects();
     
+    // 各エフェクトを登録
     effects.forEach(effect => {
-      // 既存のエフェクトを破棄
-      effect.dispose();
-      // エフェクトを再初期化
-      effect.initialize(canvasRef.current!, ctx);
-      // エフェクトを登録
-      effectManagerRef.current.registerEffect(effect);
+      effectManagerRef.current?.registerEffect(effect);
     });
+
+    // エフェクトマネージャーを初期化
+    effectManagerRef.current.initialize(canvasRef.current, ctx);
 
     // 即時レンダリング
     if (canvasRendererRef.current && audioSource) {
-      console.log('Immediate rendering with effects');
-      canvasRendererRef.current.render(audioSource, currentTime, effectManagerRef.current);
+      requestAnimationFrame(() => {
+        if (canvasRendererRef.current) {
+          canvasRendererRef.current.render(audioSource, currentTime, effectManagerRef.current!);
+        }
+      });
     }
   }, [effects, audioSource]);
 
@@ -94,8 +104,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   }, [audioSource]);
 
   // アニメーションフレームの更新
-  const updateFrame = () => {
-    if (!audioSource || !canvasRendererRef.current || !audioRef.current) return;
+  const updateFrame = useCallback(() => {
+    if (!audioSource || !canvasRendererRef.current || !audioRef.current || !effectManagerRef.current) return;
 
     const time = audioRef.current.currentTime * 1000;
     setCurrentTime(time);
@@ -108,7 +118,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     
     canvasRendererRef.current.render(audioSource, time, effectManagerRef.current);
     animationFrameRef.current = requestAnimationFrame(updateFrame);
-  };
+  }, [audioSource, effects]);
 
   // 再生状態の管理
   useEffect(() => {
@@ -121,11 +131,11 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
       // 一時停止時も現在のフレームを表示
-      if (canvasRendererRef.current && audioSource) {
+      if (canvasRendererRef.current && audioSource && effectManagerRef.current) {
         canvasRendererRef.current.render(audioSource, currentTime, effectManagerRef.current);
       }
     }
-  }, [isPlaying]);
+  }, [isPlaying, updateFrame]);
 
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);

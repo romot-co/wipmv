@@ -9,6 +9,7 @@ export function createTextEffect(options: TextEffectData): VisualEffect {
   const node = new TextNode({
     text: options.text,
     font: options.font,
+    fontSize: options.fontSize,
     position: options.position,
     color: options.color,
     opacity: options.opacity,

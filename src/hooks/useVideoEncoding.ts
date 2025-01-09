@@ -1,9 +1,21 @@
 import { useState, useCallback } from 'react';
-import { VideoEncoderService } from '../services/video/VideoEncoderService';
-import { AudioEncoderService } from '../services/audio/AudioEncoderService';
+import { VideoEncoderService } from '../services/encoder/VideoEncoderService';
+import { AudioEncoderService } from '../services/encoder/AudioEncoderService';
 import { MP4Multiplexer } from '../services/video/MP4Multiplexer';
 import { VideoConfig, AudioConfig, AudioSource } from '../types';
 import { DEFAULT_VIDEO_CONFIG, DEFAULT_AUDIO_CONFIG } from '../constants';
+
+const createAudioData = (source: AudioSource): AudioData => {
+  // AudioDataを作成
+  return new AudioData({
+    format: source.numberOfChannels === 1 ? 'f32-planar' : 'f32',
+    sampleRate: source.sampleRate,
+    numberOfFrames: source.timeData[0].length,
+    numberOfChannels: source.numberOfChannels,
+    timestamp: 0,
+    data: new Float32Array(source.rawData),
+  });
+};
 
 export const useVideoEncoding = () => {
   const [isEncoding, setIsEncoding] = useState(false);
@@ -22,23 +34,28 @@ export const useVideoEncoding = () => {
     setError(null);
 
     try {
-      const videoEncoder = new VideoEncoderService(videoConfig);
-      const audioEncoder = new AudioEncoderService(audioConfig);
       const multiplexer = new MP4Multiplexer(videoConfig, audioConfig);
+
+      const videoEncoder = new VideoEncoderService({
+        ...videoConfig,
+        onEncodedChunk: (chunk, meta) => {
+          multiplexer.addVideoChunk(chunk, meta);
+        }
+      });
+
+      const audioEncoder = new AudioEncoderService({
+        ...audioConfig,
+        onEncodedChunk: (chunk, meta) => {
+          multiplexer.addAudioChunk(chunk, meta);
+        }
+      });
 
       await videoEncoder.initialize();
       await audioEncoder.initialize();
 
-      videoEncoder.setOnEncodedChunk((chunk, meta) => {
-        multiplexer.addVideoChunk(chunk, meta);
-      });
-
-      audioEncoder.setOnEncodedChunk((chunk, meta) => {
-        multiplexer.addAudioChunk(chunk, meta);
-      });
-
       // エンコード処理
-      await audioEncoder.encodeAudio(audioSource);
+      const audioData = createAudioData(audioSource);
+      await audioEncoder.encodeAudio(audioData);
       await audioEncoder.flush();
 
       const frameCount = Math.ceil(duration * videoConfig.framerate / 1000);
