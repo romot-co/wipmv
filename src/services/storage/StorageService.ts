@@ -6,7 +6,8 @@ import {
   StoredBackgroundEffectConfig,
   StoredImageBackgroundConfig,
   ColorBackgroundConfig,
-  ImageBackgroundConfig
+  ImageBackgroundConfig,
+  BaseBackgroundConfig
 } from '../../types/effects';
 
 interface AppSettings {
@@ -81,17 +82,23 @@ class StorageService {
   private async convertBackgroundConfig(config: BackgroundEffectConfig): Promise<StoredBackgroundEffectConfig> {
     if (config.type === 'image') {
       const imageConfig = config as ImageBackgroundConfig;
-      return {
+      const storedConfig: StoredImageBackgroundConfig = {
         type: 'image',
         imageData: this.convertImageToBase64(imageConfig.image),
         opacity: imageConfig.opacity,
         blendMode: imageConfig.blendMode
       };
+      return storedConfig;
     }
-    return config as ColorBackgroundConfig;
+    return {
+      type: 'color',
+      color: (config as ColorBackgroundConfig).color,
+      opacity: config.opacity,
+      blendMode: config.blendMode
+    };
   }
 
-  async saveSettings(settings: Partial<AppSettings> & { background?: BackgroundEffectConfig }): Promise<void> {
+  async saveSettings(settings: Partial<AppSettings> & { background?: BackgroundEffectConfig | StoredBackgroundEffectConfig }): Promise<void> {
     if (!this.db) {
       await this.initialize();
     }
@@ -101,7 +108,11 @@ class StorageService {
 
     // 背景設定の変換
     if (settings.background) {
-      updatedSettings.background = await this.convertBackgroundConfig(settings.background);
+      if ('imageData' in settings.background || settings.background.type === 'color') {
+        updatedSettings.background = settings.background as StoredBackgroundEffectConfig;
+      } else {
+        updatedSettings.background = await this.convertBackgroundConfig(settings.background as BackgroundEffectConfig);
+      }
       delete settings.background;
     }
 
@@ -143,6 +154,7 @@ class StorageService {
           return config as unknown as T;
         }
       }
+      return backgroundConfig as unknown as T;
     }
     return (settings[key] as T) || null;
   }

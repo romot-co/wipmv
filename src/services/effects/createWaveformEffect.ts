@@ -1,10 +1,8 @@
 import { VisualEffect } from './VisualEffect';
-import { WaveformNode, WaveformOptions } from './nodes/WaveformNode';
+import { WaveformNode } from './nodes/WaveformNode';
+import { WaveformEffectConfig } from '../../types/effects';
 
-export function createWaveformEffect(options: Omit<WaveformOptions, 'type'>): VisualEffect {
-  const node = new WaveformNode({
-    type: 'waveform',
-    ...options
-  });
+export function createWaveformEffect(options: Omit<WaveformEffectConfig, 'type'>): VisualEffect {
+  const node = new WaveformNode(options);
   return new VisualEffect('waveform', [node]);
 } 

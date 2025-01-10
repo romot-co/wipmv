@@ -1,0 +1,53 @@
+.bounding-box {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  cursor: move;
+  user-select: none;
+  transition: border-color 0.2s ease;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.bounding-box.selected {
+  border: 1px solid #007bff;
+  background: rgba(0, 123, 255, 0.1);
+}
+
+.resize-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #007bff;
+  border: 1px solid white;
+  border-radius: 50%;
+  z-index: 3;
+}
+
+.resize-handle.nw {
+  top: -4px;
+  left: -4px;
+  cursor: nw-resize;
+}
+
+.resize-handle.ne {
+  top: -4px;
+  right: -4px;
+  cursor: ne-resize;
+}
+
+.resize-handle.se {
+  bottom: -4px;
+  right: -4px;
+  cursor: se-resize;
+}
+
+.resize-handle.sw {
+  bottom: -4px;
+  left: -4px;
+  cursor: sw-resize;
+}
+
+.bounding-box:hover {
+  border-color: rgba(0, 123, 255, 0.5);
+  background: rgba(0, 123, 255, 0.15);
+} 

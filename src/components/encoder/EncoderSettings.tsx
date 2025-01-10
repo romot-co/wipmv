@@ -1,18 +1,30 @@
 import React, { useState } from 'react';
-import { VideoEncoderConfig, AudioEncoderConfig, OutputConfig, encoderPresets } from '../../types/encoder';
+import { VideoConfig, AudioConfig } from '../../types';
+import { OutputConfig, encoderPresets } from '../../types/encoder';
 
 interface EncoderSettingsProps {
   onSettingsChange: (settings: {
-    video: VideoEncoderConfig;
-    audio: AudioEncoderConfig;
+    video: VideoConfig;
+    audio: AudioConfig;
     output: OutputConfig;
   }) => void;
 }
 
 export const EncoderSettings: React.FC<EncoderSettingsProps> = ({ onSettingsChange }) => {
   const [selectedPreset, setSelectedPreset] = useState<keyof typeof encoderPresets>('balanced');
-  const [videoConfig, setVideoConfig] = useState<VideoEncoderConfig>(encoderPresets.balanced.video);
-  const [audioConfig, setAudioConfig] = useState<AudioEncoderConfig>(encoderPresets.balanced.audio);
+  const [videoConfig, setVideoConfig] = useState<VideoConfig>({
+    codec: 'h264',
+    width: 1280,
+    height: 720,
+    bitrate: 4_000_000,
+    framerate: 30
+  });
+  const [audioConfig, setAudioConfig] = useState<AudioConfig>({
+    codec: 'aac',
+    sampleRate: 48000,
+    numberOfChannels: 2,
+    bitrate: 192_000
+  });
   const [outputConfig, setOutputConfig] = useState<OutputConfig>({
     container: 'mp4',
     metadata: {
@@ -26,24 +38,38 @@ export const EncoderSettings: React.FC<EncoderSettingsProps> = ({ onSettingsChan
   // プリセット変更時の処理
   const handlePresetChange = (preset: keyof typeof encoderPresets) => {
     setSelectedPreset(preset);
-    setVideoConfig(encoderPresets[preset].video);
-    setAudioConfig(encoderPresets[preset].audio);
+    const presetConfig = encoderPresets[preset];
+    const newVideoConfig: VideoConfig = {
+      codec: presetConfig.video.codec,
+      width: videoConfig.width,
+      height: videoConfig.height,
+      bitrate: presetConfig.video.bitrate,
+      framerate: videoConfig.framerate
+    };
+    const newAudioConfig: AudioConfig = {
+      codec: presetConfig.audio.codec,
+      sampleRate: audioConfig.sampleRate,
+      numberOfChannels: audioConfig.numberOfChannels,
+      bitrate: presetConfig.audio.bitrate
+    };
+    setVideoConfig(newVideoConfig);
+    setAudioConfig(newAudioConfig);
     onSettingsChange({
-      video: encoderPresets[preset].video,
-      audio: encoderPresets[preset].audio,
+      video: newVideoConfig,
+      audio: newAudioConfig,
       output: outputConfig
     });
   };
 
   // ビデオ設定変更時の処理
-  const handleVideoConfigChange = (changes: Partial<VideoEncoderConfig>) => {
+  const handleVideoConfigChange = (changes: Partial<VideoConfig>) => {
     const newConfig = { ...videoConfig, ...changes };
     setVideoConfig(newConfig);
     onSettingsChange({ video: newConfig, audio: audioConfig, output: outputConfig });
   };
 
   // オーディオ設定変更時の処理
-  const handleAudioConfigChange = (changes: Partial<AudioEncoderConfig>) => {
+  const handleAudioConfigChange = (changes: Partial<AudioConfig>) => {
     const newConfig = { ...audioConfig, ...changes };
     setAudioConfig(newConfig);
     onSettingsChange({ video: videoConfig, audio: newConfig, output: outputConfig });
@@ -94,15 +120,15 @@ export const EncoderSettings: React.FC<EncoderSettingsProps> = ({ onSettingsChan
           <label>フレームレート:</label>
           <input
             type="number"
-            value={videoConfig.frameRate}
-            onChange={(e) => handleVideoConfigChange({ frameRate: Number(e.target.value) })}
+            value={videoConfig.framerate}
+            onChange={(e) => handleVideoConfigChange({ framerate: Number(e.target.value) })}
           />
         </div>
         <div className="setting-item">
           <label>コーデック:</label>
           <select
             value={videoConfig.codec}
-            onChange={(e) => handleVideoConfigChange({ codec: e.target.value as VideoEncoderConfig['codec'] })}
+            onChange={(e) => handleVideoConfigChange({ codec: e.target.value })}
           >
             <option value="h264">H.264</option>
             <option value="h265">H.265</option>
@@ -129,8 +155,8 @@ export const EncoderSettings: React.FC<EncoderSettingsProps> = ({ onSettingsChan
         <div className="setting-item">
           <label>チャンネル数:</label>
           <select
-            value={audioConfig.channels}
-            onChange={(e) => handleAudioConfigChange({ channels: Number(e.target.value) })}
+            value={audioConfig.numberOfChannels}
+            onChange={(e) => handleAudioConfigChange({ numberOfChannels: Number(e.target.value) })}
           >
             <option value="1">モノラル</option>
             <option value="2">ステレオ</option>
@@ -140,7 +166,7 @@ export const EncoderSettings: React.FC<EncoderSettingsProps> = ({ onSettingsChan
           <label>コーデック:</label>
           <select
             value={audioConfig.codec}
-            onChange={(e) => handleAudioConfigChange({ codec: e.target.value as AudioEncoderConfig['codec'] })}
+            onChange={(e) => handleAudioConfigChange({ codec: e.target.value })}
           >
             <option value="aac">AAC</option>
             <option value="opus">Opus</option>

@@ -1,168 +1,93 @@
-import { VisualEffectNode } from '../VisualEffect';
-import { AudioVisualParameters } from '../../../types/audio';
+import { VisualNode } from './VisualNode';
 import { WaveformEffectConfig } from '../../../types/effects';
+import { AudioVisualParameters } from '../../../types/audio';
 
-/**
- * 波形描画のオプション
- */
-export interface WaveformOptions {
-  color: string;
-  lineWidth: number;
-  height: number;
-  verticalPosition: number;
-  opacity?: number;
-  blendMode?: GlobalCompositeOperation;
-}
+export class WaveformNode implements VisualNode {
+  private config: Omit<WaveformEffectConfig, 'type'>;
+  private context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
+  private lastRenderTime: number = 0;
 
-/**
- * 波形描画ノード
- * オーディオデータの波形を描画します
- */
-export class WaveformNode extends VisualEffectNode {
-  private readonly options: Required<WaveformOptions>;
-  private samplesPerFrame: number = 0;
-
-  constructor(options: WaveformOptions) {
-    super();
-    this.options = {
-      ...options,
-      opacity: options.opacity ?? 1,
-      blendMode: options.blendMode ?? 'source-over',
-      verticalPosition: options.verticalPosition ?? 0.5
-    };
+  constructor(config: Omit<WaveformEffectConfig, 'type'>) {
+    this.config = config;
   }
 
-  /**
-   * サンプルレートに基づいて1フレームあたりのサンプル数を計算します
-   */
-  private calculateSamplesPerFrame(sampleRate: number): number {
-    return Math.floor(sampleRate / 30);
+  initialize(canvas: HTMLCanvasElement | OffscreenCanvas, context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
+    this.context = context;
+    this.context.imageSmoothingEnabled = true;
+    this.context.imageSmoothingQuality = 'high';
   }
 
-  /**
-   * 波形の描画範囲を計算します
-   */
-  private calculateDrawRange(currentTime: number, sampleRate: number, canvasWidth: number): {
-    startSample: number;
-    samplesPerPixel: number;
-  } {
-    const currentSample = Math.floor((currentTime * sampleRate) / 1000);
-    const samplesPerPixel = this.samplesPerFrame / canvasWidth;
+  process(params: AudioVisualParameters, canvas: HTMLCanvasElement | OffscreenCanvas): void {
+    if (!this.context) return;
+
+    const ctx = this.context;
+    const { width, height } = canvas;
+    const {
+      color,
+      lineWidth,
+      verticalPosition,
+      opacity,
+      blendMode
+    } = this.config;
+
+    // 波形の高さを設定
+    const waveHeight = (this.config.height / 100) * height;
+    const centerY = (verticalPosition / 100) * height;
+
+    // 描画設定
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.globalCompositeOperation = blendMode;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+
+    if (!params.audioSource?.timeData?.length || !params.audioSource.timeData[0]?.length) {
+      // データがない場合は中央線のみ描画
+      ctx.beginPath();
+      ctx.moveTo(0, centerY);
+      ctx.lineTo(width, centerY);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    const data = params.audioSource.timeData[0];
+    const volume = params.audioSource.volumeData[0][0] || 1.0;
     
-    return {
-      startSample: currentSample,
-      samplesPerPixel
-    };
-  }
+    // 表示する波形のサンプル数を計算
+    const samplesPerPixel = Math.max(1, Math.floor(data.length / width));
+    const visibleSamples = width * samplesPerPixel;
+    
+    // 現在の時間に基づいてオフセットを計算
+    const currentTime = params.currentTime || 0;
+    const sampleRate = params.audioSource.sampleRate;
+    const timeOffset = Math.floor((currentTime * sampleRate) % data.length);
 
-  /**
-   * 波形のパスを生成します
-   */
-  private createWaveformPath(
-    context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    timeData: Float32Array,
-    startSample: number,
-    samplesPerPixel: number,
-    canvasWidth: number,
-    centerY: number,
-    amplitude: number
-  ): void {
-    context.beginPath();
+    // 波形の描画
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
 
-    for (let x = 0; x < canvasWidth; x++) {
-      const sampleIndex = Math.floor(startSample + (x * samplesPerPixel));
-      if (sampleIndex >= timeData.length) break;
-
-      const value = timeData[sampleIndex];
-      const y = centerY + value * amplitude;
-
-      if (x === 0) {
-        context.moveTo(x, y);
-      } else {
-        context.lineTo(x, y);
+    for (let i = 0; i < width; i++) {
+      let sum = 0;
+      for (let j = 0; j < samplesPerPixel; j++) {
+        const sampleIndex = (timeOffset + i * samplesPerPixel + j) % data.length;
+        sum += data[sampleIndex] * volume;
       }
-    }
-  }
-
-  /**
-   * 波形を描画します
-   */
-  private drawWaveform(
-    context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    canvas: OffscreenCanvas,
-    timeData: Float32Array,
-    currentTime: number,
-    sampleRate: number
-  ): void {
-    const { color, lineWidth, height, opacity, blendMode, verticalPosition } = this.options;
-    const centerY = canvas.height * verticalPosition;
-    const amplitude = height / 2;
-
-    const { startSample, samplesPerPixel } = this.calculateDrawRange(
-      currentTime,
-      sampleRate,
-      canvas.width
-    );
-
-    context.save();
-    context.strokeStyle = color;
-    context.lineWidth = lineWidth;
-    context.globalAlpha = opacity;
-    context.globalCompositeOperation = blendMode;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-
-    this.createWaveformPath(
-      context,
-      timeData,
-      startSample,
-      samplesPerPixel,
-      canvas.width,
-      centerY,
-      amplitude
-    );
-
-    context.stroke();
-    context.restore();
-  }
-
-  initialize(_canvas: HTMLCanvasElement | OffscreenCanvas, _context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
-    // 初期化時の処理は現時点では不要
-  }
-
-  process(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void {
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    const timeData = parameters.timeData[0]; // 最初のチャンネルのデータを使用
-    if (!this.samplesPerFrame) {
-      this.samplesPerFrame = this.calculateSamplesPerFrame(parameters.audioSource.sampleRate);
+      const average = sum / samplesPerPixel;
+      const y = centerY + (average * waveHeight);
+      ctx.lineTo(i, y);
     }
 
-    this.drawWaveform(
-      context,
-      canvas,
-      timeData,
-      parameters.currentTime,
-      parameters.audioSource.sampleRate
-    );
-
-    this.passToNext(parameters, canvas);
+    ctx.stroke();
+    this.lastRenderTime = currentTime;
+    ctx.restore();
   }
 
-  dispose(): void {
-    // リソースの解放は現時点では不要
+  getConfig(): Omit<WaveformEffectConfig, 'type'> {
+    return this.config;
   }
 
-  getConfig(): WaveformEffectConfig {
-    return {
-      type: 'waveform',
-      color: this.options.color,
-      lineWidth: this.options.lineWidth,
-      height: this.options.height,
-      verticalPosition: this.options.verticalPosition,
-      opacity: this.options.opacity,
-      blendMode: this.options.blendMode
-    };
+  setConfig(config: Partial<Omit<WaveformEffectConfig, 'type'>>): void {
+    this.config = { ...this.config, ...config };
   }
 } 
