@@ -1,5 +1,5 @@
-import { AudioVisualParameters } from '../../../types/audio';
-import { VisualEffectConfig } from '../../../types/effects';
+import { AudioVisualParameters } from '../../../../types/audio';
+import { BaseNodeConfig } from '../../../../types/effects/base';
 
 /**
  * エフェクトノードの基底クラス
@@ -51,5 +51,5 @@ export abstract class BaseEffectNode {
   /**
    * 設定を取得します
    */
-  abstract getConfig(): VisualEffectConfig;
+  abstract getConfig(): BaseNodeConfig;
 } 

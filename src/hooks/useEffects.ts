@@ -1,77 +1,97 @@
 import { useState, useCallback } from 'react';
-import { VisualEffect } from '../services/effects/VisualEffect';
-import { BackgroundEffectConfig, WaveformEffectConfig, VisualEffectConfig } from '../types/effects';
-import { createBackgroundEffect } from '../services/effects/createBackgroundEffect';
-import { createWaveformEffect } from '../services/effects/createWaveformEffect';
+import { VisualEffect } from '../services/effects/core';
+import { 
+  BackgroundEffectConfig, 
+  WaveformEffectConfig, 
+  TextEffectConfig,
+  WatermarkConfig,
+  VisualEffectConfig 
+} from '../types/effects';
+import {
+  createBackgroundEffect,
+  createWaveformEffect,
+  createTextEffect,
+  createWatermarkEffect
+} from '../services/effects/factories';
+import { useEffectManager } from './useEffectManager';
 
-export type EffectType = 'background' | 'waveform';
+export type EffectType = 'background' | 'waveform' | 'text' | 'watermark';
 
+/**
+ * エフェクトのUI状態管理と高レベルな操作を提供するフック
+ * useEffectManagerを利用して基本的なCRUD操作を行い、
+ * その上でUI特有の状態管理と操作を提供する
+ */
 export const useEffects = () => {
-  const [effects, setEffects] = useState<VisualEffect[]>([]);
+  const manager = useEffectManager();
   const [selectedEffectType, setSelectedEffectType] = useState<EffectType | null>(null);
+  const [selectedEffect, setSelectedEffect] = useState<VisualEffect | null>(null);
 
-  // デフォルトのエフェクトを初期化
-  const initializeDefaultEffects = useCallback(() => {
-    const defaultBackground = createBackgroundEffect({
-      type: 'color',
-      color: '#666666',
-      opacity: 1,
-      blendMode: 'source-over' as GlobalCompositeOperation
-    });
-
-    const defaultWaveform = createWaveformEffect({
-      color: '#ffffff',
-      lineWidth: 2,
-      height: 100,
-      verticalPosition: 50,
-      opacity: 1,
-      blendMode: 'source-over' as GlobalCompositeOperation
-    });
-
-    setEffects([defaultBackground, defaultWaveform]);
+  // エフェクトの選択
+  const selectEffect = useCallback((effect: VisualEffect | null) => {
+    setSelectedEffect(effect);
+    if (effect) {
+      // エフェクトタイプの判定ロジックを実装
+      // 例: effect.type に基づいて setSelectedEffectType を呼び出す
+    } else {
+      setSelectedEffectType(null);
+    }
   }, []);
 
-  // エフェクトの更新
-  const updateEffect = useCallback((type: EffectType, config: VisualEffectConfig) => {
-    setEffects(prev => prev.map(effect => {
-      if (effect.getName() === type) {
-        if (type === 'background') {
-          const bgConfig = config as BackgroundEffectConfig;
-          return createBackgroundEffect(bgConfig);
-        }
-        const waveformConfig = config as WaveformEffectConfig;
-        return createWaveformEffect({
-          color: waveformConfig.color,
-          lineWidth: waveformConfig.lineWidth,
-          height: waveformConfig.height,
-          verticalPosition: waveformConfig.verticalPosition,
-          opacity: waveformConfig.opacity,
-          blendMode: waveformConfig.blendMode
-        });
-      }
-      return effect;
-    }));
-  }, []);
+  // 新しいエフェクトの作成
+  const createEffect = useCallback((type: EffectType, config: VisualEffectConfig) => {
+    let effect: VisualEffect | null = null;
 
-  // エフェクトの取得
-  const getEffect = useCallback((type: EffectType) => {
-    return effects.find(effect => effect.getName() === type);
-  }, [effects]);
+    switch (type) {
+      case 'background':
+        effect = createBackgroundEffect(config as BackgroundEffectConfig);
+        break;
+      case 'waveform':
+        effect = createWaveformEffect(config as WaveformEffectConfig);
+        break;
+      case 'text':
+        effect = createTextEffect(config as TextEffectConfig);
+        break;
+      case 'watermark':
+        effect = createWatermarkEffect(config as WatermarkConfig);
+        break;
+    }
 
-  // エフェクトの設定を取得
-  const getEffectConfig = useCallback((type: EffectType): VisualEffectConfig | null => {
-    const effect = getEffect(type);
-    if (!effect) return null;
-    return effect.getConfig() as VisualEffectConfig;
-  }, [getEffect]);
+    if (effect) {
+      manager.addEffect(effect);
+      selectEffect(effect);
+    }
+
+    return effect;
+  }, [manager, selectEffect]);
+
+  // 選択中のエフェクトの更新
+  const updateSelectedEffect = useCallback((config: Partial<VisualEffectConfig>) => {
+    if (selectedEffect) {
+      manager.updateEffect(selectedEffect, config);
+    }
+  }, [manager, selectedEffect]);
+
+  // 選択中のエフェクトの削除
+  const removeSelectedEffect = useCallback(() => {
+    if (selectedEffect) {
+      manager.removeEffect(selectedEffect);
+      selectEffect(null);
+    }
+  }, [manager, selectedEffect, selectEffect]);
 
   return {
-    effects,
+    // 基本的なCRUD操作（managerから継承）
+    ...manager,
+    
+    // UI状態
     selectedEffectType,
-    setSelectedEffectType,
-    initializeDefaultEffects,
-    updateEffect,
-    getEffect,
-    getEffectConfig
+    selectedEffect,
+    
+    // UI操作
+    selectEffect,
+    createEffect,
+    updateSelectedEffect,
+    removeSelectedEffect,
   };
 }; 

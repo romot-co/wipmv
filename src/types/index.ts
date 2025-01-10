@@ -1,27 +1,17 @@
 export * from './audio';
-export * from './video';
 export * from './effects';
-export * from './fft'; 
 
-export type VideoConfig = {
-  codec: string;
+// 共通の型定義
+export type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+
+export type Dimensions = {
   width: number;
   height: number;
-  bitrate: number;
-  framerate: number;
 };
 
-export type VideoEncoderConfig = VideoConfig & {
-  onEncodedChunk?: (chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata) => void;
-};
-
-export type AudioConfig = {
-  codec: string;
-  sampleRate: number;
-  numberOfChannels: number;
-  bitrate: number;
-};
-
-export type AudioEncoderConfig = AudioConfig & {
-  onEncodedChunk?: (chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata) => void;
+export type Position = {
+  x: number;
+  y: number;
 }; 

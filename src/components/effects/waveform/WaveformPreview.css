@@ -1,0 +1,13 @@
+.waveform-preview-container {
+  width: 100%;
+  height: 100px;
+  background-color: #1a1a1a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.waveform-preview {
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+} 

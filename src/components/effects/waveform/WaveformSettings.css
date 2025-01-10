@@ -1,0 +1,29 @@
+.waveform-settings {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.waveform-settings-controls {
+  display: flex;
+  gap: 16px;
+  padding: 8px;
+  background-color: #2a2a2a;
+  border-radius: 4px;
+}
+
+.waveform-settings-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.waveform-settings-control label {
+  color: #ffffff;
+  font-size: 14px;
+}
+
+.waveform-settings-control input[type="range"] {
+  width: 100px;
+} 
