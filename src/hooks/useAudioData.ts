@@ -1,101 +1,93 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface AudioDataState {
   waveformData: Float32Array;
   frequencyData: Uint8Array;
-  error: Error | null;
-  isProcessing: boolean;
   updateAudioData: (audioBuffer: AudioBuffer) => void;
+  createSourceNode: (startTime?: number) => AudioBufferSourceNode | null;
 }
 
-/**
- * オーディオデータを処理するフック
- * 波形データとスペクトラムデータを提供する
- */
-export const useAudioData = (): AudioDataState => {
+export function useAudioData(): AudioDataState {
   const [waveformData, setWaveformData] = useState<Float32Array>(new Float32Array(2048));
   const [frequencyData, setFrequencyData] = useState<Uint8Array>(new Uint8Array(2048));
-  const [error, setError] = useState<Error | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const analyserRef = useRef<AnalyserNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const audioBufferRef = useRef<AudioBuffer | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
-  // AudioContextのクリーンアップ
+  // AudioContextの初期化（一度だけ）
   useEffect(() => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext();
+      const analyser = audioContextRef.current.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.connect(audioContextRef.current.destination);
+      analyserRef.current = analyser;
+    }
+
     return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (sourceNodeRef.current) {
+        sourceNodeRef.current.stop();
+        sourceNodeRef.current.disconnect();
+      }
       if (audioContextRef.current) {
         audioContextRef.current.close();
-      }
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
+        audioContextRef.current = null;
       }
     };
   }, []);
 
-  // 波形データの更新
-  const updateData = useCallback(() => {
-    if (!analyserRef.current) return;
+  // ソースノードの作成（再生位置を指定可能）
+  const createSourceNode = useCallback((startTime: number = 0) => {
+    if (!audioContextRef.current || !analyserRef.current || !audioBufferRef.current) return null;
 
-    const waveform = new Float32Array(analyserRef.current.frequencyBinCount);
-    analyserRef.current.getFloatTimeDomainData(waveform);
-    setWaveformData(waveform);
+    // 既存のソースノードを停止
+    if (sourceNodeRef.current) {
+      sourceNodeRef.current.stop();
+      sourceNodeRef.current.disconnect();
+    }
 
-    const frequency = new Uint8Array(analyserRef.current.frequencyBinCount);
-    analyserRef.current.getByteFrequencyData(frequency);
-    setFrequencyData(frequency);
+    const source = audioContextRef.current.createBufferSource();
+    source.buffer = audioBufferRef.current;
+    source.connect(analyserRef.current);
+    source.start(0, startTime);
+    sourceNodeRef.current = source;
 
-    animationFrameRef.current = requestAnimationFrame(updateData);
+    return source;
   }, []);
 
+  // オーディオデータの更新
   const updateAudioData = useCallback((audioBuffer: AudioBuffer) => {
-    try {
-      setIsProcessing(true);
-      setError(null);
+    audioBufferRef.current = audioBuffer;
+    
+    // 波形データの更新
+    const updateData = () => {
+      if (!analyserRef.current) return;
 
-      // 前のAudioContextをクリーンアップ
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
+      const waveformBuffer = new Float32Array(analyserRef.current.frequencyBinCount);
+      const frequencyBuffer = new Uint8Array(analyserRef.current.frequencyBinCount);
 
-      // 前のアニメーションフレームをクリーンアップ
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+      analyserRef.current.getFloatTimeDomainData(waveformBuffer);
+      analyserRef.current.getByteFrequencyData(frequencyBuffer);
 
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
+      setWaveformData(waveformBuffer);
+      setFrequencyData(frequencyBuffer);
 
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.8;
+      animationFrameRef.current = requestAnimationFrame(updateData);
+    };
 
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(analyser);
-      analyser.connect(audioContext.destination);
-
-      // 前のAnalyserNodeをクリーンアップ
-      if (analyserRef.current) {
-        analyserRef.current.disconnect();
-      }
-      analyserRef.current = analyser;
-
-      // データ更新の開始
-      updateData();
-
-      setIsProcessing(false);
-    } catch (e) {
-      setError(e instanceof Error ? e : new Error('Failed to process audio data'));
-      setIsProcessing(false);
-    }
-  }, [updateData]);
+    // 更新開始
+    updateData();
+  }, []);
 
   return {
     waveformData,
     frequencyData,
-    error,
-    isProcessing,
     updateAudioData,
+    createSourceNode,
   };
-}; 
+} 

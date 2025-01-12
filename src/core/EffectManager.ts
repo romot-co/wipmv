@@ -380,4 +380,32 @@ export class EffectManager {
   getCanvas(): HTMLCanvasElement {
     return this.canvas;
   }
+
+  /**
+   * 現在の時間を設定
+   */
+  setCurrentTime(time: number): void {
+    this.currentTime = time;
+  }
+
+  /**
+   * 現在の時間を取得
+   */
+  getCurrentTime(): number {
+    return this.currentTime;
+  }
+
+  /**
+   * コンテキストを取得
+   */
+  getContext(): CanvasRenderingContext2D {
+    return this.ctx;
+  }
+
+  /**
+   * オフスクリーンコンテキストを取得
+   */
+  getOffscreenContext(): OffscreenCanvasRenderingContext2D {
+    return this.offscreenCtx;
+  }
 } 

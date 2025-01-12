@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { EffectManager } from '../core/EffectManager';
 
 interface PreviewCanvasProps {
@@ -24,6 +24,37 @@ export function PreviewCanvas({
 }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const managerRef = useRef<EffectManager | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // キャンバスのリサイズ処理
+  const handleResize = useCallback(() => {
+    if (!canvasRef.current || !containerRef.current) return;
+
+    const container = containerRef.current;
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+
+    // アスペクト比を維持しながらリサイズ
+    const scale = Math.min(
+      containerWidth / width,
+      containerHeight / height
+    );
+
+    const scaledWidth = Math.floor(width * scale);
+    const scaledHeight = Math.floor(height * scale);
+
+    canvasRef.current.style.width = `${scaledWidth}px`;
+    canvasRef.current.style.height = `${scaledHeight}px`;
+
+    // 実際のキャンバスサイズは元のサイズを維持
+    canvasRef.current.width = width;
+    canvasRef.current.height = height;
+
+    // エフェクトマネージャーに通知
+    if (managerRef.current) {
+      managerRef.current.setCanvas(canvasRef.current);
+    }
+  }, [width, height]);
 
   // キャンバスの初期化とエフェクトマネージャーの設定
   useEffect(() => {
@@ -43,13 +74,18 @@ export function PreviewCanvas({
       managerRef.current.setCanvas(canvas);
     }
 
+    // リサイズイベントの設定
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
     return () => {
+      window.removeEventListener('resize', handleResize);
       if (managerRef.current) {
         managerRef.current.dispose();
         managerRef.current = null;
       }
     };
-  }, [width, height, onManagerInit]);
+  }, [width, height, onManagerInit, handleResize]);
 
   // オーディオデータの更新
   useEffect(() => {
@@ -74,15 +110,26 @@ export function PreviewCanvas({
   }, [isPlaying]);
 
   return (
-    <canvas
-      ref={canvasRef}
+    <div
+      ref={containerRef}
       style={{
         width: '100%',
-        height: 'auto',
-        maxWidth: width,
-        maxHeight: height,
+        height: '100%',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
         backgroundColor: '#000',
+        overflow: 'hidden',
       }}
-    />
+    >
+      <canvas
+        ref={canvasRef}
+        style={{
+          maxWidth: '100%',
+          maxHeight: '100%',
+          objectFit: 'contain',
+        }}
+      />
+    </div>
   );
 } 

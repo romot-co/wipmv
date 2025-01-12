@@ -23,25 +23,29 @@ export class TextEffect extends EffectBase {
 
     // スタイルの適用
     ctx.save();
-    ctx.font = `${style.fontWeight || 'normal'} ${style.fontSize}px ${style.fontFamily}`;
-    ctx.fillStyle = style.color;
-    ctx.textAlign = style.align || 'center';
-    ctx.textBaseline = style.baseline || 'middle';
 
-    // アニメーションの適用
-    if (this.config.animation) {
-      const progress = this.calculateAnimationProgress(params.currentTime);
-      this.applyAnimation(ctx, progress);
-    }
+    try {
+      ctx.font = `${style.fontWeight || 'normal'} ${style.fontSize}px ${style.fontFamily}`;
+      ctx.fillStyle = style.color;
+      ctx.textAlign = style.align || 'center';
+      ctx.textBaseline = style.baseline || 'middle';
 
-    // テキストの描画
-    if (style.strokeWidth && style.strokeWidth > 0 && style.strokeColor) {
-      ctx.strokeStyle = style.strokeColor;
-      ctx.lineWidth = style.strokeWidth;
-      ctx.strokeText(text, position.x, position.y);
+      // アニメーションの適用
+      if (this.config.animation) {
+        const progress = this.calculateAnimationProgress(params.currentTime);
+        this.applyAnimation(ctx, progress);
+      }
+
+      // テキストの描画
+      if (style.strokeWidth && style.strokeWidth > 0 && style.strokeColor) {
+        ctx.strokeStyle = style.strokeColor;
+        ctx.lineWidth = style.strokeWidth;
+        ctx.strokeText(text, position.x, position.y);
+      }
+      ctx.fillText(text, position.x, position.y);
+    } finally {
+      ctx.restore();
     }
-    ctx.fillText(text, position.x, position.y);
-    ctx.restore();
   }
 
   private calculateAnimationProgress(currentTime: number): number {
@@ -64,41 +68,50 @@ export class TextEffect extends EffectBase {
   ): void {
     if (!this.config.animation) return;
 
-    const { type } = this.config.animation;
-    const easedProgress = this.ease(progress);
+    const { position } = this.config;
+    const easeProgress = this.easeInOutCubic(progress);
+    let scale: number;
+    let slideOffset: number;
 
-    switch (type) {
-      case 'fade': {
-        ctx.globalAlpha *= easedProgress;
+    switch (this.config.animation.type) {
+      case 'fade':
+        ctx.globalAlpha = easeProgress;
         break;
-      }
-      case 'scale': {
-        const scale = easedProgress;
-        ctx.scale(scale, scale);
+
+      case 'scale':
+        scale = easeProgress;
+        ctx.setTransform(
+          scale, 0,
+          0, scale,
+          position.x * (1 - scale),
+          position.y * (1 - scale)
+        );
         break;
-      }
-      case 'slide': {
-        const { x } = this.config.position;
-        const startX = x - 100;
-        const distance = x - startX;
-        ctx.translate(startX + distance * easedProgress - x, 0);
+
+      case 'slide':
+        slideOffset = (1 - easeProgress) * 100;
+        ctx.setTransform(
+          1, 0,
+          0, 1,
+          slideOffset,
+          0
+        );
         break;
-      }
     }
   }
 
-  private ease(progress: number): number {
+  private easeInOutCubic(progress: number): number {
     if (!this.config.animation?.easing) return progress;
 
     switch (this.config.animation.easing) {
       case 'easeIn':
-        return progress * progress;
+        return progress * progress * progress;
       case 'easeOut':
-        return 1 - Math.pow(1 - progress, 2);
+        return 1 - Math.pow(1 - progress, 3);
       case 'easeInOut':
         return progress < 0.5
-          ? 2 * progress * progress
-          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2;
       default:
         return progress;
     }
