@@ -161,21 +161,14 @@ export interface EncoderOptions {
 }
 
 export enum ErrorType {
-  // オーディオ関連のエラー
-  AudioLoadFailed = 'AUDIO_LOAD_FAILED',
-  AudioDecodeFailed = 'AUDIO_DECODE_FAILED',
-  AudioAnalysisFailed = 'AUDIO_ANALYSIS_FAILED',
-
-  // エフェクト関連のエラー
-  EffectCreateFailed = 'EFFECT_CREATE_FAILED',
-  EffectUpdateFailed = 'EFFECT_UPDATE_FAILED',
-  EffectNotFound = 'EFFECT_NOT_FOUND',
-  InvalidEffectConfig = 'INVALID_EFFECT_CONFIG',
-
-  // エクスポート関連のエラー
-  ExportInitFailed = 'EXPORT_INIT_FAILED',
-  ExportEncodeFailed = 'EXPORT_ENCODE_FAILED',
-  ExportCanceled = 'EXPORT_CANCELED',
+  EffectInitFailed = 'EffectInitFailed',
+  EffectNotFound = 'EffectNotFound',
+  EffectAlreadyExists = 'EffectAlreadyExists',
+  EffectUpdateFailed = 'EffectUpdateFailed',
+  AudioDecodeFailed = 'AudioDecodeFailed',
+  ExportInitFailed = 'ExportInitFailed',
+  ExportEncodeFailed = 'ExportEncodeFailed',
+  ExportCanceled = 'ExportCanceled',
 }
 
 export class AppError extends Error {
@@ -191,14 +184,12 @@ export class AppError extends Error {
 
 // エラーメッセージの日本語化
 export const ErrorMessages: Record<ErrorType, string> = {
-  [ErrorType.AudioLoadFailed]: 'オーディオファイルの読み込みに失敗しました',
-  [ErrorType.AudioDecodeFailed]: 'オーディオデータのデコードに失敗しました',
-  [ErrorType.AudioAnalysisFailed]: 'オーディオ解析に失敗しました',
-  [ErrorType.EffectCreateFailed]: 'エフェクトの作成に失敗しました',
+  [ErrorType.EffectInitFailed]: 'エフェクトの初期化に失敗しました',
+  [ErrorType.EffectNotFound]: 'エフェクトが見つかりません',
+  [ErrorType.EffectAlreadyExists]: '指定されたIDのエフェクトは既に存在します',
   [ErrorType.EffectUpdateFailed]: 'エフェクトの更新に失敗しました',
-  [ErrorType.EffectNotFound]: '指定されたエフェクトが見つかりません',
-  [ErrorType.InvalidEffectConfig]: 'エフェクトの設定が無効です',
+  [ErrorType.AudioDecodeFailed]: '音声ファイルのデコードに失敗しました',
   [ErrorType.ExportInitFailed]: 'エクスポートの初期化に失敗しました',
-  [ErrorType.ExportEncodeFailed]: 'エンコード処理に失敗しました',
-  [ErrorType.ExportCanceled]: 'エクスポートがキャンセルされました',
+  [ErrorType.ExportEncodeFailed]: 'エクスポートのエンコードに失敗しました',
+  [ErrorType.ExportCanceled]: 'エクスポートをキャンセルしました',
 }; 

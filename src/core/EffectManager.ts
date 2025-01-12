@@ -6,22 +6,79 @@ import { EffectBase } from './EffectBase';
  * エフェクトのライフサイクルとレンダリングを管理する
  */
 export class EffectManager {
-  private readonly effects: Map<string, EffectBase> = new Map();
-  private animationFrameId?: number;
-  private currentTime: number = 0;
-  private audioData?: {
-    waveform: Float32Array;
-    frequency: Uint8Array;
-  };
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
   private offscreen: OffscreenCanvas;
-  private offscreenCtx: OffscreenCanvasRenderingContext2D | null;
+  private offscreenCtx: OffscreenCanvasRenderingContext2D;
+  private effects: Map<string, EffectBase>;
+  private currentTime: number;
+  private duration: number;
+  private animationFrameId: number | null;
+  private waveformData: Float32Array;
+  private frequencyData: Uint8Array;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
-    this.offscreen = new OffscreenCanvas(canvas.width, canvas.height);
-    this.offscreenCtx = this.offscreen.getContext('2d');
-    if (!this.offscreenCtx) {
-      throw new Error('Failed to get offscreen context');
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new AppError(
+        ErrorType.EffectInitFailed,
+        'Failed to get canvas context'
+      );
     }
+    this.ctx = ctx;
+
+    // オフスクリーンキャンバスの初期化
+    this.offscreen = new OffscreenCanvas(canvas.width, canvas.height);
+    const offscreenCtx = this.offscreen.getContext('2d');
+    if (!offscreenCtx) {
+      throw new AppError(
+        ErrorType.EffectInitFailed,
+        'Failed to get offscreen canvas context'
+      );
+    }
+    this.offscreenCtx = offscreenCtx;
+
+    this.effects = new Map();
+    this.currentTime = 0;
+    this.duration = 0;
+    this.animationFrameId = null;
+    this.waveformData = new Float32Array();
+    this.frequencyData = new Uint8Array();
+  }
+
+  /**
+   * キャンバスを設定
+   */
+  setCanvas(canvas: HTMLCanvasElement): void {
+    this.canvas = canvas;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new AppError(
+        ErrorType.EffectInitFailed,
+        'Failed to get canvas context'
+      );
+    }
+    this.ctx = ctx;
+
+    // オフスクリーンキャンバスの再初期化
+    this.offscreen = new OffscreenCanvas(canvas.width, canvas.height);
+    const offscreenCtx = this.offscreen.getContext('2d');
+    if (!offscreenCtx) {
+      throw new AppError(
+        ErrorType.EffectInitFailed,
+        'Failed to get offscreen canvas context'
+      );
+    }
+    this.offscreenCtx = offscreenCtx;
+  }
+
+  /**
+   * キャンバスをクリア
+   */
+  clearCanvas(): void {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.offscreenCtx.clearRect(0, 0, this.offscreen.width, this.offscreen.height);
   }
 
   /**
@@ -38,19 +95,15 @@ export class EffectManager {
     try {
       if (this.effects.has(id)) {
         throw new AppError(
-          ErrorType.EffectCreateFailed,
-          `エフェクトID "${id}" は既に使用されています`
+          ErrorType.EffectAlreadyExists,
+          `Effect with id ${id} already exists`
         );
       }
       this.effects.set(id, effect);
     } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
       throw new AppError(
-        ErrorType.EffectCreateFailed,
-        'エフェクトの追加に失敗しました',
-        error
+        ErrorType.EffectUpdateFailed,
+        error instanceof Error ? error.message : 'Failed to add effect'
       );
     }
   }
@@ -60,23 +113,17 @@ export class EffectManager {
    */
   removeEffect(id: string): void {
     try {
-      const effect = this.effects.get(id);
-      if (!effect) {
+      if (!this.effects.has(id)) {
         throw new AppError(
           ErrorType.EffectNotFound,
-          `エフェクトID "${id}" が見つかりません`
+          `Effect with id ${id} not found`
         );
       }
       this.effects.delete(id);
-      effect.dispose();
     } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
       throw new AppError(
         ErrorType.EffectUpdateFailed,
-        'エフェクトの削除に失敗しました',
-        error
+        error instanceof Error ? error.message : 'Failed to remove effect'
       );
     }
   }
@@ -115,18 +162,14 @@ export class EffectManager {
       if (!effect) {
         throw new AppError(
           ErrorType.EffectNotFound,
-          `エフェクトID "${id}" が見つかりません`
+          `Effect with id ${id} not found`
         );
       }
       effect.updateConfig(config);
     } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
       throw new AppError(
         ErrorType.EffectUpdateFailed,
-        'エフェクトの更新に失敗しました',
-        error
+        error instanceof Error ? error.message : 'Failed to update effect'
       );
     }
   }
@@ -136,12 +179,12 @@ export class EffectManager {
    */
   updateAudioData(waveform: Float32Array, frequency: Uint8Array): void {
     try {
-      this.audioData = { waveform, frequency };
+      this.waveformData = waveform;
+      this.frequencyData = frequency;
     } catch (error) {
       throw new AppError(
-        ErrorType.AudioAnalysisFailed,
-        'オーディオデータの更新に失敗しました',
-        error
+        ErrorType.AudioDecodeFailed,
+        error instanceof Error ? error.message : 'Failed to update audio data'
       );
     }
   }
@@ -157,6 +200,7 @@ export class EffectManager {
    * レンダリングを開始
    */
   start(): void {
+    if (this.animationFrameId !== null) return;
     this.animate();
   }
 
@@ -164,10 +208,9 @@ export class EffectManager {
    * レンダリングを停止
    */
   stop(): void {
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = undefined;
-    }
+    if (this.animationFrameId === null) return;
+    cancelAnimationFrame(this.animationFrameId);
+    this.animationFrameId = null;
   }
 
   /**
@@ -189,6 +232,13 @@ export class EffectManager {
       .sort((a, b) => a.getConfig().zIndex - b.getConfig().zIndex);
   }
 
+  /**
+   * 動画の長さを更新
+   */
+  updateDuration(duration: number): void {
+    this.duration = duration;
+  }
+
   private animate = (): void => {
     const ctx = this.canvas.getContext('2d');
     
@@ -201,22 +251,19 @@ export class EffectManager {
     // Render effects in order
     const parameters: AudioVisualParameters = {
       currentTime: this.currentTime,
-      duration: 0, // TODO: Set actual duration
-      waveformData: this.audioData?.waveform,
-      frequencyData: this.audioData?.frequency,
+      duration: this.duration,
+      waveformData: this.waveformData,
+      frequencyData: this.frequencyData,
     };
 
     for (const effect of this.getSortedEffects()) {
-      // Clear offscreen canvas for each effect
-      this.offscreenCtx.clearRect(0, 0, this.offscreen.width, this.offscreen.height);
-      
-      // Render effect to offscreen canvas
       effect.render(parameters, this.offscreen);
-      
-      // Draw offscreen canvas to main canvas
-      ctx.drawImage(this.offscreen, 0, 0);
     }
 
+    // Draw offscreen canvas to main canvas
+    ctx.drawImage(this.offscreen, 0, 0);
+
+    // Continue animation loop
     this.animationFrameId = requestAnimationFrame(this.animate);
   };
 

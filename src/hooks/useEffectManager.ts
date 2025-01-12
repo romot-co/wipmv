@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { EffectManager } from '../core/EffectManager';
 import { EffectBase } from '../core/EffectBase';
 
@@ -6,6 +6,7 @@ interface EffectManagerState {
   manager: EffectManager | null;
   error: Error | null;
   isReady: boolean;
+  updateTrigger: number;
   setManager: (manager: EffectManager) => void;
   addEffect: (effect: EffectBase, id: string) => void;
   removeEffect: (id: string) => void;
@@ -17,64 +18,82 @@ interface EffectManagerState {
  * エフェクトの追加・削除・更新を行う
  */
 export const useEffectManager = (): EffectManagerState => {
-  const managerRef = useRef<EffectManager | null>(null);
+  const [manager, setManagerState] = useState<EffectManager | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [updateTrigger, setUpdateTrigger] = useState(0);
 
-  const setManager = useCallback((manager: EffectManager) => {
+  // managerの状態を更新する際のユーティリティ関数
+  const updateManagerState = useCallback(() => {
+    setUpdateTrigger(prev => prev + 1);
+  }, []);
+
+  const setManager = useCallback((newManager: EffectManager) => {
     try {
-      if (managerRef.current) {
-        managerRef.current.dispose();
+      if (manager) {
+        manager.dispose();
       }
-      managerRef.current = manager;
+      setManagerState(newManager);
       setIsReady(true);
       setError(null);
+      updateManagerState();
     } catch (e) {
       setError(e instanceof Error ? e : new Error('Failed to set manager'));
       setIsReady(false);
     }
-  }, []);
+  }, [manager, updateManagerState]);
 
   const addEffect = useCallback((effect: EffectBase, id: string) => {
     try {
-      if (!managerRef.current) {
+      if (!manager) {
         throw new Error('Effect manager is not initialized');
       }
-      managerRef.current.addEffect(effect, id);
+      manager.addEffect(effect, id);
       setError(null);
+      updateManagerState();
     } catch (e) {
       setError(e instanceof Error ? e : new Error('Failed to add effect'));
     }
-  }, []);
+  }, [manager, updateManagerState]);
 
   const removeEffect = useCallback((id: string) => {
     try {
-      if (!managerRef.current) {
+      if (!manager) {
         throw new Error('Effect manager is not initialized');
       }
-      managerRef.current.removeEffect(id);
+      manager.removeEffect(id);
       setError(null);
+      updateManagerState();
     } catch (e) {
       setError(e instanceof Error ? e : new Error('Failed to remove effect'));
     }
-  }, []);
+  }, [manager, updateManagerState]);
 
   const dispose = useCallback(() => {
     try {
-      if (!managerRef.current) return;
-      managerRef.current.dispose();
-      managerRef.current = null;
-      setIsReady(false);
-      setError(null);
+      if (manager) {
+        manager.dispose();
+        setManagerState(null);
+        setIsReady(false);
+        setError(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e : new Error('Failed to dispose manager'));
     }
-  }, []);
+  }, [manager]);
+
+  // managerの状態が変更されたときに再レンダリングを強制
+  useEffect(() => {
+    if (manager) {
+      setManagerState(manager);
+    }
+  }, [manager, updateTrigger]);
 
   return {
-    manager: managerRef.current,
+    manager,
     error,
     isReady,
+    updateTrigger,
     setManager,
     addEffect,
     removeEffect,

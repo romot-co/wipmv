@@ -12,7 +12,7 @@ interface PreviewCanvasProps {
 
 /**
  * プレビューキャンバスコンポーネント
- * エフェクトのリアルタイムプレビューを提供する
+ * エフェクトのリアルタイムプレビューを表示
  */
 export function PreviewCanvas({
   width,
@@ -24,26 +24,28 @@ export function PreviewCanvas({
 }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Rendererの初期化
+  // キャンバスの初期化とエフェクトマネージャーの設定
   useEffect(() => {
-    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
     // キャンバスのサイズを設定
-    canvasRef.current.width = width;
-    canvasRef.current.height = height;
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.backgroundColor = '#000';
+
+    // エフェクトマネージャーにキャンバスを設定
+    effectManager.setCanvas(canvas);
 
     return () => {
-      // クリーンアップ
-      effectManager.dispose();
+      effectManager.clearCanvas();
     };
-  }, [width, height, effectManager]);
+  }, [effectManager, width, height]);
 
   // オーディオデータの更新
   useEffect(() => {
-    if (waveformData && frequencyData) {
-      effectManager.updateAudioData(waveformData, frequencyData);
-    }
-  }, [waveformData, frequencyData, effectManager]);
+    effectManager.updateAudioData(waveformData, frequencyData);
+  }, [effectManager, waveformData, frequencyData]);
 
   // 再生状態の管理
   useEffect(() => {
@@ -52,19 +54,17 @@ export function PreviewCanvas({
     } else {
       effectManager.stop();
     }
-
-    return () => {
-      effectManager.stop();
-    };
-  }, [isPlaying, effectManager]);
+  }, [effectManager, isPlaying]);
 
   return (
     <canvas
-      id="preview-canvas"
       ref={canvasRef}
-      width={width}
-      height={height}
-      style={{ width: '100%', height: 'auto', backgroundColor: '#000000' }}
+      style={{
+        width: '100%',
+        height: 'auto',
+        maxWidth: width,
+        maxHeight: height,
+      }}
     />
   );
 } 

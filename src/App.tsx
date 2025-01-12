@@ -1,5 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { PreviewCanvas } from './ui/PreviewCanvas';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Inspector } from './ui/Inspector';
 import { EffectType, BackgroundEffectConfig, TextEffectConfig, WaveformEffectConfig, WatermarkEffectConfig, ErrorType, AppError, ErrorMessages } from './core/types';
 import { useEffectManager } from './hooks/useEffectManager';
@@ -25,7 +24,8 @@ function App() {
 
   // エフェクト関連の状態
   const [selectedEffectId, setSelectedEffectId] = useState<string>();
-  const { manager, setManager } = useEffectManager();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { manager, setManager, updateTrigger } = useEffectManager();
   const { waveformData, frequencyData, updateAudioData } = useAudioData();
   const { isEncoding, progress, error: encoderError, startEncoding, stopEncoding } = useVideoEncoder();
 
@@ -35,32 +35,34 @@ function App() {
   // エクスポート関連の状態
   const [exportStartTime, setExportStartTime] = useState<number>(0);
 
-  // EffectManagerの初期化
+  // プレビューキャンバスの初期化
   useEffect(() => {
-    const canvas = document.querySelector<HTMLCanvasElement>('#preview-canvas');
+    const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const newManager = new EffectManager(canvas);
-    setManager(newManager);
+    try {
+      const newManager = new EffectManager(canvas);
+      newManager.start();
+      setManager(newManager);
 
-    // 初期エフェクトの追加（背景）
-    const effectId = `effect-${Date.now()}`;
-    const backgroundEffect = new BackgroundEffect({
-      type: EffectType.Background,
-      visible: true,
-      zIndex: 0,
-      backgroundType: 'color',
-      color: '#000000',
-    });
-    newManager.addEffect(backgroundEffect, effectId);
+      // 初期エフェクトの追加（背景）
+      const effectId = `effect-${Date.now()}`;
+      const backgroundEffect = new BackgroundEffect({
+        type: EffectType.Background,
+        visible: true,
+        zIndex: 0,
+        backgroundType: 'color',
+        color: '#000000',
+      });
+      newManager.addEffect(backgroundEffect, effectId);
 
-    // アニメーションの開始
-    newManager.start();
-
-    return () => {
-      newManager.dispose();
-    };
-  }, [setManager]);
+      return () => {
+        newManager.dispose();
+      };
+    } catch (error) {
+      handleError(error);
+    }
+  }, []); // マウント時に一度だけ実行
 
   // オーディオデータの更新
   useEffect(() => {
@@ -107,6 +109,8 @@ function App() {
       const audioUrl = URL.createObjectURL(file);
       if (audioRef.current) {
         audioRef.current.src = audioUrl;
+        audioRef.current.volume = 0; // 音声は出さない（波形表示用のみ）
+        setIsPlaying(false); // 自動再生を防ぐ
       }
     } catch (error) {
       handleError(error);
@@ -115,27 +119,48 @@ function App() {
 
   // 再生コントロール
   const handlePlayPause = useCallback(() => {
-    if (!audioRef.current) return;
-
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
-    }
-    setIsPlaying(!isPlaying);
-  }, [isPlaying]);
-
-  // 時間更新
-  const handleTimeUpdate = useCallback(() => {
     if (!audioRef.current || !manager) return;
 
-    const currentTime = audioRef.current.currentTime;
-    manager.updateTime(currentTime);
-    
-    if (isPlaying) {
-      manager.start();
+    try {
+      if (isPlaying) {
+        audioRef.current.pause();
+        manager.stop();
+      } else {
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              manager.start();
+            })
+            .catch((error) => {
+              manager.stop();
+              handleError(error);
+            });
+        }
+      }
+      setIsPlaying(!isPlaying);
+    } catch (error) {
+      manager.stop();
+      handleError(error);
     }
-  }, [manager, isPlaying]);
+  }, [isPlaying, manager, handleError]);
+
+  // 時間更新
+  const handleTimeUpdate = useCallback((event: React.SyntheticEvent<HTMLAudioElement>) => {
+    if (!manager) return;
+
+    const audioElement = event.currentTarget;
+    manager.updateTime(audioElement.currentTime);
+    manager.updateDuration(audioElement.duration);
+  }, [manager]);
+
+  // 再生終了時の処理
+  const handleEnded = useCallback(() => {
+    if (manager) {
+      manager.stop();
+    }
+    setIsPlaying(false);
+  }, [manager]);
 
   // エフェクト追加
   const handleAddEffect = useCallback((type: EffectType) => {
@@ -145,23 +170,21 @@ function App() {
       const effectId = `effect-${Date.now()}`;
       let effect;
 
-      const baseConfig = {
-        type,
-        visible: true,
-        zIndex: manager.getEffects().size, // 新しいエフェクトは最前面に
-      };
-
       switch (type) {
         case EffectType.Background:
           effect = new BackgroundEffect({
-            ...baseConfig,
+            type: EffectType.Background,
+            visible: true,
+            zIndex: manager.getEffects().size,
             backgroundType: 'color',
             color: '#000000',
           });
           break;
         case EffectType.Text:
           effect = new TextEffect({
-            ...baseConfig,
+            type: EffectType.Text,
+            visible: true,
+            zIndex: manager.getEffects().size,
             text: 'テキストを入力',
             style: {
               fontFamily: 'Arial',
@@ -178,21 +201,29 @@ function App() {
           break;
         case EffectType.Waveform:
           effect = new WaveformEffect({
-            ...baseConfig,
+            type: EffectType.Waveform,
+            visible: true,
+            zIndex: manager.getEffects().size,
             style: 'line',
-            color: '#ffffff',
-            position: { x: 0, y: 360 },
-            size: { width: 1280, height: 200 },
+            colors: {
+              primary: '#ffffff',
+              secondary: '#888888',
+              background: '#000000'
+            },
+            position: { x: 0, y: 360, width: 1280, height: 200 },
             options: {
               barWidth: 2,
-              spacing: 1,
+              barSpacing: 1,
               smoothing: 0.5,
-            },
+              mirror: false
+            }
           });
           break;
         case EffectType.Watermark:
           effect = new WatermarkEffect({
-            ...baseConfig,
+            type: EffectType.Watermark,
+            visible: true,
+            zIndex: manager.getEffects().size,
             imageUrl: '',
             position: { x: 640, y: 360 },
             size: { width: 200, height: 200 },
@@ -206,12 +237,21 @@ function App() {
           return;
       }
 
-      manager.addEffect(effect, effectId);
-      setSelectedEffectId(effectId);
+      if (effect) {
+        manager.addEffect(effect, effectId);
+        setSelectedEffectId(effectId);
+        // 新しいmanagerインスタンスを作成して状態を更新
+        const newManager = new EffectManager(canvasRef.current!);
+        newManager.start();
+        Array.from(manager.getEffects().entries()).forEach(([id, effect]) => {
+          newManager.addEffect(effect, id);
+        });
+        setManager(newManager);
+      }
     } catch (error) {
       handleError(error);
     }
-  }, [manager, handleError]);
+  }, [manager, canvasRef, setManager, handleError]);
 
   // エフェクト更新
   const handleEffectChange = useCallback((newConfig: Partial<EffectConfig>) => {
@@ -229,19 +269,11 @@ function App() {
 
   // エクスポート処理
   const handleExport = useCallback(async () => {
-    if (!audioRef.current || !manager) return;
+    if (!audioRef.current || !manager || !canvasRef.current) return;
 
     try {
-      const canvas = document.querySelector<HTMLCanvasElement>('#preview-canvas');
-      if (!canvas) {
-        throw new AppError(
-          ErrorType.ExportInitFailed,
-          'プレビューキャンバスが見つかりません'
-        );
-      }
-
       setExportStartTime(Date.now());
-      await startEncoding(canvas, audioRef.current.duration);
+      await startEncoding(canvasRef.current, audioRef.current.duration);
     } catch (error) {
       handleError(error);
     }
@@ -307,11 +339,29 @@ function App() {
     }
   }, [manager, handleError]);
 
-  // エフェクトリストの取得
-  const effectEntries = manager ? Array.from(manager.getEffects().entries()) : [];
+  // エフェクトリストの取得と状態管理
+  const effectEntries = useMemo(() => {
+    if (!manager) return [];
+    return Array.from(manager.getEffects().entries());
+  }, [manager]);
 
   // 選択中のエフェクトの設定を取得
-  const selectedEffect = selectedEffectId && manager ? manager.getEffect(selectedEffectId)?.getConfig() as EffectConfig : undefined;
+  const selectedEffect = useMemo(() => {
+    if (!selectedEffectId || !manager) return undefined;
+    const effect = manager.getEffect(selectedEffectId);
+    return effect?.getConfig() as EffectConfig | undefined;
+  }, [selectedEffectId, manager]);
+
+  // エラー状態に応じた表示の制御
+  if (appError) {
+    return (
+      <div className="error-screen">
+        <h2>エラーが発生しました</h2>
+        <p>{appError.message}</p>
+        <button onClick={handleCloseError}>閉じる</button>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -421,20 +471,17 @@ function App() {
 
         {/* プレビュー */}
         <div className="preview">
-          {manager && (
-            <PreviewCanvas
-              width={1280}
-              height={720}
-              isPlaying={isPlaying}
-              waveformData={waveformData}
-              frequencyData={frequencyData}
-              effectManager={manager}
-            />
-          )}
+          <canvas
+            ref={canvasRef}
+            id="preview-canvas"
+            width={1280}
+            height={720}
+            style={{ backgroundColor: '#000' }}
+          />
           <audio
             ref={audioRef}
             onTimeUpdate={handleTimeUpdate}
-            onEnded={() => setIsPlaying(false)}
+            onEnded={handleEnded}
           />
         </div>
 
