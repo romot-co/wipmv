@@ -17,8 +17,45 @@ export class AudioPlaybackService {
   private startOffset = 0;   // 再生開始時点
   private startTime = 0;     // AudioContext.currentTime での再生開始タイミング
 
+  // イベントリスナー
+  private stateChangeListeners: ((state: AudioPlaybackState) => void)[] = [];
+
   constructor() {
     this.ensureContext();
+  }
+
+  /**
+   * 状態変更通知の購読
+   */
+  public subscribe(listener: (state: AudioPlaybackState) => void): () => void {
+    this.stateChangeListeners.push(listener);
+    // 現在の状態を即時通知
+    listener(this.getState());
+    
+    // 購読解除用の関数を返す
+    return () => {
+      this.stateChangeListeners = this.stateChangeListeners.filter(l => l !== listener);
+    };
+  }
+
+  /**
+   * 現在の状態を取得
+   */
+  private getState(): AudioPlaybackState {
+    return {
+      isPlaying: this.isPlaying,
+      currentTime: this.getCurrentTime(),
+      duration: this.getDuration(),
+      isSuspended: this.isSuspended
+    };
+  }
+
+  /**
+   * 状態変更を通知
+   */
+  private notifyStateChange(): void {
+    const state = this.getState();
+    this.stateChangeListeners.forEach(listener => listener(state));
   }
 
   /**
@@ -27,153 +64,139 @@ export class AudioPlaybackService {
   private ensureContext() {
     if (!this.audioContext) {
       this.audioContext = new AudioContext();
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
     }
   }
 
-  /**
-   * ファイルデコード
-   */
   public async decodeFile(file: File): Promise<AudioBuffer> {
     this.ensureContext();
-    if (!this.audioContext) {
-      throw new Error('AudioContext not available');
-    }
+    if (!this.audioContext) throw new Error('Failed to create AudioContext');
 
     const arrayBuffer = await file.arrayBuffer();
-    this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+    this.setAudioBuffer(audioBuffer);
+    return audioBuffer;
+  }
+
+  public setAudioBuffer(buffer: AudioBuffer) {
+    this.audioBuffer = buffer;
+    this.startOffset = 0;
+    this.notifyStateChange();
+  }
+
+  /**
+   * 現在のAudioBufferを取得
+   */
+  public getAudioBuffer(): AudioBuffer | null {
     return this.audioBuffer;
   }
 
-  /**
-   * AudioBuffer を直接セットするパターン
-   */
-  public setAudioBuffer(buffer: AudioBuffer) {
-    this.ensureContext();
-    this.audioBuffer = buffer;
-  }
-
-  /**
-   * 再生開始
-   */
   public play() {
     if (!this.audioContext || !this.audioBuffer) return;
 
-    // もし既に再生してたら一旦停止
-    if (this.isPlaying) {
-      this.stop();
+    // 既存のソースノードを停止・破棄
+    if (this.sourceNode) {
+      this.sourceNode.stop();
+      this.sourceNode.disconnect();
     }
 
-    // 再度ソースを作成
+    // 新しいソースノードを作成
     this.sourceNode = this.audioContext.createBufferSource();
     this.sourceNode.buffer = this.audioBuffer;
-    // Source -> analyser -> destination
-    this.sourceNode.connect(this.analyser!);
-    this.analyser!.connect(this.audioContext.destination);
 
-    // 再生終了時
-    this.sourceNode.onended = () => {
-      this.isPlaying = false;
-      this.sourceNode?.disconnect();
-      this.sourceNode = null;
-      // 終了時に任意のコールバック処理等
-    };
+    // アナライザーノードの設定
+    if (!this.analyser) {
+      this.analyser = this.audioContext.createAnalyser();
+    }
+    this.sourceNode.connect(this.analyser);
+    this.analyser.connect(this.audioContext.destination);
 
-    // 開始
-    this.startTime = this.audioContext.currentTime;
+    // 再生開始
     this.sourceNode.start(0, this.startOffset);
+    this.startTime = this.audioContext.currentTime;
     this.isPlaying = true;
+
+    this.notifyStateChange();
   }
 
-  /**
-   * 一時停止
-   */
   public pause() {
     if (!this.isPlaying || !this.sourceNode) return;
 
-    const currentPos = this.getCurrentTime();
-    this.stop();
-    this.startOffset = currentPos;
-  }
-
-  /**
-   * 停止 (再生位置を0に戻す)
-   */
-  public stop() {
-    if (!this.isPlaying || !this.sourceNode) return;
-
+    // 現在の再生位置を保存して停止
+    this.startOffset = this.getCurrentTime();
     this.sourceNode.stop();
     this.sourceNode.disconnect();
     this.sourceNode = null;
     this.isPlaying = false;
-    this.startOffset = 0;
+
+    this.notifyStateChange();
   }
 
-  /**
-   * シーク (一時停止して再度 start)
-   */
+  public stop() {
+    if (!this.sourceNode) return;
+
+    this.sourceNode.stop();
+    this.sourceNode.disconnect();
+    this.sourceNode = null;
+    this.startOffset = 0;
+    this.isPlaying = false;
+
+    this.notifyStateChange();
+  }
+
   public seek(timeSec: number) {
     const wasPlaying = this.isPlaying;
     if (wasPlaying) {
-      this.stop();
+      this.pause();
     }
-    this.startOffset = Math.min(timeSec, this.getDuration());
+
+    this.startOffset = Math.max(0, Math.min(timeSec, this.getDuration()));
+
     if (wasPlaying) {
       this.play();
+    } else {
+      this.notifyStateChange();
     }
   }
 
-  /**
-   * 現在の再生時間(秒)
-   */
   public getCurrentTime(): number {
-    if (!this.isPlaying || !this.audioContext) {
-      return this.startOffset;
+    if (this.isPlaying && this.audioContext) {
+      return this.startOffset + (this.audioContext.currentTime - this.startTime);
     }
-    return (this.audioContext.currentTime - this.startTime) + this.startOffset;
+    return this.startOffset;
   }
 
-  /**
-   * トータル再生時間
-   */
   public getDuration(): number {
-    return this.audioBuffer?.duration || 0;
+    return this.audioBuffer ? this.audioBuffer.duration : 0;
   }
 
-  /**
-   * AnalyserNode 取得 (波形表示や周波数分析に使用)
-   */
   public getAnalyserNode(): AnalyserNode | null {
     return this.analyser;
   }
 
-  /**
-   * AudioContext の状態を確認
-   */
   public get isSuspended(): boolean {
-    return this.audioContext?.state === 'suspended';
+    return this.audioContext?.state === 'suspended' ?? false;
   }
 
-  /**
-   * AudioContext を再開
-   */
   public async resumeContext() {
-    if (this.audioContext && this.audioContext.state === 'suspended') {
+    if (this.audioContext?.state === 'suspended') {
       await this.audioContext.resume();
+      this.notifyStateChange();
     }
   }
 
-  /**
-   * リソース解放
-   */
   public dispose() {
     this.stop();
-    this.analyser?.disconnect();
     this.audioContext?.close();
     this.audioContext = null;
-    this.sourceNode = null;
-    this.analyser = null;
     this.audioBuffer = null;
+    this.analyser = null;
+    this.stateChangeListeners = [];
   }
+}
+
+export interface AudioPlaybackState {
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  isSuspended: boolean;
 }

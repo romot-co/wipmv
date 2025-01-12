@@ -1,67 +1,147 @@
-import { EffectBase } from '../../core/EffectBase';
+import { EffectBase, BaseEffectState } from '../../core/EffectBase';
 import { WatermarkEffectConfig, AudioVisualParameters } from '../../core/types';
+import { ImageLoader } from '../../core/ImageLoader';
+
+interface WatermarkEffectState extends BaseEffectState {
+  imageLoaded: boolean;
+  imageSize: {
+    width: number;
+    height: number;
+    naturalWidth: number;
+    naturalHeight: number;
+  } | null;
+  transformMatrix: DOMMatrix | null;
+}
 
 /**
  * ウォーターマークエフェクト
  * 画像をウォーターマークとして描画する
  */
-export class WatermarkEffect extends EffectBase {
+export class WatermarkEffect extends EffectBase<WatermarkEffectState> {
   protected override config: WatermarkEffectConfig;
   private image: HTMLImageElement | null = null;
-  private imageLoaded = false;
+  private imageLoader: ImageLoader;
 
   constructor(config: WatermarkEffectConfig) {
-    super(config);
+    const initialState: WatermarkEffectState = {
+      isReady: false,
+      isLoading: !!config.imageUrl,
+      error: null,
+      imageLoaded: false,
+      imageSize: null,
+      transformMatrix: null
+    };
+    super(config, initialState);
     this.config = config;
-    this.loadImage();
+    this.imageLoader = ImageLoader.getInstance();
+    
+    if (config.imageUrl) {
+      this.loadImage(config.imageUrl);
+    }
   }
 
-  private loadImage(): void {
-    if (!this.config.imageUrl) {
+  override updateConfig(newConfig: Partial<WatermarkEffectConfig>, batch = false): void {
+    super.updateConfig(newConfig, batch);
+    
+    if (!batch) {
+      // 画像URLが変更された場合は再ロード
+      if ('imageUrl' in newConfig) {
+        this.updateState({
+          isLoading: true,
+          isReady: false,
+          imageLoaded: false,
+          imageSize: null,
+          transformMatrix: null
+        });
+        this.loadImage(this.config.imageUrl);
+      }
+
+      // 位置やスタイルが変更された場合は変換行列を更新
+      if ('position' in newConfig || 'style' in newConfig) {
+        this.updateTransformMatrix();
+      }
+    }
+  }
+
+  private async loadImage(url: string): Promise<void> {
+    if (!url) {
       this.image = null;
+      this.updateState({
+        isReady: true,
+        isLoading: false,
+        imageLoaded: false,
+        imageSize: null,
+        transformMatrix: null,
+        error: null
+      });
       return;
     }
 
-    // 既存の画像がある場合はクリーンアップ
-    if (this.image) {
-      this.image.src = '';
-      this.image.onload = null;
-      this.image.onerror = null;
-    }
+    try {
+      const result = await this.imageLoader.loadImage(url);
+      this.image = result.image;
+      
+      const imageSize = {
+        width: this.config.position.width ?? result.width,
+        height: this.config.position.height ?? result.height,
+        naturalWidth: result.width,
+        naturalHeight: result.height
+      };
 
-    this.image = new Image();
-    
-    this.image.onload = () => {
-      // 画像のロード完了
-    };
+      this.updateState({
+        isReady: true,
+        isLoading: false,
+        error: null,
+        imageLoaded: true,
+        imageSize
+      });
 
-    this.image.onerror = () => {
+      this.updateTransformMatrix();
+    } catch (error) {
       this.image = null;
-      console.error('Failed to load watermark image:', this.config.imageUrl);
-    };
-
-    this.image.src = this.config.imageUrl;
-  }
-
-  override updateConfig(newConfig: Partial<WatermarkEffectConfig>): void {
-    super.updateConfig(newConfig);
-    
-    // 画像URLが変更された場合は再ロード
-    if ('imageUrl' in newConfig) {
-      this.loadImage();
+      this.updateState({
+        isReady: false,
+        isLoading: false,
+        error: error instanceof Error ? error : new Error('Failed to load image'),
+        imageLoaded: false,
+        imageSize: null,
+        transformMatrix: null
+      });
     }
   }
 
-  render(
+  private updateTransformMatrix(): void {
+    if (!this.image || !this.state.imageSize) return;
+
+    const { position } = this.config;
+    const { width, height } = this.state.imageSize;
+
+    const matrix = new DOMMatrix();
+    matrix.translateSelf(position.x + width / 2, position.y + height / 2);
+    
+    if (position.rotation) {
+      matrix.rotateSelf(position.rotation);
+    }
+    if (position.scale) {
+      matrix.scaleSelf(position.scale, position.scale);
+    }
+    
+    matrix.translateSelf(-width / 2, -height / 2);
+
+    this.updateState({
+      transformMatrix: matrix
+    });
+  }
+
+  override render(
     ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
     params: AudioVisualParameters
   ): void {
     if (!this.isVisible(params.currentTime)) return;
-    if (!this.image) return;
+    if (!this.state.isReady || !this.image || !this.state.imageSize) return;
 
-    const { position, style } = this.config;
-    const width = position.width ?? this.image.width;
-    const height = position.height ?? this.image.height;
+    const { style } = this.config;
+    const { width, height } = this.state.imageSize;
 
     ctx.save();
     try {
@@ -71,29 +151,68 @@ export class WatermarkEffect extends EffectBase {
         ctx.globalCompositeOperation = style.blendMode;
       }
 
-      // 位置とサイズの設定
-      ctx.translate(position.x + width / 2, position.y + height / 2);
-      if (position.rotation) {
-        ctx.rotate((position.rotation * Math.PI) / 180);
+      // 変換行列の適用
+      if (this.state.transformMatrix) {
+        ctx.setTransform(this.state.transformMatrix);
       }
-      if (position.scale) {
-        ctx.scale(position.scale, position.scale);
-      }
-      ctx.translate(-width / 2, -height / 2);
 
       // 画像の描画
       ctx.drawImage(this.image, 0, 0, width, height);
+
+      // リピート描画
+      if (this.config.repeat) {
+        const canvasWidth = ctx.canvas.width;
+        const canvasHeight = ctx.canvas.height;
+        const margin = this.config.margin || { x: 0, y: 0 };
+        
+        for (let x = -width; x <= canvasWidth + width; x += width + margin.x) {
+          for (let y = -height; y <= canvasHeight + height; y += height + margin.y) {
+            if (x === 0 && y === 0) continue; // 中央は既に描画済み
+            ctx.drawImage(this.image, x, y, width, height);
+          }
+        }
+      }
     } finally {
       ctx.restore();
     }
   }
 
-  dispose(): void {
+  /**
+   * リソースを解放
+   */
+  protected override disposeResources(): void {
+    // 画像リソースの解放
     if (this.image) {
       this.image.src = '';
-      this.image.onload = null;
-      this.image.onerror = null;
       this.image = null;
+    }
+
+    // ImageLoaderのキャッシュから削除
+    if (this.config.imageUrl) {
+      this.imageLoader.removeFromCache(this.config.imageUrl);
+    }
+
+    // 変換行列の解放
+    this.updateState({
+      ...this.state,
+      transformMatrix: null
+    });
+  }
+
+  protected override handleConfigChange(
+    changes: ReturnType<typeof this.analyzeConfigChanges>
+  ): void {
+    // 表示状態が変更された場合
+    if (changes.visibilityChanged) {
+      this.updateState({
+        ...this.state,
+        isReady: this.config.visible ? this.state.imageLoaded : false
+      });
+    }
+
+    // タイミングが変更された場合
+    if (changes.timingChanged) {
+      // 必要に応じて追加の処理
     }
   }
 } 

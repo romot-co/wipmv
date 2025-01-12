@@ -1,208 +1,103 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { EffectManager } from '../core/EffectManager';
+import { AudioPlaybackService, AudioPlaybackState } from '../core/AudioPlaybackService';
 
 interface UseAudioControlProps {
   manager: EffectManager | null;
+  audioService: AudioPlaybackService;
 }
 
-export function useAudioControl({ manager }: UseAudioControlProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
+export function useAudioControl({ manager, audioService }: UseAudioControlProps) {
   const [currentTime, setCurrentTime] = useState(0);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const startTimeRef = useRef(0);
-  const animationFrameRef = useRef<number | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [error, setError] = useState<Error | null>(null);
 
-  // AudioContextの初期化
-  const initAudioContext = useCallback(() => {
-    if (!manager) return;
+  // 状態変更の購読
+  useEffect(() => {
+    // 状態変更の購読
+    const unsubscribe = audioService.subscribe((state: AudioPlaybackState) => {
+      setIsPlaying(state.isPlaying);
+      setCurrentTime(state.currentTime);
+      setDuration(state.duration);
 
-    try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext();
-        analyserRef.current = audioContextRef.current.createAnalyser();
-        analyserRef.current.fftSize = 2048;
-        analyserRef.current.connect(audioContextRef.current.destination);
-      }
-
-      // オーディオバッファが設定されている場合は再生準備
-      const audioBuffer = manager.getAudioBuffer();
-      if (audioBuffer) {
-        manager.updateDuration(audioBuffer.duration);
-        console.debug('AudioContextの初期化完了', {
-          duration: audioBuffer.duration,
-          sampleRate: audioBuffer.sampleRate,
-          numberOfChannels: audioBuffer.numberOfChannels
+      // EffectManagerの更新
+      if (manager) {
+        manager.updateParams({
+          currentTime: state.currentTime,
+          duration: state.duration
         });
       }
-    } catch (error) {
-      console.error('AudioContextの初期化に失敗しました:', error);
-    }
-  }, [manager]);
-
-  // 再生位置の更新
-  const updateCurrentTime = useCallback(() => {
-    if (!audioContextRef.current || !manager) return;
-
-    const update = () => {
-      if (isPlaying) {
-        const currentTime = audioContextRef.current!.currentTime - startTimeRef.current;
-        setCurrentTime(currentTime);
-        manager.updateTime(currentTime);
-        animationFrameRef.current = requestAnimationFrame(update);
-
-        console.debug('再生位置の更新', {
-          currentTime,
-          audioContextTime: audioContextRef.current!.currentTime,
-          startTime: startTimeRef.current
-        });
-      }
-    };
-
-    update();
-  }, [manager, isPlaying]);
-
-  // 再生
-  const play = useCallback(async () => {
-    if (!audioContextRef.current || !manager) return;
-
-    try {
-      console.debug('再生開始', {
-        audioContext: audioContextRef.current.state,
-        hasAnalyser: !!analyserRef.current,
-        hasAudioBuffer: !!manager.getAudioBuffer(),
-        currentTime
-      });
-
-      // AudioContextが停止している場合は再開
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume();
-      }
-
-      // 既存のソースノードを停止・解放
-      if (sourceNodeRef.current) {
-        sourceNodeRef.current.stop();
-        sourceNodeRef.current.disconnect();
-      }
-
-      // 新しいソースノードを作成
-      const source = audioContextRef.current.createBufferSource();
-      const audioBuffer = manager.getAudioBuffer();
-      if (!audioBuffer) {
-        console.error('オーディオバッファが設定されていません');
-        return;
-      }
-
-      source.buffer = audioBuffer;
-      source.connect(analyserRef.current!);
-      sourceNodeRef.current = source;
-
-      // 再生終了時の処理
-      source.onended = () => {
-        console.debug('再生終了');
-        setIsPlaying(false);
-        manager.stop();
-      };
-
-      // 再生開始
-      startTimeRef.current = audioContextRef.current.currentTime - currentTime;
-      source.start(0, currentTime);
-      
-      setIsPlaying(true);
-      manager.start();
-      updateCurrentTime();
-    } catch (error) {
-      console.error('再生に失敗しました:', error);
-      setIsPlaying(false);
-      manager.stop();
-    }
-  }, [manager, currentTime, updateCurrentTime]);
-
-  // 一時停止
-  const pause = useCallback(async () => {
-    if (!audioContextRef.current || !manager) return;
-
-    try {
-      console.debug('一時停止');
-
-      if (sourceNodeRef.current) {
-        sourceNodeRef.current.stop();
-        sourceNodeRef.current.disconnect();
-        sourceNodeRef.current = null;
-      }
-
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-      }
-
-      setIsPlaying(false);
-      manager.stop();
-    } catch (error) {
-      console.error('一時停止に失敗しました:', error);
-    }
-  }, [manager]);
-
-  // シーク
-  const seek = useCallback(async (time: number) => {
-    if (!audioContextRef.current || !manager) return;
-
-    console.debug('シーク開始', { 
-      time, 
-      isPlaying,
-      currentAudioBuffer: manager.getAudioBuffer()?.duration
     });
 
-    try {
-      const wasPlaying = isPlaying;
-      if (wasPlaying) {
-        await pause();
-      }
-
-      // 再生位置を更新
-      setCurrentTime(time);
-      manager.updateTime(time);
-
-      // 再生中だった場合は再開
-      if (wasPlaying) {
-        await play();
-      }
-
-      console.debug('シーク完了', { time, wasPlaying });
-    } catch (error) {
-      console.error('シークに失敗しました:', error);
+    // EffectManagerとの接続
+    let managerCleanup: (() => void) | undefined;
+    if (manager) {
+      managerCleanup = manager.connectAudioService(audioService);
     }
-  }, [manager, isPlaying, pause, play]);
 
-  // クリーンアップ
-  useEffect(() => {
     return () => {
-      console.debug('useAudioControl クリーンアップ');
-      if (sourceNodeRef.current) {
-        sourceNodeRef.current.stop();
-        sourceNodeRef.current.disconnect();
-      }
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
+      unsubscribe();
+      managerCleanup?.();
+      setError(null);
     };
-  }, []);
+  }, [manager, audioService]);
 
-  // AudioContextの初期化
-  useEffect(() => {
-    initAudioContext();
-  }, [initAudioContext]);
+  // 再生制御
+  const play = useCallback(async () => {
+    try {
+      setError(null);
+      await audioService.resumeContext();
+      await audioService.play();
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Failed to play audio');
+      setError(err);
+      throw err;
+    }
+  }, [audioService]);
+
+  const pause = useCallback(async () => {
+    try {
+      setError(null);
+      await audioService.pause();
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Failed to pause audio');
+      setError(err);
+      throw err;
+    }
+  }, [audioService]);
+
+  const stop = useCallback(async () => {
+    try {
+      setError(null);
+      await audioService.stop();
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Failed to stop audio');
+      setError(err);
+      throw err;
+    }
+  }, [audioService]);
+
+  const seek = useCallback(async (time: number) => {
+    try {
+      setError(null);
+      await audioService.seek(time);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Failed to seek audio');
+      setError(err);
+      throw err;
+    }
+  }, [audioService]);
 
   return {
-    isPlaying,
     currentTime,
+    isPlaying,
+    duration,
+    error,
     play,
     pause,
+    stop,
     seek,
-    initAudioContext
+    getAnalyser: () => audioService.getAnalyserNode()
   };
 } 

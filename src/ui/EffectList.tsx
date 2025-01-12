@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { EffectManager } from '../core/EffectManager';
 
 interface EffectListProps {
@@ -8,15 +8,36 @@ interface EffectListProps {
   onEffectRemove: (id: string) => void;
 }
 
+type MovementState = {
+  id: string;
+  direction: 'up' | 'down';
+} | null;
+
 export const EffectList: React.FC<EffectListProps> = ({
   manager,
   selectedEffectId,
   onEffectSelect,
   onEffectRemove,
 }) => {
+  const [movementState, setMovementState] = useState<MovementState>(null);
+
   if (!manager) return null;
 
-  const effects = Array.from(manager.getEffects().entries());
+  const effects = manager.getEffects();
+
+  const handleMoveUp = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMovementState({ id, direction: 'up' });
+    manager.moveEffectUp(id);
+    setTimeout(() => setMovementState(null), 300);
+  };
+
+  const handleMoveDown = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMovementState({ id, direction: 'down' });
+    manager.moveEffectDown(id);
+    setTimeout(() => setMovementState(null), 300);
+  };
 
   return (
     <div className="effect-list">
@@ -25,43 +46,53 @@ export const EffectList: React.FC<EffectListProps> = ({
         <p>エフェクトがありません</p>
       ) : (
         <ul>
-          {effects.map(([id, effect]) => (
-            <li
-              key={id}
-              className={selectedEffectId === id ? 'selected' : ''}
-              onClick={() => onEffectSelect(id)}
-            >
-              <span>{effect.getConfig().type}</span>
-              <div className="effect-actions">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    manager.moveEffectUp(id);
-                  }}
-                  disabled={effects[0][0] === id}
-                >
-                  ↑
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    manager.moveEffectDown(id);
-                  }}
-                  disabled={effects[effects.length - 1][0] === id}
-                >
-                  ↓
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEffectRemove(id);
-                  }}
-                >
-                  削除
-                </button>
-              </div>
-            </li>
-          ))}
+          {effects.map((effect, index) => {
+            const id = effect.getConfig().id;
+            const isMoving = movementState?.id === id;
+            const movingClass = isMoving
+              ? movementState.direction === 'up'
+                ? 'moving-up'
+                : 'moving-down'
+              : '';
+
+            return (
+              <li
+                key={id}
+                className={`
+                  ${selectedEffectId === id ? 'selected' : ''}
+                  ${movingClass}
+                `}
+                onClick={() => onEffectSelect(id)}
+              >
+                <span>{effect.getConfig().type}</span>
+                <div className="effect-actions">
+                  <button
+                    onClick={(e) => handleMoveUp(id, e)}
+                    disabled={index === 0}
+                    title="上に移動"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    onClick={(e) => handleMoveDown(id, e)}
+                    disabled={index === effects.length - 1}
+                    title="下に移動"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEffectRemove(id);
+                    }}
+                    title="削除"
+                  >
+                    削除
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

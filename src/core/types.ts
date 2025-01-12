@@ -66,11 +66,13 @@ export interface BaseAnimation {
  * エフェクト基本設定
  */
 export interface BaseEffectConfig {
-  type: EffectType;       // エフェクト種別
-  visible: boolean;       // 表示非表示
-  startTime?: number;     // 表示開始時刻(秒)
-  endTime?: number;       // 表示終了時刻(秒)
-  zIndex: number;         // レイヤ順
+  id: string;         // エフェクトの一意のID
+  type: EffectType;   // エフェクト種別
+  visible: boolean;   // 表示非表示
+  startTime?: number; // 表示開始時刻(秒)
+  endTime?: number;   // 表示終了時刻(秒)
+  zIndex: number;     // レイヤ順
+  duration?: number;
 }
 
 /**
@@ -138,15 +140,22 @@ export interface WaveformColors {
 }
 
 export interface WaveformEffectConfig extends BaseEffectConfig {
-  type: EffectType.Waveform;
-  style: WaveformStyle;
-  colors: WaveformColors;
-  position: Rectangle;
+  position: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  colors: {
+    primary: string;
+    secondary?: string;
+    background?: string;
+  };
   options?: {
     barWidth?: number;
     barSpacing?: number;
     smoothing?: number;
-    mirror?: boolean;
+    style?: 'line' | 'bar' | 'mirror';
     responsive?: boolean;
   };
 }
@@ -302,3 +311,9 @@ export interface InspectorProps {
   effect: EffectBase | undefined;
   onChange: (newConfig: Partial<EffectConfig>) => void;
 }
+
+export interface Disposable {
+  dispose(): void;
+}
+
+export type { BaseEffectState } from './EffectBase';
