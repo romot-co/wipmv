@@ -90,10 +90,13 @@ export function PreviewCanvas({
   // オーディオデータの更新
   useEffect(() => {
     if (!managerRef.current) return;
+    
     if (waveformData && frequencyData) {
       managerRef.current.updateAudioData(waveformData, frequencyData);
+      
+      // 停止中は1回だけ描画
       if (!isPlaying) {
-        managerRef.current.render(); // 停止中でも表示を更新
+        managerRef.current.render();
       }
     }
   }, [waveformData, frequencyData, isPlaying]);
@@ -106,6 +109,8 @@ export function PreviewCanvas({
       managerRef.current.start();
     } else {
       managerRef.current.stop();
+      // 停止時に1回だけ描画
+      managerRef.current.render();
     }
   }, [isPlaying]);
 

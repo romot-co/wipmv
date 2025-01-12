@@ -1,127 +1,95 @@
-import { Muxer, ArrayBufferTarget, MuxerOptions } from 'mp4-muxer';
+// src/services/encoder/MP4Muxer.ts
 
-interface VideoConfig {
-  codec: string;
+import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
+
+/**
+ * 映像設定
+ */
+export interface MP4VideoConfig {
   width: number;
   height: number;
-  frameRate: number;
-}
-
-interface AudioConfig {
-  codec: string;
-  numberOfChannels: number;
-  sampleRate: number;
+  codec?: 'avc' | 'hevc' | 'vp9' | 'av1';
 }
 
 /**
- * MP4多重化サービス
- * エンコードされた音声と映像をMP4ファイルに多重化する
+ * 音声設定
+ */
+export interface MP4AudioConfig {
+  sampleRate: number;
+  channels: number;
+  codec?: 'aac' | 'opus'; // 'aac' | 'opus' のみ許可
+}
+
+/**
+ * MP4Muxer
+ * - EncodedAudioChunk / EncodedVideoChunk を受け取り、
+ *   mp4-muxer で多重化し、最終的にMP4を生成する。
  */
 export class MP4Muxer {
-  private muxer: Muxer;
+  private muxer: Muxer<ArrayBufferTarget>;
   private target: ArrayBufferTarget;
-  private duration: number = 0;
-  private currentOptions: MuxerOptions & {
-    video?: VideoConfig;
-    audio?: AudioConfig;
-  };
+  private isAudioConfigured = false;
+  private isVideoConfigured = false;
 
   constructor(
-    width: number,
-    height: number,
-    fps: number,
-    private readonly onData: (data: Uint8Array) => void,
-    private readonly onFinish: () => void
+    private readonly videoConfig: MP4VideoConfig,
+    private readonly audioConfig: MP4AudioConfig
   ) {
+    // 内部バッファ
     this.target = new ArrayBufferTarget();
-    this.currentOptions = {
+
+    // mp4-muxer の設定
+    // ※ ここでは映像・音声とも初期化時点でセットする例（あとから追加でもOK）
+    this.muxer = new Muxer<ArrayBufferTarget>({
       target: this.target,
       video: {
-        codec: 'avc',
-        width,
-        height,
-        frameRate: fps
+        codec: videoConfig.codec ?? 'avc',
+        width: videoConfig.width,
+        height: videoConfig.height,
       },
-      fastStart: true, // メタデータを先頭に配置し、ストリーミングに最適化
-      firstTimestampBehavior: 'offset' // タイムスタンプを0から開始
-    };
-    this.muxer = new Muxer(this.currentOptions as MuxerOptions);
-  }
-
-  /**
-   * 音声トラックを追加
-   */
-  addAudioTrack(sampleRate: number, channels: number): void {
-    // 音声トラックの設定を追加
-    this.currentOptions = {
-      ...this.currentOptions,
       audio: {
-        codec: 'aac',
-        numberOfChannels: channels,
-        sampleRate
-      }
-    };
-    this.muxer = new Muxer(this.currentOptions as MuxerOptions);
+        codec: audioConfig.codec ?? 'aac',
+        sampleRate: audioConfig.sampleRate,
+        numberOfChannels: audioConfig.channels,
+      },
+      fastStart: 'in-memory', // MP4のメタデータを先頭に配置
+    });
+    this.isAudioConfigured = true;
+    this.isVideoConfigured = true;
   }
 
   /**
    * 映像チャンクを追加
+   * @param chunk EncodedVideoChunk
+   * @param meta EncodedVideoChunkMetadata
    */
-  addVideoChunk(chunk: EncodedVideoChunk, timestamp: number): void {
-    this.muxer.addVideoChunk(chunk, timestamp);
-    this.updateDuration(timestamp);
+  addVideoChunk(chunk: EncodedVideoChunk, meta?: EncodedVideoChunkMetadata): void {
+    if (!this.isVideoConfigured) {
+      console.warn('Video track not configured yet.');
+      return;
+    }
+    this.muxer.addVideoChunk(chunk, meta);
   }
 
   /**
    * 音声チャンクを追加
+   * @param chunk EncodedAudioChunk
+   * @param meta EncodedAudioChunkMetadata
    */
-  addAudioChunk(chunk: EncodedAudioChunk, timestamp: number): void {
-    this.muxer.addAudioChunk(chunk, timestamp);
-    this.updateDuration(timestamp);
-  }
-
-  /**
-   * 多重化を完了し、MP4ファイルをダウンロード
-   */
-  async finish(): Promise<void> {
-    try {
-      await this.muxer.finalize();
-      
-      // MP4データを取得
-      const mp4Data = this.target.buffer;
-      
-      // ダウンロード用のBlobを作成
-      const blob = new Blob([mp4Data], { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
-      
-      // ダウンロード用の一時的なリンクを作成
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `output_${new Date().getTime()}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      
-      // クリーンアップ
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      // コールバックを呼び出し
-      this.onData(mp4Data);
-      this.onFinish();
-    } catch (error) {
-      console.error('MP4の多重化に失敗しました:', error);
-      throw error;
+  addAudioChunk(chunk: EncodedAudioChunk, meta?: EncodedAudioChunkMetadata): void {
+    if (!this.isAudioConfigured) {
+      console.warn('Audio track not configured yet.');
+      return;
     }
-  }
-
-  private updateDuration(timestamp: number): void {
-    this.duration = Math.max(this.duration, timestamp);
+    this.muxer.addAudioChunk(chunk, meta);
   }
 
   /**
-   * 現在の動画の長さを取得
+   * すべてのチャンクを追加し終わったら呼ぶ
+   * @returns MP4バイナリ（Uint8Array）
    */
-  getDuration(): number {
-    return this.duration;
+  finalize(): Uint8Array {
+    this.muxer.finalize();
+    return new Uint8Array(this.target.buffer);
   }
-} 
+}

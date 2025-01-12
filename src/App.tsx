@@ -11,6 +11,7 @@ import { BackgroundEffect } from './features/background/BackgroundEffect';
 import { TextEffect } from './features/text/TextEffect';
 import { WaveformEffect } from './features/waveform/WaveformEffect';
 import { WatermarkEffect } from './features/watermark/WatermarkEffect';
+import { EncoderService } from './core/EncoderService';
 
 const App: React.FC = () => {
   const [audioFile, setAudioFile] = useState<AudioBuffer | null>(null);
@@ -27,7 +28,7 @@ const App: React.FC = () => {
     pause,
     seek,
     initAudioContext
-  } = useAudioControl({ effectManager: manager });
+  } = useAudioControl({ manager });
 
   const { waveformData, frequencyData, updateAudioData } = useAudioData();
 
@@ -156,30 +157,17 @@ const App: React.FC = () => {
     try {
       setIsEncoding(true);
       setEncodingProgress(0);
-      const chunks: Uint8Array[] = [];
-      
-      // エンコーディングを開始
-      const encoder = new VideoEncoder({
-        output: (chunk) => {
-          const data = new Uint8Array(chunk.byteLength);
-          chunk.copyTo(data);
-          chunks.push(data);
-        },
-        error: (error) => {
-          console.error('Encoding error:', error);
-          setEncoderError(error);
-          setIsEncoding(false);
-        }
-      });
 
-      // エンコーダーの設定
-      await encoder.configure({
-        codec: 'vp8',
-        width: 800,
-        height: 600,
-        bitrate: 1_000_000, // 1Mbps
-        framerate: 30,
-      });
+      // エンコーダーサービスの初期化
+      const encoder = new EncoderService(
+        800, // width
+        600, // height
+        30,  // fps
+        5_000_000, // videoBitrate: 5Mbps
+        128_000    // audioBitrate: 128kbps
+      );
+
+      await encoder.initialize();
 
       // フレームをエンコード
       const duration = audioFile?.duration || 0;
@@ -187,20 +175,21 @@ const App: React.FC = () => {
       
       for (let i = 0; i < frameCount; i++) {
         const time = i / 30;
-        manager.updateTime(time);
+        manager.setCurrentTime(time);
         manager.render();
         
         // キャンバスの内容をVideoFrameに変換
-        const imageData = manager.getCanvas().getContext('2d')?.getImageData(0, 0, 800, 600);
+        const canvas = manager.getCanvas();
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+        const imageData = ctx.getImageData(0, 0, 800, 600);
         if (!imageData) continue;
 
         const imageBitmap = await createImageBitmap(imageData);
         const frame = new VideoFrame(imageBitmap, {
-          timestamp: i * 1000000 / 30, // マイクロ秒単位
+          timestamp: time * 1000000, // マイクロ秒単位
         });
-
-        encoder.encode(frame);
-        frame.close();
+        await encoder.encodeVideoFrame(frame, time * 1000000); // マイクロ秒単位
         imageBitmap.close();
 
         // プログレスの更新
@@ -208,23 +197,24 @@ const App: React.FC = () => {
       }
 
       // エンコーディングを終了
-      await encoder.flush();
-      encoder.close();
+      await encoder.stop();
 
-      // WebMファイルの作成
-      const blob = new Blob(chunks, { type: 'video/webm' });
+      // エンコードされたデータを取得してダウンロード
+      const encodedData = encoder.getEncodedData();
+      const blob = new Blob([encodedData], { type: 'video/mp4' });
       const url = URL.createObjectURL(blob);
 
       // ダウンロードリンクを作成
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'output.webm';
+      a.download = 'output.mp4';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
 
       // URLを解放
       URL.revokeObjectURL(url);
+      encoder.dispose();
       setIsEncoding(false);
       setEncodingProgress(0);
 

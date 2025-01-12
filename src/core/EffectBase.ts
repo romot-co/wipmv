@@ -52,4 +52,11 @@ export abstract class EffectBase {
    * エフェクトをレンダリング
    */
   abstract render(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, params: AudioVisualParameters): void;
+
+  /**
+   * エフェクトのz-indexを取得
+   */
+  getZIndex(): number {
+    return this.config.zIndex;
+  }
 } 

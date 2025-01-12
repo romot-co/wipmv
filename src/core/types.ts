@@ -1,5 +1,36 @@
+// src/core/types.ts
+// 共有型定義
+
+/**
+ * AudioBuffer をアプリ内部で扱う際に
+ * どんな情報をまとめて持つか
+ */
+export interface AudioSource {
+  /** デコード済み AudioBuffer */
+  buffer: AudioBuffer;
+  /** サンプリングレート */
+  sampleRate: number;
+  /** チャンネル数 */
+  numberOfChannels: number;
+  /** 再生総時間(秒) */
+  duration: number;
+  /** ファイル名など補足情報 */
+  fileName?: string;
+}
+
+/**
+ * ファイルを decode した結果をまとめた例
+ */
+export interface DecodeResult {
+  buffer: AudioBuffer;
+  sampleRate: number;
+  numberOfChannels: number;
+  duration: number;
+}
+
 /**
  * 基本的な列挙型
+ * - エフェクトの種類
  */
 export enum EffectType {
   Background = 'background',
@@ -35,21 +66,22 @@ export interface BaseAnimation {
  * エフェクト基本設定
  */
 export interface BaseEffectConfig {
-  type: EffectType;
-  visible: boolean;
-  startTime?: number;
-  endTime?: number;
-  zIndex: number;
+  type: EffectType;       // エフェクト種別
+  visible: boolean;       // 表示非表示
+  startTime?: number;     // 表示開始時刻(秒)
+  endTime?: number;       // 表示終了時刻(秒)
+  zIndex: number;         // レイヤ順
 }
 
 /**
  * オーディオビジュアルパラメータ
+ * - 描画処理に渡す情報
  */
 export interface AudioVisualParameters {
-  currentTime: number;
-  duration: number;
-  waveformData?: Float32Array;
-  frequencyData?: Uint8Array;
+  currentTime: number;     // 現在時刻(秒)
+  duration: number;        // 全体の尺(秒)
+  waveformData?: Float32Array;   // 波形データ(オプション)
+  frequencyData?: Uint8Array;   // 周波数データ(オプション)
 }
 
 /**
@@ -144,6 +176,19 @@ export interface WatermarkEffectConfig extends BaseEffectConfig {
   margin?: Position2D;
 }
 
+/**
+ * エフェクト全体のUnion型
+ * - どのエフェクトかを一元的に表す
+ */
+export type EffectConfig =
+  | BackgroundEffectConfig
+  | TextEffectConfig
+  | WaveformEffectConfig
+  | WatermarkEffectConfig;
+
+/**
+ * エンコーダー関連
+ */
 export interface EncoderService {
   initialize(options: EncoderOptions): Promise<void>;
   addVideoFrame(frame: ImageData): Promise<void>;
@@ -160,6 +205,9 @@ export interface EncoderOptions {
   audioBitrate: number;
 }
 
+/**
+ * エラー処理
+ */
 export enum ErrorType {
   EffectInitFailed = 'EffectInitFailed',
   EffectNotFound = 'EffectNotFound',
@@ -194,11 +242,63 @@ export const ErrorMessages: Record<ErrorType, string> = {
   [ErrorType.ExportCanceled]: 'エクスポートをキャンセルしました',
 };
 
-import { EffectBase } from './EffectBase';
+/**
+ * EffectBase (共通機能を継承するための抽象クラス)
+ * - 実際には src/core/EffectBase.ts に実装を置く
+ */
+export abstract class EffectBase {
+  protected config: EffectConfig;
 
+  constructor(config: EffectConfig) {
+    this.config = config;
+  }
+
+  getConfig(): EffectConfig {
+    return this.config;
+  }
+
+  updateConfig(newConfig: Partial<EffectConfig>): void {
+    this.config = { ...this.config, ...newConfig } as EffectConfig;
+  }
+
+  /**
+   * 表示状態をチェック（startTime, endTime, visible）
+   */
+  isVisible(currentTime: number): boolean {
+    if (!this.config.visible) return false;
+    if (this.config.startTime === undefined && this.config.endTime === undefined) {
+      return true;
+    }
+    if (this.config.startTime !== undefined && currentTime < this.config.startTime) {
+      return false;
+    }
+    if (this.config.endTime !== undefined && currentTime > this.config.endTime) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * エフェクトのz-indexを取得
+   */
+  getZIndex(): number {
+    return this.config.zIndex;
+  }
+
+  /**
+   * 派生クラスで個別実装するCanvas描画処理
+   */
+  abstract render(
+    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    params: AudioVisualParameters
+  ): void;
+}
+
+/**
+ * InspectorProps
+ * - UIでのエフェクト編集用
+ */
 export interface InspectorProps {
   effect: EffectBase | undefined;
   onChange: (newConfig: Partial<EffectConfig>) => void;
 }
-
-export type EffectConfig = BackgroundEffectConfig | TextEffectConfig | WaveformEffectConfig | WatermarkEffectConfig; 

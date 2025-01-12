@@ -1,66 +1,40 @@
-import { FC, useCallback } from 'react';
+// src/components/PlaybackControls.tsx
+import React from 'react';
 
-interface PlaybackControlsProps {
+interface Props {
   currentTime: number;
   duration: number;
   isPlaying: boolean;
   onPlay: () => void;
   onPause: () => void;
+  onStop: () => void;
   onSeek: (time: number) => void;
 }
 
-export const PlaybackControls: FC<PlaybackControlsProps> = ({
+export const PlaybackControls: React.FC<Props> = ({
   currentTime,
   duration,
   isPlaying,
   onPlay,
   onPause,
-  onSeek,
+  onStop,
+  onSeek
 }) => {
-  // 再生/一時停止の切り替え
-  const handlePlayPause = useCallback(() => {
-    if (isPlaying) {
-      onPause();
-    } else {
-      onPlay();
-    }
-  }, [isPlaying, onPlay, onPause]);
-
-  // シーク処理
-  const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const time = parseFloat(e.target.value);
-    onSeek(time);
-  }, [onSeek]);
-
-  // 時間のフォーマット
-  const formatTime = useCallback((time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }, []);
-
-  if (duration === 0) return null;
-
   return (
-    <div className="playback-controls">
-      <button
-        onClick={handlePlayPause}
-        className="play-pause-button"
-      >
-        {isPlaying ? '一時停止' : '再生'}
+    <div>
+      <button onClick={isPlaying ? onPause : onPlay}>
+        {isPlaying ? 'Pause' : 'Play'}
       </button>
-      <div className="seek-container">
-        <span className="time">{formatTime(currentTime)}</span>
-        <input
-          type="range"
-          min="0"
-          max={duration}
-          value={currentTime}
-          onChange={handleSeek}
-          className="seek-bar"
-        />
-        <span className="time">{formatTime(duration)}</span>
-      </div>
+      <button onClick={onStop}>Stop</button>
+      <input
+        type="range"
+        min={0}
+        max={duration}
+        step={0.01}
+        value={currentTime}
+        onChange={(e) => onSeek(parseFloat(e.target.value))}
+      />
+      <span>{currentTime.toFixed(2)} / {duration.toFixed(2)}</span>
     </div>
   );
-}; 
+};

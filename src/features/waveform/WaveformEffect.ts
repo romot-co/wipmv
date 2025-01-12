@@ -17,17 +17,27 @@ export class WaveformEffect extends EffectBase {
     ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
     params: AudioVisualParameters
   ): void {
-    if (!this.isVisible(params.currentTime)) return;
-    if (!params.waveformData) return;
+    if (!this.isVisible(params.currentTime)) {
+      console.debug('WaveformEffect: Not visible at current time', params.currentTime);
+      return;
+    }
+    
+    if (!params.waveformData) {
+      console.debug('WaveformEffect: No waveform data available');
+      return;
+    }
 
     const { position, style, colors, options = {} } = this.config;
     const { width, height } = position;
-    const {
-      barWidth = 2,
-      barSpacing = 1,
-      smoothing = 0.5,
-      mirror = false
-    } = options;
+    
+    console.debug('WaveformEffect: Rendering with config', {
+      position,
+      style,
+      colors,
+      options,
+      dataLength: params.waveformData.length,
+      maxValue: Math.max(...params.waveformData),
+    });
 
     ctx.save();
     try {
@@ -36,9 +46,18 @@ export class WaveformEffect extends EffectBase {
 
       // データの準備
       const dataLength = params.waveformData.length;
+      const barWidth = options.barWidth ?? 2;
+      const barSpacing = options.barSpacing ?? 1;
       const totalBars = Math.floor(width / (barWidth + barSpacing));
       const step = Math.ceil(dataLength / totalBars);
-      const smoothedData = this.smoothData(params.waveformData, smoothing);
+      const smoothedData = this.smoothData(params.waveformData, options.smoothing ?? 0.5);
+
+      console.debug('WaveformEffect: Calculated rendering parameters', {
+        totalBars,
+        step,
+        dataLength,
+        smoothedDataLength: smoothedData.length
+      });
 
       // スタイルの設定
       ctx.fillStyle = colors.primary;
@@ -49,7 +68,7 @@ export class WaveformEffect extends EffectBase {
       }
 
       // 波形の描画
-      let y: number;
+      const { mirror = false } = options;
       for (let i = 0; i < totalBars; i++) {
         const dataIndex = i * step;
         const value = smoothedData[dataIndex] || 0;
@@ -57,46 +76,33 @@ export class WaveformEffect extends EffectBase {
         const x = i * (barWidth + barSpacing);
 
         if (mirror) {
-          // ミラーモード
-          y = (height - barHeight) / 2;
+          const y = (height - barHeight) / 2;
+          console.debug('WaveformEffect: Drawing mirror bar', {
+            x, y, barWidth, barHeight, value
+          });
           ctx.fillRect(x, y, barWidth, barHeight);
-          if (colors.secondary) {
-            ctx.fillStyle = colors.secondary;
-            ctx.fillRect(x, height / 2, barWidth, barHeight / 2);
-            ctx.fillStyle = colors.primary;
-          }
         } else {
-          // 通常モード
-          switch (style) {
-            case 'line':
-              if (i === 0) {
-                ctx.beginPath();
-                ctx.moveTo(x, height - barHeight);
-              } else {
-                ctx.lineTo(x, height - barHeight);
-              }
-              if (i === totalBars - 1) {
-                ctx.stroke();
-              }
-              break;
-
-            case 'bar':
-              ctx.fillRect(x, height - barHeight, barWidth, barHeight);
-              break;
-
-            case 'mirror':
-              y = (height - barHeight) / 2;
-              ctx.fillRect(x, y, barWidth, barHeight);
-              break;
-          }
+          console.debug('WaveformEffect: Drawing normal bar', {
+            x, y: height - barHeight, barWidth, barHeight, value
+          });
+          ctx.fillRect(x, height - barHeight, barWidth, barHeight);
         }
       }
+    } catch (error) {
+      console.error('WaveformEffect: Error during rendering', error);
     } finally {
       ctx.restore();
     }
   }
 
   private smoothData(data: Float32Array, factor: number): Float32Array {
+    console.debug('WaveformEffect: Smoothing data', {
+      dataLength: data.length,
+      factor,
+      firstValue: data[0],
+      lastValue: data[data.length - 1]
+    });
+
     if (factor <= 0) return data;
     if (factor >= 1) factor = 0.9999;
 

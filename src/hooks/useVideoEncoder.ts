@@ -1,123 +1,104 @@
+// src/hooks/useVideoEncoder.ts
+
 import { useCallback, useRef, useState } from 'react';
+import { VideoEncoderService, EncoderConfig } from '../core/VideoEncoderService';
+import { AudioSource } from '../core/types';
 import { EffectManager } from '../core/EffectManager';
 
-interface EncoderConfig {
-  width: number;
-  height: number;
-  frameRate: number;
-  videoBitrate: number;
-  audioBitrate: number;
-  mimeType: string;
+interface UseVideoEncoderReturn {
+  isEncoding: boolean;
+  progress: number;
+  error: string | null;
+  startEncoding: (
+    canvas: HTMLCanvasElement,
+    audioSource: AudioSource,
+    effectManager: EffectManager,
+    config: EncoderConfig
+  ) => Promise<Blob | null>;
 }
 
-export function useVideoEncoder() {
+/**
+ * オフラインエンコードの例: 
+ * - canvas & AudioBuffer からフレームを生成してエンコード
+ */
+export function useVideoEncoder(): UseVideoEncoderReturn {
   const [isEncoding, setIsEncoding] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const encoderRef = useRef<VideoEncoder | null>(null);
-  const chunksRef = useRef<Uint8Array[]>([]);
 
-  const startEncoding = useCallback(async (
-    manager: EffectManager,
-    config: EncoderConfig,
-    onComplete: (blob: Blob) => void
-  ) => {
-    if (isEncoding) return;
-    setIsEncoding(true);
-    setProgress(0);
-    setError(null);
-    chunksRef.current = [];
+  const encoderRef = useRef<VideoEncoderService | null>(null);
 
-    try {
-      // エンコーダーの初期化
-      const encoder = new VideoEncoder({
-        output: (chunk) => {
-          const data = new Uint8Array(chunk.byteLength);
-          chunk.copyTo(data);
-          chunksRef.current.push(data);
-        },
-        error: (e) => {
-          setError(`Encoding error: ${e.message}`);
-          setIsEncoding(false);
+  const startEncoding = useCallback(
+    async (
+      canvas: HTMLCanvasElement,
+      audioSource: AudioSource,
+      effectManager: EffectManager,
+      config: EncoderConfig
+    ): Promise<Blob | null> => {
+      if (isEncoding) return null;
+      setIsEncoding(true);
+      setProgress(0);
+      setError(null);
+
+      try {
+        // EncoderService 初期化
+        const service = new VideoEncoderService(config);
+        encoderRef.current = service;
+        await service.initialize();
+
+        const frameRate = config.frameRate;
+        const audioBuffer = audioSource.buffer;
+        const totalDuration = audioBuffer.duration;
+        const frameCount = Math.floor(totalDuration * frameRate);
+        const samplesPerFrame = Math.floor(audioBuffer.sampleRate / frameRate);
+
+        for (let i = 0; i < frameCount; i++) {
+          const currentSec = i / frameRate;
+          const timestampUsec = Math.floor(currentSec * 1_000_000);
+
+          // 1) Canvas描画
+          //    ここでは "オフライン用に effectManager.render()" → canvas.getContext() 
+          //    timeを渡して描画するなど
+          effectManager.render(currentSec);
+
+          // 2) VideoFrame エンコード
+          await service.encodeVideoFrame(canvas, timestampUsec);
+
+          // 3) AudioData エンコード
+          const startSample = i * samplesPerFrame;
+          await service.encodeAudioBuffer(
+            audioBuffer,
+            startSample,
+            samplesPerFrame,
+            timestampUsec
+          );
+
+          setProgress(Math.floor(((i + 1) / frameCount) * 100));
         }
-      });
 
-      await encoder.configure({
-        codec: 'vp8',
-        width: config.width,
-        height: config.height,
-        bitrate: config.videoBitrate,
-        framerate: config.frameRate,
-      });
-
-      encoderRef.current = encoder;
-
-      // オーディオデータの準備
-      const audioBuffer = manager.getAudioBuffer();
-      if (!audioBuffer) {
-        throw new Error('No audio buffer available');
+        // flush & finalize
+        const mp4Data = await service.finalize();
+        // Blob化
+        const blob = new Blob([mp4Data], { type: 'video/mp4' });
+        return blob;
+      } catch (e) {
+        console.error(e);
+        setError(e instanceof Error ? e.message : 'Unknown Error');
+        return null;
+      } finally {
+        setIsEncoding(false);
+        setProgress(0);
+        encoderRef.current?.dispose();
+        encoderRef.current = null;
       }
-
-      const duration = audioBuffer.duration;
-      const frameCount = Math.ceil(duration * config.frameRate);
-      const frameInterval = 1 / config.frameRate;
-
-      // フレームのエンコード
-      for (let i = 0; i < frameCount; i++) {
-        const currentTime = i * frameInterval;
-        manager.setCurrentTime(currentTime);
-        manager.render();
-
-        const ctx = manager.getContext();
-        const imageData = ctx.getImageData(0, 0, config.width, config.height);
-        const imageBitmap = await createImageBitmap(imageData);
-
-        const frame = new VideoFrame(imageBitmap, {
-          timestamp: Math.round(currentTime * 1000000), // マイクロ秒単位
-          duration: Math.round(frameInterval * 1000000),
-        });
-
-        await encoder.encode(frame);
-        frame.close();
-        imageBitmap.close();
-
-        setProgress(Math.floor((i + 1) / frameCount * 100));
-      }
-
-      await encoder.flush();
-      encoder.close();
-
-      // エンコードされたデータをBlobに変換
-      const blob = new Blob(chunksRef.current, { type: config.mimeType });
-      onComplete(blob);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown encoding error');
-    } finally {
-      setIsEncoding(false);
-      setProgress(0);
-      chunksRef.current = [];
-    }
-  }, [isEncoding]);
-
-  const stopEncoding = useCallback(() => {
-    if (!isEncoding || !encoderRef.current) return;
-
-    try {
-      encoderRef.current.close();
-      encoderRef.current = null;
-      chunksRef.current = [];
-      setIsEncoding(false);
-      setProgress(0);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to stop encoding');
-    }
-  }, [isEncoding]);
+    },
+    [isEncoding]
+  );
 
   return {
     isEncoding,
     progress,
     error,
-    startEncoding,
-    stopEncoding,
+    startEncoding
   };
-} 
+}

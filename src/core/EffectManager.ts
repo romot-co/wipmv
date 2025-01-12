@@ -1,411 +1,141 @@
-import { AudioVisualParameters, BaseEffectConfig, ErrorType, AppError } from './types';
+// EffectManager.ts
+
 import { EffectBase } from './EffectBase';
+import { AudioVisualParameters } from './types';
+import { Renderer } from './Renderer'; // Offscreen+メインCanvas管理を行うクラス(任意)
 
 /**
- * エフェクトマネージャー
- * エフェクトのライフサイクルとレンダリングを管理する
+ * エフェクトマネージャ
+ * - 複数のEffectBaseを管理し、zIndex順に描画
+ * - Renderer(任意) と連携して、OffscreenCanvas → メインCanvasへ描画転送
  */
 export class EffectManager {
-  private canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
-  private effects: Map<string, EffectBase>;
-  private audioBuffer: AudioBuffer | null;
-  private waveformData?: Float32Array;
-  private frequencyData?: Uint8Array;
-  private currentTime: number;
-  private duration: number;
-  private isPlaying: boolean;
-  private offscreen: OffscreenCanvas;
-  private offscreenCtx: OffscreenCanvasRenderingContext2D;
-  private animationFrameId: number | null;
+  private effects: EffectBase[] = [];
+  private renderer?: Renderer; // Rendererがある場合
 
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('Failed to get canvas context');
-    }
-    this.ctx = ctx;
-    this.effects = new Map();
-    this.audioBuffer = null;
-    this.currentTime = 0;
-    this.duration = 0;
-    this.isPlaying = false;
-    this.animationFrameId = null;
-
-    // オフスクリーンキャンバスの初期化
-    this.offscreen = new OffscreenCanvas(canvas.width, canvas.height);
-    const offscreenCtx = this.offscreen.getContext('2d');
-    if (!offscreenCtx) {
-      throw new Error('Failed to get offscreen canvas context');
-    }
-    this.offscreenCtx = offscreenCtx;
-  }
-
-  /**
-   * キャンバスを設定
-   */
-  setCanvas(canvas: HTMLCanvasElement): void {
-    this.canvas = canvas;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      throw new AppError(
-        ErrorType.EffectInitFailed,
-        'Failed to get canvas context'
-      );
-    }
-    this.ctx = ctx;
-
-    // オフスクリーンキャンバスの再初期化
-    this.offscreen = new OffscreenCanvas(canvas.width, canvas.height);
-    const offscreenCtx = this.offscreen.getContext('2d');
-    if (!offscreenCtx) {
-      throw new AppError(
-        ErrorType.EffectInitFailed,
-        'Failed to get offscreen canvas context'
-      );
-    }
-    this.offscreenCtx = offscreenCtx;
-  }
-
-  /**
-   * キャンバスをクリア
-   */
-  clearCanvas(): void {
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.offscreenCtx.clearRect(0, 0, this.offscreen.width, this.offscreen.height);
-  }
-
-  /**
-   * 全てのエフェクトを取得
-   */
-  getEffects(): Map<string, EffectBase> {
-    return this.effects;
+  constructor(renderer?: Renderer) {
+    this.renderer = renderer;
   }
 
   /**
    * エフェクトを追加
+   * - zIndexの昇順でソートして管理
    */
-  addEffect(effect: EffectBase, id: string): void {
-    try {
-      if (this.effects.has(id)) {
-        throw new AppError(
-          ErrorType.EffectAlreadyExists,
-          `Effect with id ${id} already exists`
-        );
-      }
-      this.effects.set(id, effect);
-    } catch (error) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        error instanceof Error ? error.message : 'Failed to add effect'
-      );
-    }
+  public addEffect(effect: EffectBase): void {
+    this.effects.push(effect);
+    this.sortEffectsByZIndex();
   }
 
   /**
    * エフェクトを削除
+   * @param effectOrId 削除対象
    */
-  removeEffect(id: string): void {
-    try {
-      if (!this.effects.has(id)) {
-        throw new AppError(
-          ErrorType.EffectNotFound,
-          `Effect with id ${id} not found`
-        );
-      }
-      this.effects.delete(id);
-    } catch (error) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        error instanceof Error ? error.message : 'Failed to remove effect'
+  public removeEffect(effectOrId: EffectBase | string): void {
+    const id =
+      typeof effectOrId === 'string'
+        ? effectOrId
+        : this.effects.indexOf(effectOrId) >= 0
+        ? this.effects.indexOf(effectOrId)
+        : -1;
+
+    if (typeof effectOrId === 'string') {
+      // IDによる削除の場合、IDが無いと判断が難しい
+      // → もしEffectBaseにも一意のidプロパティがあるならそれで判定してもOK
+      // ここでは単純にzIndex順で配列管理しているため、イメージ的には indexOf などで検索
+      // あるいはエフェクト自身が config.id を持っているならfilter
+      // (実装例)
+      this.effects = this.effects.filter(
+        (effect) => (effect.getConfig() as any).id !== effectOrId
       );
-    }
-  }
-
-  /**
-   * 指定したIDのエフェクトを取得
-   */
-  getEffect(id: string): EffectBase | undefined {
-    return this.effects.get(id);
-  }
-
-  /**
-   * エフェクトを更新
-   */
-  updateEffect(id: string, newConfig: Partial<BaseEffectConfig>): void {
-    try {
-      const effect = this.effects.get(id);
-      if (!effect) {
-        throw new AppError(
-          ErrorType.EffectNotFound,
-          `エフェクトID "${id}" が見つかりません`
-        );
-      }
-
-      effect.updateConfig(newConfig);
-    } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        'エフェクトの更新に失敗しました',
-        error
-      );
-    }
-  }
-
-  /**
-   * オーディオデータを更新
-   */
-  updateAudioData(waveform: Float32Array, frequency: Uint8Array): void {
-    try {
-      this.waveformData = waveform;
-      this.frequencyData = frequency;
-    } catch (error) {
-      throw new AppError(
-        ErrorType.AudioDecodeFailed,
-        error instanceof Error ? error.message : 'Failed to update audio data'
-      );
-    }
-  }
-
-  /**
-   * 現在の再生時間を更新
-   */
-  updateTime(time: number): void {
-    this.currentTime = time;
-  }
-
-  /**
-   * レンダリングを開始
-   */
-  start(): void {
-    if (this.isPlaying) return;
-    this.isPlaying = true;
-    this.render();
-  }
-
-  /**
-   * レンダリングを停止
-   */
-  stop(): void {
-    if (!this.isPlaying) return;
-    this.isPlaying = false;
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-  }
-
-  /**
-   * レンダリングループ
-   */
-  render(): void {
-    // オフスクリーンキャンバスをクリア
-    this.clearCanvas();
-
-    // エフェクトをzIndexの順にソート
-    const sortedEffects = Array.from(this.effects.values()).sort(
-      (a, b) => a.getConfig().zIndex - b.getConfig().zIndex
-    );
-
-    // 各エフェクトをレンダリング
-    for (const effect of sortedEffects) {
-      if (effect.isVisible(this.currentTime)) {
-        effect.render(this.offscreenCtx, {
-          currentTime: this.currentTime,
-          duration: this.duration,
-          waveformData: this.waveformData,
-          frequencyData: this.frequencyData,
-        });
+    } else {
+      // EffectBaseインスタンスそのものを渡された場合
+      const idx = this.effects.indexOf(effectOrId);
+      if (idx !== -1) {
+        this.effects.splice(idx, 1);
       }
     }
-
-    // オフスクリーンの内容をメインキャンバスにコピー
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.ctx.drawImage(this.offscreen, 0, 0);
-
-    // 次のフレームをリクエスト
-    if (this.isPlaying) {
-      this.animationFrameId = requestAnimationFrame(() => this.render());
-    }
   }
 
   /**
-   * 音声の長さを更新
+   * すべてのエフェクトをクリア
    */
-  updateDuration(duration: number): void {
-    this.duration = duration;
+  public clearEffects(): void {
+    this.effects = [];
   }
 
   /**
-   * リソースの解放
+   * 描画処理
+   * @param params AudioVisualParameters (currentTimeなどが入る)
+   * @param manualCtx 外部が直接Canvasを扱いたい場合、ctxを渡すことも可能
    */
-  dispose(): void {
-    this.stop();
-    this.effects.clear();
-    this.audioBuffer = null;
-    this.waveformData = undefined;
-    this.frequencyData = undefined;
-  }
+  public render(
+    params: AudioVisualParameters,
+    manualCtx?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
+  ): void {
+    // Rendererが存在する場合
+    if (this.renderer && !manualCtx) {
+      // 1) Canvasをクリア (オフスクリーン＆メイン)
+      this.renderer.clear();
 
-  /**
-   * エフェクトをzIndexでソート
-   */
-  private getSortedEffects(): EffectBase[] {
-    return Array.from(this.effects.values())
-      .sort((a, b) => a.getConfig().zIndex - b.getConfig().zIndex);
-  }
-
-  /**
-   * エフェクトのzIndexを更新
-   */
-  updateEffectOrder(id: string, newZIndex: number): void {
-    try {
-      const effect = this.effects.get(id);
-      if (!effect) {
-        throw new AppError(
-          ErrorType.EffectNotFound,
-          `エフェクトID "${id}" が見つかりません`
-        );
+      // 2) オフスクリーンCtx取得
+      const ctx = this.renderer.getOffscreenContext();
+      // 3) zIndex順にエフェクト描画
+      for (const effect of this.effects) {
+        // isVisible判定は EffectBase 内部でおこなう
+        effect.render(ctx, params);
       }
+      // 4) Offscreen → メインCanvas転写
+      this.renderer.drawToMain();
+    }
+    // Rendererを使わず、直接ctxが与えられている場合
+    else if (manualCtx) {
+      // 直接ctxをクリア
+      manualCtx.clearRect(0, 0, manualCtx.canvas.width, manualCtx.canvas.height);
 
-      // 現在のzIndexを取得
-      const currentConfig = effect.getConfig();
-      const currentZIndex = currentConfig.zIndex;
-
-      // 他のエフェクトのzIndexを調整
-      for (const [otherId, otherEffect] of this.effects.entries()) {
-        if (otherId !== id) {
-          const otherConfig = otherEffect.getConfig();
-          if (newZIndex > currentZIndex) {
-            // 上に移動する場合
-            if (otherConfig.zIndex > currentZIndex && otherConfig.zIndex <= newZIndex) {
-              otherEffect.updateConfig({ zIndex: otherConfig.zIndex - 1 });
-            }
-          } else {
-            // 下に移動する場合
-            if (otherConfig.zIndex >= newZIndex && otherConfig.zIndex < currentZIndex) {
-              otherEffect.updateConfig({ zIndex: otherConfig.zIndex + 1 });
-            }
-          }
-        }
+      for (const effect of this.effects) {
+        effect.render(manualCtx, params);
       }
-
-      // 対象のエフェクトのzIndexを更新
-      effect.updateConfig({ zIndex: newZIndex });
-    } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        'エフェクトの順序の更新に失敗しました',
-        error
-      );
+    }
+    // どちらも無い (エラー、あるいは描画不要)
+    else {
+      // do nothing
     }
   }
 
   /**
-   * エフェクトを上に移動
+   * エフェクトをzIndexの昇順で並べ直す
    */
-  moveEffectUp(id: string): void {
-    try {
-      const entries = Array.from(this.effects.entries());
-      const index = entries.findIndex(([key]) => key === id);
-      if (index <= 0) return;
-
-      const [prevId, prevEffect] = entries[index - 1];
-      const [currentId, currentEffect] = entries[index];
-
-      // zIndexを交換
-      const prevZIndex = prevEffect.getConfig().zIndex;
-      const currentZIndex = currentEffect.getConfig().zIndex;
-      
-      this.updateEffect(prevId, { zIndex: currentZIndex });
-      this.updateEffect(currentId, { zIndex: prevZIndex });
-    } catch (error) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        error instanceof Error ? error.message : 'Failed to move effect up'
-      );
-    }
+  private sortEffectsByZIndex(): void {
+    this.effects.sort((a, b) => a.getZIndex() - b.getZIndex());
   }
 
   /**
-   * エフェクトを下に移動
+   * エフェクトの参照を取得
    */
-  moveEffectDown(id: string): void {
-    try {
-      const entries = Array.from(this.effects.entries());
-      const index = entries.findIndex(([key]) => key === id);
-      if (index === -1 || index >= entries.length - 1) return;
-
-      const [currentId, currentEffect] = entries[index];
-      const [nextId, nextEffect] = entries[index + 1];
-
-      // zIndexを交換
-      const currentZIndex = currentEffect.getConfig().zIndex;
-      const nextZIndex = nextEffect.getConfig().zIndex;
-      
-      this.updateEffect(currentId, { zIndex: nextZIndex });
-      this.updateEffect(nextId, { zIndex: currentZIndex });
-    } catch (error) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        error instanceof Error ? error.message : 'Failed to move effect down'
-      );
-    }
+  public getEffects(): EffectBase[] {
+    return this.effects;
   }
 
   /**
-   * 音声バッファを取得
+   * Rendererの取得
    */
-  getAudioBuffer(): AudioBuffer | null {
-    return this.audioBuffer;
+  public getRenderer(): Renderer | undefined {
+    return this.renderer;
   }
 
   /**
-   * 音声バッファを設定
+   * Rendererの差し替え（後からセットできるように）
    */
-  setAudioBuffer(buffer: AudioBuffer): void {
-    this.audioBuffer = buffer;
+  public setRenderer(renderer: Renderer) {
+    this.renderer = renderer;
   }
 
   /**
-   * キャンバスを取得
+   * リソース解放（必要なら）
    */
-  getCanvas(): HTMLCanvasElement {
-    return this.canvas;
+  public dispose(): void {
+    // ここでエフェクトに dispose() を呼ぶとか
+    this.effects = [];
+    this.renderer = undefined;
   }
-
-  /**
-   * 現在の時間を設定
-   */
-  setCurrentTime(time: number): void {
-    this.currentTime = time;
-  }
-
-  /**
-   * 現在の時間を取得
-   */
-  getCurrentTime(): number {
-    return this.currentTime;
-  }
-
-  /**
-   * コンテキストを取得
-   */
-  getContext(): CanvasRenderingContext2D {
-    return this.ctx;
-  }
-
-  /**
-   * オフスクリーンコンテキストを取得
-   */
-  getOffscreenContext(): OffscreenCanvasRenderingContext2D {
-    return this.offscreenCtx;
-  }
-} 
+}
