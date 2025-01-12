@@ -1,20 +1,22 @@
 import { BaseEffectConfig } from './base';
 
-export type BackgroundStyle = 'color' | 'image';
-
-export interface ColorBackgroundConfig extends BaseEffectConfig {
+/**
+ * 背景エフェクト設定
+ */
+export interface BackgroundEffectConfig extends BaseEffectConfig {
   type: 'background';
-  style: 'color';
-  color: string;
+  /** 背景色 */
+  color?: string;
+  /** グラデーション設定 */
+  gradient?: {
+    /** グラデーションタイプ */
+    type: 'linear' | 'radial';
+    /** カラー配列 */
+    colors: string[];
+    /** カラーストップ位置（0-1） */
+    stops?: number[];
+  };
 }
-
-export interface ImageBackgroundConfig extends BaseEffectConfig {
-  type: 'background';
-  style: 'image';
-  image: HTMLImageElement;
-}
-
-export type BackgroundEffectConfig = ColorBackgroundConfig | ImageBackgroundConfig;
 
 export interface StoredImageBackgroundConfig extends BaseEffectConfig {
   type: 'image';

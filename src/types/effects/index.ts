@@ -1,16 +1,23 @@
-export * from './base';
-export * from './background';
-export * from './waveform';
-export * from './watermark';
-export * from './text';
-
+import { BaseEffectConfig, EffectType } from './base';
 import { BackgroundEffectConfig } from './background';
 import { WaveformEffectConfig } from './waveform';
+import { TextEffectConfig } from './text';
 import { WatermarkConfig } from './watermark';
-import { TextEffectData } from './text';
 
-export type VisualEffectConfig = 
-  | BackgroundEffectConfig 
-  | WaveformEffectConfig 
-  | WatermarkConfig 
-  | TextEffectData; 
+/**
+ * 視覚エフェクト設定
+ */
+export type VisualEffectConfig =
+  | BackgroundEffectConfig
+  | WaveformEffectConfig
+  | TextEffectConfig
+  | WatermarkConfig;
+
+// 型のエクスポート
+export type {
+  BaseEffectConfig,
+  BackgroundEffectConfig,
+  WaveformEffectConfig,
+  TextEffectConfig,
+  WatermarkConfig as WatermarkEffectConfig
+}; 

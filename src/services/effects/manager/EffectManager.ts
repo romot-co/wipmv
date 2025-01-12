@@ -1,6 +1,10 @@
 import { Effect, EffectConfig } from '../base';
 import { createTextEffect, createWatermarkEffect, TextEffectConfig, WatermarkEffectConfig } from '../effects';
+import { createBackgroundEffect } from '../effects/background';
+import { createWaveformEffect } from '../effects/waveform';
 import { CanvasRenderer } from '../renderer/CanvasRenderer';
+import { BackgroundEffectOptions } from '../effects/background/BackgroundEffect';
+import { WaveformEffectConfig } from '../../../types/effects/waveform';
 
 /**
  * エフェクトマネージャー
@@ -26,6 +30,12 @@ export class EffectManager {
     if (this.isWatermarkConfig(config)) {
       return createWatermarkEffect(config);
     }
+    if (this.isBackgroundConfig(config)) {
+      return createBackgroundEffect(config);
+    }
+    if (this.isWaveformConfig(config)) {
+      return createWaveformEffect(config);
+    }
     throw new Error(`Unknown effect type: ${config.type}`);
   }
 
@@ -35,6 +45,14 @@ export class EffectManager {
 
   private isWatermarkConfig(config: EffectConfig): config is WatermarkEffectConfig {
     return config.type === 'watermark';
+  }
+
+  private isBackgroundConfig(config: EffectConfig): config is BackgroundEffectOptions {
+    return config.type === 'background';
+  }
+
+  private isWaveformConfig(config: EffectConfig): config is WaveformEffectConfig {
+    return config.type === 'waveform';
   }
 
   /**

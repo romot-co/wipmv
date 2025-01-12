@@ -1,5 +1,4 @@
 import { Effect } from '../../base/Effect';
-import { WaveformNode } from '../../nodes/waveform/WaveformNode';
 import { WaveformDataNode } from '../../nodes/waveform/WaveformDataNode';
 import { WaveformStyleNode } from '../../nodes/waveform/WaveformStyleNode';
 import { BlendNode } from '../../nodes/blend/BlendNode';
@@ -7,30 +6,35 @@ import { TransformNode } from '../../nodes/transform/TransformNode';
 import { AudioVisualParameters } from '../../../../types/audio';
 import { BaseEffectConfig } from '../../../../types/effects/base';
 
-export interface WaveformEffectOptions {
-  // 波形の表示スタイル
-  style?: {
-    type: 'line' | 'bar' | 'circle';
-    color: string;
-    width?: number;
-    gap?: number;
-  };
-  // データの処理方法
-  data?: {
+export interface WaveformEffectConfig extends BaseEffectConfig {
+  /** データ処理設定 */
+  data: {
+    /** 増幅率 */
+    amplification?: number;
+    /** スムージング係数（0-1） */
     smoothing?: number;
-    scale?: number;
-    mirror?: boolean;
+    /** 周波数範囲 */
+    range?: {
+      min: number;
+      max: number;
+    };
   };
-  // 表示位置と変形
-  transform?: {
-    position?: { x: number; y: number };
-    scale?: { x: number; y: number };
-    rotation?: number;
-  };
-  // ブレンド設定
-  blend?: {
-    mode?: GlobalCompositeOperation;
-    opacity?: number;
+  /** スタイル設定 */
+  style: {
+    /** 描画スタイル */
+    type: 'waveform-line' | 'waveform-bar' | 'waveform-area';
+    /** 線の色 */
+    color: string;
+    /** 線の太さ */
+    lineWidth?: number;
+    /** 塗りつぶし色（areaタイプのみ） */
+    fillColor?: string;
+    /** バーの間隔（barタイプのみ） */
+    barSpacing?: number;
+    /** 波形の高さ（%） */
+    height?: number;
+    /** 垂直位置（%） */
+    verticalPosition?: number;
   };
 }
 
@@ -39,83 +43,83 @@ export interface WaveformEffectOptions {
  * オーディオデータを視覚化して波形として描画します
  */
 export class WaveformEffect extends Effect {
-  private readonly waveformNode: WaveformNode;
   private readonly dataNode: WaveformDataNode;
   private readonly styleNode: WaveformStyleNode;
   private readonly blendNode: BlendNode;
   private readonly transformNode: TransformNode;
 
-  constructor(options: WaveformEffectOptions = {}) {
-    super('waveform', {
-      type: 'waveform',
-      opacity: options.blend?.opacity ?? 1.0,
-      blendMode: options.blend?.mode ?? 'source-over'
-    });
-
-    // 波形の基本ノード
-    this.waveformNode = new WaveformNode({
-      type: 'waveform'
-    });
+  constructor(config: WaveformEffectConfig) {
+    super(config);
 
     // データ処理ノード
     this.dataNode = new WaveformDataNode({
       type: 'waveform-data',
-      amplification: options.data?.scale ?? 1.0,
-      smoothing: options.data?.smoothing ?? 0.5
+      amplification: config.data.amplification ?? 1.0,
+      smoothing: config.data.smoothing ?? 0.5,
+      range: config.data.range ?? { min: 0, max: 22050 }
     });
 
     // スタイル適用ノード
     this.styleNode = new WaveformStyleNode({
-      type: 'waveform-style',
-      style: options.style?.type === 'bar' ? 'bars' : 'line',
-      color: options.style?.color ?? '#ffffff',
-      lineWidth: options.style?.width ?? 2,
-      height: 1,
-      verticalPosition: 0.5,
-      barWidth: options.style?.width,
-      barSpacing: options.style?.gap
+      type: config.style.type,
+      color: config.style.color,
+      lineWidth: config.style.lineWidth,
+      fillColor: config.style.fillColor,
+      barSpacing: config.style.barSpacing,
+      height: config.style.height,
+      verticalPosition: config.style.verticalPosition
     });
 
     // ブレンドノード
     this.blendNode = new BlendNode({
-      type: 'blend',
-      mode: options.blend?.mode ?? 'source-over',
-      opacity: options.blend?.opacity ?? 1.0
+      mode: config.blendMode ?? 'source-over',
+      opacity: config.opacity ?? 1.0
     });
 
     // 変形ノード
     this.transformNode = new TransformNode({
-      type: 'transform',
-      position: options.transform?.position ?? { x: 0.5, y: 0.5 },
-      scale: options.transform?.scale ?? { x: 1, y: 1 },
-      rotation: options.transform?.rotation ?? 0
+      position: { x: 0.5, y: 0.5 },
+      scale: { x: 1, y: 1 }
     });
 
     // ノードの接続
-    this.waveformNode.setNext(this.dataNode);
-    this.dataNode.setNext(this.styleNode);
-    this.styleNode.setNext(this.blendNode);
-    this.blendNode.setNext(this.transformNode);
+    this.dataNode
+      .setNext(this.styleNode)
+      .setNext(this.blendNode)
+      .setNext(this.transformNode);
 
-    // ルートノードを設定
-    this.rootNode = this.waveformNode;
+    this.rootNode = this.dataNode;
   }
 
   render(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void {
-    if (this.rootNode) {
-      this.rootNode.process(parameters, canvas);
+    if (!this.isVisible(parameters.currentTime)) {
+      return;
     }
+    this.rootNode?.process(parameters, canvas);
   }
+}
 
-  dispose(): void {
-    super.dispose();
-  }
-
-  getConfig(): BaseEffectConfig {
-    return {
-      type: 'waveform',
-      opacity: this.config.opacity,
-      blendMode: this.config.blendMode
-    };
-  }
-} 
+/**
+ * WaveformEffectのファクトリー関数
+ */
+export const createWaveformEffect = (config: Partial<WaveformEffectConfig> = {}): WaveformEffect => {
+  return new WaveformEffect({
+    id: crypto.randomUUID(),
+    type: 'waveform',
+    data: {
+      amplification: 1.0,
+      smoothing: 0.5,
+      range: { min: 0, max: 22050 },
+      ...config.data
+    },
+    style: {
+      type: 'waveform-line',
+      color: '#ffffff',
+      lineWidth: 2,
+      height: 100,
+      verticalPosition: 50,
+      ...config.style
+    },
+    ...config,
+  });
+}; 

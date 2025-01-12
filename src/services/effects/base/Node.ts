@@ -1,32 +1,32 @@
 import { AudioVisualParameters } from '../../../types/audio';
-import { NodeConfig } from './types';
+import { BaseNodeConfig, NodeType } from '../../../types/effects/base';
 
 /**
  * ノードの基底クラス
- * 単一の描画機能を持つ最小単位
+ * 単一の描画責務を持つ最小単位
  */
 export abstract class Node {
-  private next?: Node;
-  protected initialized: boolean = false;
+  protected config: BaseNodeConfig;
+  protected nextNode?: Node;
+
+  constructor(type: NodeType) {
+    this.config = { type };
+  }
 
   /**
    * 次のノードを設定
    */
-  setNext(node: Node): void {
-    this.next = node;
+  setNext(node: Node): Node {
+    this.nextNode = node;
+    return node;
   }
 
   /**
-   * 次のノードを取得
+   * 次のノードに処理を渡す
    */
-  getNext(): Node | undefined {
-    return this.next;
+  protected passToNext(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void {
+    this.nextNode?.process(parameters, canvas);
   }
-
-  /**
-   * ノードの初期化
-   */
-  protected abstract onInitialize(): void;
 
   /**
    * ノードの処理を実行
@@ -34,21 +34,26 @@ export abstract class Node {
   abstract process(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void;
 
   /**
-   * 次のノードに処理を渡す
+   * 設定を取得
    */
-  protected passToNext(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void {
-    this.next?.process(parameters, canvas);
+  getConfig(): BaseNodeConfig {
+    return this.config;
+  }
+
+  /**
+   * 設定を更新
+   */
+  updateConfig(config: Partial<BaseNodeConfig>): void {
+    this.config = {
+      ...this.config,
+      ...config,
+    };
   }
 
   /**
    * リソースを解放
    */
   dispose(): void {
-    this.next?.dispose();
+    this.nextNode?.dispose();
   }
-
-  /**
-   * 設定を取得
-   */
-  abstract getConfig(): NodeConfig;
 } 

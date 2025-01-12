@@ -46,7 +46,6 @@ export type NodeType =
  * ノードの基本設定
  */
 export interface NodeConfig {
-  type: NodeType;
-  opacity?: number;
-  blendMode?: GlobalCompositeOperation;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
 } 

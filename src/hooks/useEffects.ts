@@ -1,97 +1,85 @@
 import { useState, useCallback } from 'react';
-import { VisualEffect } from '../services/effects/core';
-import { 
-  BackgroundEffectConfig, 
-  WaveformEffectConfig, 
-  TextEffectConfig,
-  WatermarkConfig,
-  VisualEffectConfig 
-} from '../types/effects';
-import {
-  createBackgroundEffect,
-  createWaveformEffect,
-  createTextEffect,
-  createWatermarkEffect
-} from '../services/effects/factories';
-import { useEffectManager } from './useEffectManager';
-
-export type EffectType = 'background' | 'waveform' | 'text' | 'watermark';
+import { EffectType } from '../types/effects/base';
+import { VisualEffect, VisualEffectConfig } from '../types/effects';
 
 /**
- * エフェクトのUI状態管理と高レベルな操作を提供するフック
- * useEffectManagerを利用して基本的なCRUD操作を行い、
- * その上でUI特有の状態管理と操作を提供する
+ * エフェクト管理フックの戻り値
  */
-export const useEffects = () => {
-  const manager = useEffectManager();
+interface UseEffectsReturn {
+  /** エフェクトリスト */
+  effects: VisualEffect[];
+  /** 選択中のエフェクト */
+  selectedEffect: VisualEffectConfig | null;
+  /** 選択中のエフェクトタイプ */
+  selectedEffectType: EffectType | null;
+  /** エフェクトの選択 */
+  selectEffect: (type: EffectType | null) => void;
+  /** エフェクトの作成 */
+  createEffect: (type: EffectType, config: VisualEffectConfig) => void;
+  /** エフェクトの更新 */
+  updateEffect: (type: EffectType, config: Partial<VisualEffectConfig>) => void;
+  /** エフェクトの削除 */
+  removeEffect: (type: EffectType) => void;
+  /** エフェクトのクリア */
+  clearEffects: () => void;
+}
+
+/**
+ * エフェクトを管理するフック
+ */
+export function useEffects(): UseEffectsReturn {
+  // エフェクトリスト
+  const [effects, setEffects] = useState<VisualEffect[]>([]);
+  // 選択中のエフェクトタイプ
   const [selectedEffectType, setSelectedEffectType] = useState<EffectType | null>(null);
-  const [selectedEffect, setSelectedEffect] = useState<VisualEffect | null>(null);
 
   // エフェクトの選択
-  const selectEffect = useCallback((effect: VisualEffect | null) => {
-    setSelectedEffect(effect);
-    if (effect) {
-      // エフェクトタイプの判定ロジックを実装
-      // 例: effect.type に基づいて setSelectedEffectType を呼び出す
-    } else {
-      setSelectedEffectType(null);
-    }
+  const selectEffect = useCallback((type: EffectType | null) => {
+    setSelectedEffectType(type);
   }, []);
 
-  // 新しいエフェクトの作成
+  // 選択中のエフェクトを取得
+  const selectedEffect = useCallback(() => {
+    if (!selectedEffectType) return null;
+    return effects.find(effect => effect.type === selectedEffectType)?.config ?? null;
+  }, [effects, selectedEffectType])();
+
+  // エフェクトの作成
   const createEffect = useCallback((type: EffectType, config: VisualEffectConfig) => {
-    let effect: VisualEffect | null = null;
+    setEffects(prev => [...prev, { type, config }]);
+  }, []);
 
-    switch (type) {
-      case 'background':
-        effect = createBackgroundEffect(config as BackgroundEffectConfig);
-        break;
-      case 'waveform':
-        effect = createWaveformEffect(config as WaveformEffectConfig);
-        break;
-      case 'text':
-        effect = createTextEffect(config as TextEffectConfig);
-        break;
-      case 'watermark':
-        effect = createWatermarkEffect(config as WatermarkConfig);
-        break;
+  // エフェクトの更新
+  const updateEffect = useCallback((type: EffectType, config: Partial<VisualEffectConfig>) => {
+    setEffects(prev => prev.map(effect => 
+      effect.type === type
+        ? { ...effect, config: { ...effect.config, ...config } }
+        : effect
+    ));
+  }, []);
+
+  // エフェクトの削除
+  const removeEffect = useCallback((type: EffectType) => {
+    setEffects(prev => prev.filter(effect => effect.type !== type));
+    if (selectedEffectType === type) {
+      setSelectedEffectType(null);
     }
+  }, [selectedEffectType]);
 
-    if (effect) {
-      manager.addEffect(effect);
-      selectEffect(effect);
-    }
-
-    return effect;
-  }, [manager, selectEffect]);
-
-  // 選択中のエフェクトの更新
-  const updateSelectedEffect = useCallback((config: Partial<VisualEffectConfig>) => {
-    if (selectedEffect) {
-      manager.updateEffect(selectedEffect, config);
-    }
-  }, [manager, selectedEffect]);
-
-  // 選択中のエフェクトの削除
-  const removeSelectedEffect = useCallback(() => {
-    if (selectedEffect) {
-      manager.removeEffect(selectedEffect);
-      selectEffect(null);
-    }
-  }, [manager, selectedEffect, selectEffect]);
+  // エフェクトのクリア
+  const clearEffects = useCallback(() => {
+    setEffects([]);
+    setSelectedEffectType(null);
+  }, []);
 
   return {
-    // 基本的なCRUD操作（managerから継承）
-    ...manager,
-    
-    // UI状態
-    selectedEffectType,
+    effects,
     selectedEffect,
-    
-    // UI操作
+    selectedEffectType,
     selectEffect,
     createEffect,
-    updateSelectedEffect,
-    removeSelectedEffect,
+    updateEffect,
+    removeEffect,
+    clearEffects
   };
-}; 
+} 

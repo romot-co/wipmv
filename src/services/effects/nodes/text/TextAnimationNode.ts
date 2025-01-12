@@ -1,47 +1,22 @@
-import { BaseEffectNode } from '../base/BaseEffectNode';
+import { BaseEffectNode } from '../../base/BaseEffectNode';
 import { AudioVisualParameters } from '../../../../types/audio';
-import { BaseNodeConfig } from '../../../../types/effects/base';
-
-export type TextAnimation = 'none' | 'fadeIn' | 'fadeOut' | 'slideIn' | 'slideOut';
-
-export interface TextAnimationOptions {
-  animation: TextAnimation;
-  startTime: number;
-  endTime: number;
-  fadeInDuration?: number;
-  fadeOutDuration?: number;
-  slideDistance?: number;
-}
-
-export interface TextAnimationNodeConfig extends BaseNodeConfig {
-  type: 'text-animation';
-  animation: TextAnimation;
-  startTime: number;
-  endTime: number;
-  fadeInDuration: number;
-  fadeOutDuration: number;
-  slideDistance: number;
-}
+import { TextAnimationConfig } from '../../../../types/effects/text';
 
 /**
- * テキストのアニメーションを処理するノード
+ * テキストのアニメーションを適用するノード
  */
 export class TextAnimationNode extends BaseEffectNode {
-  private readonly animation: TextAnimation;
-  private readonly startTime: number;
-  private readonly endTime: number;
-  private readonly fadeInDuration: number;
-  private readonly fadeOutDuration: number;
-  private readonly slideDistance: number;
+  private type: TextAnimationConfig['type'];
+  private duration: number;
+  private delay: number;
+  private easing: string;
 
-  constructor(options: TextAnimationOptions) {
+  constructor(config: TextAnimationConfig) {
     super();
-    this.animation = options.animation;
-    this.startTime = options.startTime;
-    this.endTime = options.endTime;
-    this.fadeInDuration = options.fadeInDuration ?? 500;
-    this.fadeOutDuration = options.fadeOutDuration ?? 500;
-    this.slideDistance = options.slideDistance ?? 100;
+    this.type = config.type;
+    this.duration = config.duration;
+    this.delay = config.delay ?? 0;
+    this.easing = config.easing ?? 'linear';
   }
 
   protected onInitialize(): void {
@@ -52,80 +27,93 @@ export class TextAnimationNode extends BaseEffectNode {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const currentTime = parameters.currentTime;
-    
-    // 表示時間外の場合はスキップ
-    if (currentTime < this.startTime || currentTime > this.endTime) {
-      return;
-    }
-
     ctx.save();
 
-    // アニメーション効果の適用
-    let opacity = 1;
-    let offsetX = 0;
-    const offsetY = 0;
-
-    switch (this.animation) {
-      case 'fadeIn':
-        opacity = this.calculateFadeIn(currentTime);
+    // アニメーションの進行度を計算
+    const progress = this.calculateProgress(parameters.currentTime);
+    
+    // アニメーションの適用
+    switch (this.type) {
+      case 'fade':
+        this.applyFadeAnimation(ctx, progress);
         break;
-      case 'fadeOut':
-        opacity = this.calculateFadeOut(currentTime);
+      case 'slide':
+        this.applySlideAnimation(ctx, progress, canvas.width);
         break;
-      case 'slideIn':
-        offsetX = this.calculateSlideIn(currentTime);
-        break;
-      case 'slideOut':
-        offsetX = this.calculateSlideOut(currentTime);
+      case 'none':
+      default:
+        // アニメーションなし
         break;
     }
 
-    // 変換の適用
-    ctx.globalAlpha = opacity;
-    ctx.translate(offsetX, offsetY);
-
-    // 次のノードに処理を渡す
     this.passToNext(parameters, canvas);
 
     ctx.restore();
   }
 
-  private calculateFadeIn(currentTime: number): number {
-    const elapsed = currentTime - this.startTime;
-    return Math.min(1, elapsed / this.fadeInDuration);
+  private calculateProgress(currentTime: number): number {
+    const elapsedTime = currentTime - this.delay;
+    if (elapsedTime < 0) return 0;
+    if (elapsedTime > this.duration) return 1;
+
+    let progress = elapsedTime / this.duration;
+
+    // イージング関数の適用
+    switch (this.easing) {
+      case 'easeIn':
+        progress = progress * progress;
+        break;
+      case 'easeOut':
+        progress = 1 - (1 - progress) * (1 - progress);
+        break;
+      case 'easeInOut':
+        progress = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        break;
+      case 'linear':
+      default:
+        // 線形の進行
+        break;
+    }
+
+    return progress;
   }
 
-  private calculateFadeOut(currentTime: number): number {
-    const remaining = this.endTime - currentTime;
-    return Math.min(1, remaining / this.fadeOutDuration);
+  private applyFadeAnimation(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, progress: number): void {
+    ctx.globalAlpha *= progress;
   }
 
-  private calculateSlideIn(currentTime: number): number {
-    const elapsed = currentTime - this.startTime;
-    const progress = Math.min(1, elapsed / this.fadeInDuration);
-    return this.slideDistance * (1 - progress);
-  }
-
-  private calculateSlideOut(currentTime: number): number {
-    const remaining = this.endTime - currentTime;
-    const progress = Math.min(1, remaining / this.fadeOutDuration);
-    return this.slideDistance * (1 - progress);
+  private applySlideAnimation(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, progress: number, width: number): void {
+    const offset = width * (1 - progress);
+    ctx.translate(offset, 0);
   }
 
   dispose(): void {
     // リソースの解放は不要
   }
 
-  getConfig(): TextAnimationNodeConfig {
+  getConfig(): TextAnimationConfig {
     return {
-      type: 'text-animation',
-      animation: this.animation,
-      startTime: this.startTime,
-      endTime: this.endTime,
-      fadeInDuration: this.fadeInDuration,
-      fadeOutDuration: this.fadeOutDuration,
-      slideDistance: this.slideDistance
+      type: this.type,
+      duration: this.duration,
+      delay: this.delay,
+      easing: this.easing as TextAnimationConfig['easing']
     };
+  }
+
+  updateConfig(config: Partial<TextAnimationConfig>): void {
+    if (config.type !== undefined) {
+      this.type = config.type;
+    }
+    if (config.duration !== undefined) {
+      this.duration = config.duration;
+    }
+    if (config.delay !== undefined) {
+      this.delay = config.delay;
+    }
+    if (config.easing !== undefined) {
+      this.easing = config.easing;
+    }
   }
 } 

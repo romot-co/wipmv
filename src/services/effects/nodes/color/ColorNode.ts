@@ -3,10 +3,10 @@ import { AudioVisualParameters } from '../../../../types/audio';
 import { BaseNodeConfig } from '../../../../types/effects/base';
 
 /**
- * 背景ノードの設定
+ * カラーノードの設定
  */
-export interface BackgroundNodeConfig extends BaseNodeConfig {
-  /** 背景色 */
+export interface ColorNodeConfig extends BaseNodeConfig {
+  /** 塗りつぶし色 */
   color?: string;
   /** グラデーション設定 */
   gradient?: {
@@ -20,9 +20,9 @@ export interface BackgroundNodeConfig extends BaseNodeConfig {
 }
 
 /**
- * 背景を描画するノード
+ * 単色またはグラデーションで塗りつぶすノード
  */
-export class BackgroundNode extends Node {
+export class ColorNode extends Node {
   private readonly color: string;
   private readonly gradient?: {
     type: 'linear' | 'radial';
@@ -30,8 +30,8 @@ export class BackgroundNode extends Node {
     stops?: number[];
   };
 
-  constructor(config: BackgroundNodeConfig) {
-    super('background');
+  constructor(config: ColorNodeConfig) {
+    super('color');
     this.color = config.color ?? '#555555';
     this.gradient = config.gradient;
   }

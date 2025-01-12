@@ -1,3 +1,6 @@
+import { BackgroundEffectOptions } from '../services/effects/effects/background/BackgroundEffect';
+import { WaveformEffectConfig } from '../types/effects/waveform';
+
 export const EFFECT_TYPES = {
   WAVEFORM: 'waveform',
   BAR_DRAWER: 'barDrawer',
@@ -43,4 +46,40 @@ export const DEFAULT_CANVAS_SIZE_OPTIONS = {
 
 export const DEFAULT_BLEND_OPTIONS = {
   blendMode: 'source-over' as GlobalCompositeOperation,
-} as const; 
+} as const;
+
+/**
+ * エフェクトのデフォルト設定
+ */
+export const DEFAULT_BACKGROUND_EFFECT: BackgroundEffectOptions = {
+  color: '#555555',
+  gradient: {
+    type: 'linear',
+    colors: ['#000000', '#ffffff'],
+    stops: [0, 1]
+  },
+  opacity: 1.0,
+  blendMode: 'source-over'
+};
+
+/**
+ * 波形エフェクトのデフォルト設定
+ */
+export const DEFAULT_WAVEFORM_EFFECT: WaveformEffectConfig = {
+  type: 'waveform',
+  data: {
+    amplification: 1.0,
+    smoothing: 0.5
+  },
+  style: {
+    type: 'bars',
+    color: '#ffffff',
+    lineWidth: 2,
+    height: 0.8,
+    verticalPosition: 50,
+    barWidth: 10,
+    barSpacing: 2
+  },
+  opacity: 1.0,
+  blendMode: 'source-over'
+}; 

@@ -4,21 +4,32 @@ import { Inspector } from './components/inspector/Inspector';
 import { useEffects } from './hooks/useEffects';
 import { usePreview } from './hooks/usePreview';
 import { VisualEffectConfig } from './types/effects';
-import { EffectType } from './hooks/useEffects';
+import { EffectType } from './types/effects/base';
 import './App.css';
 
-function App() {
+/**
+ * アプリケーションのメインコンポーネント
+ * 
+ * エフェクトの管理とプレビュー機能を統合し、
+ * ユーザーインターフェースを提供する
+ */
+export function App() {
+  // オーディオの状態管理
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
 
+  // エフェクト管理フック
   const {
     effects,
+    selectedEffect,
     selectedEffectType,
-    setSelectedEffectType,
-    initializeDefaultEffects,
+    selectEffect,
+    createEffect,
     updateEffect,
-    getEffectConfig
+    removeEffect,
+    clearEffects
   } = useEffects();
 
+  // プレビュー管理フック
   const {
     isPlaying,
     currentTime,
@@ -28,6 +39,7 @@ function App() {
     initializeCanvas,
     updateEffects,
     play,
+    pause,
     stop
   } = usePreview();
 
@@ -38,7 +50,7 @@ function App() {
       const audioContext = new AudioContext();
       const buffer = await audioContext.decodeAudioData(arrayBuffer);
       setAudioBuffer(buffer);
-      setDuration(buffer.duration * 1000);
+      setDuration(buffer.duration * 1000); // 秒からミリ秒に変換
     } catch (error) {
       console.error('オーディオファイルの読み込みに失敗しました:', error);
     }
@@ -47,26 +59,36 @@ function App() {
   // 再生/停止の切り替え
   const handlePlayPause = useCallback(() => {
     if (isPlaying) {
-      stop();
+      pause();
     } else if (audioBuffer) {
       play(audioBuffer);
     }
-  }, [isPlaying, play, stop, audioBuffer]);
+  }, [isPlaying, play, pause, audioBuffer]);
 
-  // エフェクトの初期化
-  useEffect(() => {
-    initializeDefaultEffects();
-  }, [initializeDefaultEffects]);
+  // エフェクトの選択
+  const handleSelectEffect = useCallback((type: EffectType | null) => {
+    selectEffect(type);
+  }, [selectEffect]);
+
+  // エフェクトの更新
+  const handleEffectUpdate = useCallback((type: EffectType, config: Partial<VisualEffectConfig>) => {
+    updateEffect(type, config);
+  }, [updateEffect]);
+
+  // エフェクトの削除
+  const handleEffectRemove = useCallback((type: EffectType) => {
+    removeEffect(type);
+  }, [removeEffect]);
+
+  // エフェクトの作成
+  const handleEffectCreate = useCallback((type: EffectType, config: VisualEffectConfig) => {
+    createEffect(type, config);
+  }, [createEffect]);
 
   // エフェクトの更新監視
   useEffect(() => {
     updateEffects(effects);
   }, [effects, updateEffects]);
-
-  // インスペクタのエフェクト更新ハンドラー
-  const handleEffectUpdate = useCallback((type: EffectType, config: VisualEffectConfig) => {
-    updateEffect(type, config);
-  }, [updateEffect]);
 
   return (
     <div className="app">
@@ -77,28 +99,30 @@ function App() {
       <main className="app-main">
         <div className="preview-container">
           <PreviewPlayer
-            isPlaying={isPlaying}
             currentTime={currentTime}
             duration={duration}
+            isPlaying={isPlaying}
             audioBuffer={audioBuffer}
+            effects={effects}
+            selectedEffectType={selectedEffectType}
             onPlayPause={handlePlayPause}
             onTimeUpdate={setCurrentTime}
             onDrop={handleAudioDrop}
             onCanvasInit={initializeCanvas}
-            onSelectEffect={setSelectedEffectType}
+            onSelectEffect={handleSelectEffect}
           />
         </div>
 
-        <div className="controls-container">
+        <div className="inspector-container">
           <Inspector
-            selectedEffect={selectedEffectType ? getEffectConfig(selectedEffectType) : null}
+            selectedEffect={selectedEffect}
             effectType={selectedEffectType}
             onEffectUpdate={handleEffectUpdate}
+            onEffectRemove={handleEffectRemove}
+            onEffectCreate={handleEffectCreate}
           />
         </div>
       </main>
     </div>
   );
 }
-
-export default App;

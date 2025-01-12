@@ -1,40 +1,39 @@
-import { BaseEffectNode } from '../../base/BaseEffectNode';
+import { Node } from '../../base/Node';
 import { AudioVisualParameters } from '../../../../types/audio';
 import { BaseNodeConfig } from '../../../../types/effects/base';
 
-export interface WaveformDataOptions {
+/**
+ * 波形データノードの設定
+ */
+export interface WaveformDataConfig extends BaseNodeConfig {
+  /** 増幅率 */
   amplification?: number;
+  /** スムージング係数（0-1） */
   smoothing?: number;
-}
-
-interface WaveformDataNodeConfig extends BaseNodeConfig {
-  type: 'waveform-data';
-  amplification: number;
-  smoothing: number;
+  /** 周波数範囲 */
+  range?: {
+    min: number;
+    max: number;
+  };
 }
 
 /**
  * 波形データを処理するノード
  * データの正規化とスムージングを担当
  */
-export class WaveformDataNode extends BaseEffectNode {
-  private readonly amplification: number;
-  private readonly smoothing: number;
+export class WaveformDataNode extends Node {
+  private amplification: number;
+  private smoothing: number;
+  private range: { min: number; max: number };
   private lastValues: number[] = [];
 
-  constructor(options: WaveformDataOptions) {
-    super();
-    this.amplification = options.amplification ?? 1.0;
-    this.smoothing = options.smoothing ?? 0.5;
+  constructor(config: WaveformDataConfig) {
+    super('waveform-data');
+    this.amplification = config.amplification ?? 1.0;
+    this.smoothing = config.smoothing ?? 0.5;
+    this.range = config.range ?? { min: 0, max: 22050 };
   }
 
-  protected onInitialize(): void {
-    // 初期化は不要
-  }
-
-  /**
-   * 波形データを処理します
-   */
   process(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void {
     if (!parameters.timeData[0]) return;
 
@@ -58,17 +57,5 @@ export class WaveformDataNode extends BaseEffectNode {
     // 処理したデータを次のノードに渡す
     parameters.timeData[0] = processedData;
     this.passToNext(parameters, canvas);
-  }
-
-  dispose(): void {
-    this.lastValues = [];
-  }
-
-  getConfig(): WaveformDataNodeConfig {
-    return {
-      type: 'waveform-data',
-      amplification: this.amplification,
-      smoothing: this.smoothing
-    };
   }
 } 

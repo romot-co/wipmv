@@ -1,6 +1,6 @@
-import { BaseEffectConfig, EffectType } from '../../../../types/effects/base';
+import { BaseEffectConfig, EffectType } from '../../../types/effects/base';
 import { Node } from './Node';
-import { AudioVisualParameters } from '../../../../types/audio';
+import { AudioVisualParameters } from '../../../types/audio';
 
 /**
  * エフェクトの基底クラス
@@ -8,11 +8,9 @@ import { AudioVisualParameters } from '../../../../types/audio';
  */
 export abstract class Effect {
   protected config: BaseEffectConfig;
-  protected type: EffectType;
   protected rootNode?: Node;
 
-  constructor(type: EffectType = 'base', config: BaseEffectConfig = { type: 'base' }) {
-    this.type = type;
+  constructor(config: BaseEffectConfig) {
     this.config = config;
   }
 
@@ -20,7 +18,7 @@ export abstract class Effect {
    * エフェクトの種類を取得
    */
   getType(): EffectType {
-    return this.type;
+    return this.config.type;
   }
 
   /**
@@ -56,6 +54,10 @@ export abstract class Effect {
    * エフェクトが表示可能かどうかを判定
    */
   protected isVisible(currentTime: number): boolean {
+    if (!this.config.visible) {
+      return false;
+    }
+
     const { startTime, endTime } = this.config;
     if (startTime === undefined || endTime === undefined) {
       return true;

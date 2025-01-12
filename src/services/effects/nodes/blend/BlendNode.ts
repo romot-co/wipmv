@@ -1,23 +1,18 @@
-import { BaseEffectNode } from './BaseEffectNode';
+import { BaseEffectNode } from '../../base/BaseEffectNode';
 import { AudioVisualParameters } from '../../../../types/audio';
-import { BlendNodeConfig } from '../../../../types/effects/base';
-
-export interface BlendNodeOptions {
-  mode: GlobalCompositeOperation;
-  opacity?: number;
-}
+import { BlendNodeOptions } from '../../../../types/effects/base';
 
 /**
  * ブレンドモードを適用するノード
  */
 export class BlendNode extends BaseEffectNode {
-  private readonly mode: GlobalCompositeOperation;
-  private readonly opacity: number;
+  private mode: GlobalCompositeOperation;
+  private opacity: number;
 
   constructor(options: BlendNodeOptions) {
     super();
     this.mode = options.mode;
-    this.opacity = options.opacity ?? 1.0;
+    this.opacity = options.opacity;
   }
 
   protected onInitialize(): void {
@@ -41,11 +36,19 @@ export class BlendNode extends BaseEffectNode {
     // リソースの解放は不要
   }
 
-  getConfig(): BlendNodeConfig {
+  getConfig(): BlendNodeOptions {
     return {
-      type: 'blend',
       mode: this.mode,
       opacity: this.opacity
     };
+  }
+
+  updateConfig(config: Partial<BlendNodeOptions>): void {
+    if (config.mode !== undefined) {
+      this.mode = config.mode;
+    }
+    if (config.opacity !== undefined) {
+      this.opacity = config.opacity;
+    }
   }
 } 

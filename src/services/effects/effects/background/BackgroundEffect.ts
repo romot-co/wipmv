@@ -1,43 +1,65 @@
 import { Effect } from '../../base/Effect';
-import { BackgroundNode } from '../../nodes/background/BackgroundNode';
+import { ColorNode } from '../../nodes/color/ColorNode';
+import { ImageNode } from '../../nodes/image/ImageNode';
 import { BlendNode } from '../../nodes/blend/BlendNode';
 import { TransformNode } from '../../nodes/transform/TransformNode';
 import { AudioVisualParameters } from '../../../../types/audio';
-import { EffectConfig } from '../../../../types/effects/base';
+import { BaseEffectConfig } from '../../../../types/effects/base';
 
-export interface BackgroundEffectOptions {
+export interface BackgroundEffectConfig extends BaseEffectConfig {
+  /** 背景色 */
   color?: string;
+  /** グラデーション設定 */
   gradient?: {
+    /** グラデーションタイプ */
     type: 'linear' | 'radial';
+    /** カラーストップの色 */
     colors: string[];
+    /** カラーストップの位置（0-1） */
     stops?: number[];
   };
-  opacity?: number;
-  blendMode?: GlobalCompositeOperation;
+  /** 背景画像 */
+  image?: {
+    /** 画像データ */
+    data: HTMLImageElement;
+    /** 画像のスケールモード */
+    scaleMode?: 'cover' | 'contain' | 'stretch';
+  };
 }
 
 /**
  * 背景エフェクト
- * 単色または gradient による背景を描画します
+ * 単色、グラデーション、または画像による背景を描画します
  */
 export class BackgroundEffect extends Effect {
-  private readonly backgroundNode: BackgroundNode;
+  private readonly colorNode: ColorNode;
+  private readonly imageNode?: ImageNode;
   private readonly blendNode: BlendNode;
   private readonly transformNode: TransformNode;
 
-  constructor(options: BackgroundEffectOptions) {
-    super();
+  constructor(config: BackgroundEffectConfig) {
+    super(config);
 
-    // 背景ノードの設定
-    this.backgroundNode = new BackgroundNode({
-      color: options.color ?? '#000000',
-      gradient: options.gradient
+    // カラーノードの設定
+    this.colorNode = new ColorNode({
+      type: 'color',
+      color: config.color ?? '#555555',
+      gradient: config.gradient
     });
+
+    // 画像ノードの設定（画像が指定されている場合のみ）
+    if (config.image?.data) {
+      this.imageNode = new ImageNode({
+        type: 'image',
+        image: config.image.data,
+        scaleMode: config.image.scaleMode
+      });
+    }
 
     // ブレンドノードの設定
     this.blendNode = new BlendNode({
-      mode: options.blendMode ?? 'source-over',
-      opacity: options.opacity ?? 1.0
+      mode: config.blendMode ?? 'source-over',
+      opacity: config.opacity ?? 1.0
     });
 
     // 変形ノードの設定（背景は常にキャンバス全体をカバー）
@@ -47,27 +69,37 @@ export class BackgroundEffect extends Effect {
     });
 
     // ノードの接続
-    this.backgroundNode
-      .setNext(this.blendNode)
-      .setNext(this.transformNode);
+    if (this.imageNode) {
+      // 画像がある場合は、色の上に画像を重ねる
+      this.colorNode
+        .setNext(this.imageNode)
+        .setNext(this.blendNode)
+        .setNext(this.transformNode);
+    } else {
+      // 画像がない場合は、色のみ
+      this.colorNode
+        .setNext(this.blendNode)
+        .setNext(this.transformNode);
+    }
+
+    this.rootNode = this.colorNode;
   }
 
   render(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void {
-    this.backgroundNode.process(parameters, canvas);
+    if (!this.isVisible(parameters.currentTime)) {
+      return;
+    }
+    this.rootNode?.process(parameters, canvas);
   }
+}
 
-  dispose(): void {
-    this.backgroundNode.dispose();
-    this.blendNode.dispose();
-    this.transformNode.dispose();
-  }
-
-  getConfig(): EffectConfig {
-    return {
-      type: 'background',
-      ...this.backgroundNode.getConfig(),
-      ...this.blendNode.getConfig(),
-      ...this.transformNode.getConfig()
-    };
-  }
-} 
+/**
+ * BackgroundEffectのファクトリー関数
+ */
+export const createBackgroundEffect = (config: Partial<BackgroundEffectConfig> = {}): BackgroundEffect => {
+  return new BackgroundEffect({
+    id: crypto.randomUUID(),
+    type: 'background',
+    ...config,
+  });
+}; 
