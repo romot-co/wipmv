@@ -1,52 +1,83 @@
-import { useState, useCallback, useRef } from 'react';
-import { VisualEffect, VisualEffectManager } from '../services/effects/core';
-import { VisualEffectConfig } from '../types';
+import { useCallback, useRef, useState } from 'react';
+import { EffectManager } from '../core/EffectManager';
+import { EffectBase } from '../core/EffectBase';
 
-export interface EffectManagerOperations {
-  addEffect: (effect: VisualEffect) => void;
-  removeEffect: (effect: VisualEffect) => void;
-  updateEffect: (effect: VisualEffect, config: Partial<VisualEffectConfig>) => void;
-  getEffects: () => VisualEffect[];
-  clearEffects: () => void;
+interface EffectManagerState {
+  manager: EffectManager | null;
+  error: Error | null;
+  isReady: boolean;
+  setManager: (manager: EffectManager) => void;
+  addEffect: (effect: EffectBase, id: string) => void;
+  removeEffect: (id: string) => void;
+  dispose: () => void;
 }
 
 /**
- * エフェクトの基本的なCRUD操作を提供するフック
- * UIに依存しない低レベルな操作のみを扱う
+ * エフェクトマネージャーを管理するフック
+ * エフェクトの追加・削除・更新を行う
  */
-export const useEffectManager = (): EffectManagerOperations => {
-  const managerRef = useRef<VisualEffectManager>(new VisualEffectManager());
-  const [effects, setEffects] = useState<VisualEffect[]>([]);
+export const useEffectManager = (): EffectManagerState => {
+  const managerRef = useRef<EffectManager | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [isReady, setIsReady] = useState(false);
 
-  const addEffect = useCallback((effect: VisualEffect) => {
-    managerRef.current.registerEffect(effect);
-    setEffects(prev => [...prev, effect]);
+  const setManager = useCallback((manager: EffectManager) => {
+    try {
+      if (managerRef.current) {
+        managerRef.current.dispose();
+      }
+      managerRef.current = manager;
+      setIsReady(true);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error('Failed to set manager'));
+      setIsReady(false);
+    }
   }, []);
 
-  const removeEffect = useCallback((effect: VisualEffect) => {
-    managerRef.current.unregisterEffect(effect);
-    setEffects(prev => prev.filter(e => e !== effect));
+  const addEffect = useCallback((effect: EffectBase, id: string) => {
+    try {
+      if (!managerRef.current) {
+        throw new Error('Effect manager is not initialized');
+      }
+      managerRef.current.addEffect(effect, id);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error('Failed to add effect'));
+    }
   }, []);
 
-  const updateEffect = useCallback((effect: VisualEffect, config: Partial<VisualEffectConfig>) => {
-    effect.updateConfig(config);
-    setEffects(prev => [...prev]); // トリガー再レンダリング
+  const removeEffect = useCallback((id: string) => {
+    try {
+      if (!managerRef.current) {
+        throw new Error('Effect manager is not initialized');
+      }
+      managerRef.current.removeEffect(id);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error('Failed to remove effect'));
+    }
   }, []);
 
-  const getEffects = useCallback(() => {
-    return effects;
-  }, [effects]);
-
-  const clearEffects = useCallback(() => {
-    effects.forEach(effect => managerRef.current.unregisterEffect(effect));
-    setEffects([]);
-  }, [effects]);
+  const dispose = useCallback(() => {
+    try {
+      if (!managerRef.current) return;
+      managerRef.current.dispose();
+      managerRef.current = null;
+      setIsReady(false);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error('Failed to dispose manager'));
+    }
+  }, []);
 
   return {
+    manager: managerRef.current,
+    error,
+    isReady,
+    setManager,
     addEffect,
     removeEffect,
-    updateEffect,
-    getEffects,
-    clearEffects,
+    dispose,
   };
 }; 

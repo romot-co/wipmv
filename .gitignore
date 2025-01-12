@@ -25,6 +25,7 @@ dist-ssr
 
 # Spec
 src/doc/spec.md
+src/doc/prompt.md
 
 # Workinglog
 workinglog.md
