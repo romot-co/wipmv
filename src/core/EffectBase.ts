@@ -1,64 +1,55 @@
-import { AudioVisualParameters, BaseEffectConfig, EffectType } from './types';
+import { AudioVisualParameters, EffectConfig } from './types';
 
 /**
  * エフェクトの基底クラス
- * 各エフェクトの共通機能を提供する
  */
 export abstract class EffectBase {
-  protected config: BaseEffectConfig;
+  protected config: EffectConfig;
 
-  constructor(config: BaseEffectConfig) {
+  constructor(config: EffectConfig) {
     this.config = config;
   }
 
   /**
-   * エフェクトの種類を取得
+   * 設定を取得
    */
-  getType(): EffectType {
-    return this.config.type;
-  }
-
-  /**
-   * 現在の設定を取得
-   */
-  getConfig(): BaseEffectConfig {
+  getConfig(): EffectConfig {
     return this.config;
   }
 
   /**
    * 設定を更新
    */
-  updateConfig(newConfig: Partial<BaseEffectConfig>): void {
-    this.config = {
-      ...this.config,
-      ...newConfig,
-    };
+  updateConfig(newConfig: Partial<EffectConfig>): void {
+    this.config = { ...this.config, ...newConfig } as EffectConfig;
   }
 
   /**
-   * エフェクトを描画
+   * 表示状態をチェック
    */
-  abstract render(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void;
+  isVisible(currentTime: number): boolean {
+    if (!this.config.visible) return false;
+    
+    // 開始時間と終了時間が設定されていない場合は常に表示
+    if (this.config.startTime === undefined && this.config.endTime === undefined) {
+      return true;
+    }
 
-  /**
-   * リソースを解放
-   */
-  dispose(): void {
-    // 継承先で必要に応じてオーバーライド
-  }
-
-  /**
-   * エフェクトが表示可能かどうかを判定
-   */
-  protected isVisible(currentTime: number): boolean {
-    if (!this.config.visible) {
+    // 開始時間のチェック
+    if (this.config.startTime !== undefined && currentTime < this.config.startTime) {
       return false;
     }
 
-    const { startTime, endTime } = this.config;
-    if (startTime === undefined || endTime === undefined) {
-      return true;
+    // 終了時間のチェック
+    if (this.config.endTime !== undefined && currentTime > this.config.endTime) {
+      return false;
     }
-    return currentTime >= startTime && currentTime <= endTime;
+
+    return true;
   }
+
+  /**
+   * エフェクトをレンダリング
+   */
+  abstract render(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, params: AudioVisualParameters): void;
 } 

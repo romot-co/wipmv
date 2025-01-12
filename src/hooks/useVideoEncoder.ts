@@ -1,98 +1,92 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
-import { EncoderOptions } from '../core/types';
+import { useState, useCallback } from 'react';
+import { ErrorType, AppError } from '../core/types';
+import { EffectManager } from '../core/EffectManager';
 import { EncoderService } from '../core/EncoderService';
 
-interface VideoEncoderState {
-  isEncoding: boolean;
-  progress: number;
-  error: Error | null;
-  startEncoding: (canvas: HTMLCanvasElement, duration: number) => Promise<void>;
-  stopEncoding: () => void;
-}
-
-/**
- * ビデオエンコーディングを管理するフック
- * エンコーダーの初期化、フレームのエンコード、データの管理を行う
- */
-export const useVideoEncoder = (): VideoEncoderState => {
+export const useVideoEncoder = () => {
   const [isEncoding, setIsEncoding] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<Error | null>(null);
-  const encoderRef = useRef<EncoderService | null>(null);
 
-  // エンコーダーのクリーンアップ
-  useEffect(() => {
-    return () => {
-      if (encoderRef.current) {
-        encoderRef.current.dispose();
-      }
-    };
-  }, []);
+  const startEncoding = useCallback(async (manager: EffectManager, audioFile: File) => {
+    if (isEncoding) return;
 
-  const startEncoding = useCallback(async (canvas: HTMLCanvasElement, duration: number) => {
     try {
       setIsEncoding(true);
       setProgress(0);
       setError(null);
 
-      // エンコーダーの初期化
-      const options: EncoderOptions = {
-        width: canvas.width,
-        height: canvas.height,
-        frameRate: 30,
-        videoBitrate: 5000000,
-        audioBitrate: 128000,
-      };
-
+      // エンコーデーの初期化
+      const canvas = manager.getCanvas();
       const encoder = new EncoderService(
-        options.width,
-        options.height,
-        options.frameRate,
-        options.videoBitrate,
-        options.audioBitrate
+        canvas.width,
+        canvas.height,
+        30, // フレームレート
+        5_000_000, // ビデオビットレート (5Mbps)
+        128_000 // オーディオビットレート (128kbps)
       );
+
       await encoder.initialize();
-      await encoder.start();
-      encoderRef.current = encoder;
 
-      // フレームのエンコード
-      const frameCount = duration * options.frameRate;
-      for (let i = 0; i < frameCount; i++) {
-        if (!isEncoding) break;
+      // オーディオデータの処理
+      const audioContext = new AudioContext();
+      const arrayBuffer = await audioFile.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      // エンコード開始
+      encoder.start();
 
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          const bitmap = await createImageBitmap(canvas);
-          const videoFrame = new VideoFrame(bitmap, { timestamp: i * (1000 / options.frameRate) });
-          await encoder.encodeVideoFrame(videoFrame, i * (1000 / options.frameRate));
-          bitmap.close();
-          setProgress((i + 1) / frameCount);
+      // フレーム処理
+      const duration = audioBuffer.duration;
+      const frameInterval = 1000 / 30; // 30fps
+      const totalFrames = Math.ceil(duration * 30);
+      
+      for (let frame = 0; frame < totalFrames; frame++) {
+        if (!isEncoding) break; // エンコード中断チェック
+        
+        const currentTime = frame / 30;
+        manager.updateTime(currentTime);
+        manager.render();
+        
+        const imageData = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height);
+        if (imageData) {
+          // ImageDataをImageBitmapに変換
+          const imageBitmap = await createImageBitmap(imageData);
+          const videoFrame = new VideoFrame(imageBitmap, {
+            timestamp: frame * frameInterval * 1000, // マイクロ秒単位
+          });
+          await encoder.encodeVideoFrame(videoFrame, currentTime);
+          imageBitmap.close();
         }
 
-        // フレーム間の待機
-        await new Promise(resolve => setTimeout(resolve, 1000 / options.frameRate));
+        // 進捗更新
+        setProgress((frame / totalFrames) * 100);
+        
+        // 次のフレームまで待機
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
 
+      // エンコード完了
       await encoder.stop();
-      setIsEncoding(false);
-    } catch (e) {
-      setError(e instanceof Error ? e : new Error('Encoding failed'));
+      setProgress(100);
+    } catch (err) {
+      if (err instanceof AppError) {
+        setError(err);
+      } else if (err instanceof Error) {
+        setError(new AppError(ErrorType.ExportEncodeFailed, err.message));
+      } else {
+        setError(new AppError(ErrorType.ExportEncodeFailed, 'Unknown error'));
+      }
+    } finally {
       setIsEncoding(false);
     }
   }, [isEncoding]);
 
   const stopEncoding = useCallback(() => {
-    try {
-      setIsEncoding(false);
-      if (encoderRef.current) {
-        encoderRef.current.dispose();
-        encoderRef.current = null;
-      }
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e : new Error('Failed to stop encoding'));
-    }
-  }, []);
+    if (!isEncoding) return;
+    setIsEncoding(false);
+    setProgress(0);
+  }, [isEncoding]);
 
   return {
     isEncoding,

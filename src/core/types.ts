@@ -192,4 +192,13 @@ export const ErrorMessages: Record<ErrorType, string> = {
   [ErrorType.ExportInitFailed]: 'エクスポートの初期化に失敗しました',
   [ErrorType.ExportEncodeFailed]: 'エクスポートのエンコードに失敗しました',
   [ErrorType.ExportCanceled]: 'エクスポートをキャンセルしました',
-}; 
+};
+
+import { EffectBase } from './EffectBase';
+
+export interface InspectorProps {
+  effect: EffectBase | undefined;
+  onChange: (newConfig: Partial<EffectConfig>) => void;
+}
+
+export type EffectConfig = BackgroundEffectConfig | TextEffectConfig | WaveformEffectConfig | WatermarkEffectConfig; 

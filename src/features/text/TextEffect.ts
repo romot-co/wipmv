@@ -1,91 +1,96 @@
 import { EffectBase } from '../../core/EffectBase';
-import { AudioVisualParameters } from '../../core/types';
-import { TextEffectConfig, TextAnimation } from './types';
+import { TextEffectConfig, AudioVisualParameters } from '../../core/types';
 
 /**
  * テキストエフェクト
  * テキストの描画とアニメーションを管理する
  */
 export class TextEffect extends EffectBase {
+  protected override config: TextEffectConfig;
+
   constructor(config: TextEffectConfig) {
     super(config);
+    this.config = config;
   }
 
-  render(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void {
-    if (!this.isVisible(parameters.currentTime)) return;
+  render(
+    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    params: AudioVisualParameters
+  ): void {
+    if (!this.isVisible(params.currentTime)) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const { text, style, position } = this.config;
 
-    const config = this.config as TextEffectConfig;
-    const { text, style, position } = config;
-
-    // スタイルの設定
+    // スタイルの適用
+    ctx.save();
     ctx.font = `${style.fontWeight || 'normal'} ${style.fontSize}px ${style.fontFamily}`;
-    ctx.textAlign = style.align || 'left';
-    ctx.textBaseline = style.baseline || 'top';
+    ctx.fillStyle = style.color;
+    ctx.textAlign = style.align || 'center';
+    ctx.textBaseline = style.baseline || 'middle';
 
-    // アニメーション適用
-    const animationProgress = this.calculateAnimationProgress(parameters.currentTime);
-    this.applyAnimation(ctx, animationProgress, config.animation);
+    // アニメーションの適用
+    if (this.config.animation) {
+      const progress = this.calculateAnimationProgress(params.currentTime);
+      this.applyAnimation(ctx, progress);
+    }
 
     // テキストの描画
-    if (style.strokeColor && style.strokeWidth) {
+    if (style.strokeWidth && style.strokeWidth > 0 && style.strokeColor) {
       ctx.strokeStyle = style.strokeColor;
       ctx.lineWidth = style.strokeWidth;
       ctx.strokeText(text, position.x, position.y);
     }
-
-    ctx.fillStyle = style.color;
     ctx.fillText(text, position.x, position.y);
+    ctx.restore();
   }
 
   private calculateAnimationProgress(currentTime: number): number {
-    const config = this.config as TextEffectConfig;
-    const animation = config.animation;
+    const { animation } = this.config;
     if (!animation) return 1;
 
-    const startTime = config.startTime || 0;
-    const elapsedTime = currentTime - startTime - (animation.delay || 0);
-    
-    if (elapsedTime < 0) return 0;
-    if (elapsedTime > animation.duration) return 1;
+    const { duration, delay = 0 } = animation;
+    const startTime = delay;
+    const endTime = startTime + duration;
 
-    return elapsedTime / animation.duration;
+    if (currentTime < startTime) return 0;
+    if (currentTime > endTime) return 1;
+
+    return (currentTime - startTime) / duration;
   }
 
   private applyAnimation(
-    ctx: OffscreenCanvasRenderingContext2D,
-    progress: number,
-    animation?: TextAnimation
+    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    progress: number
   ): void {
-    if (!animation) return;
+    if (!this.config.animation) return;
 
-    const easeProgress = this.ease(progress, animation.easing);
-    let scale: number;
-    let slideDistance: number;
-    let slideOffset: number;
+    const { type } = this.config.animation;
+    const easedProgress = this.ease(progress);
 
-    switch (animation.type) {
-      case 'fade':
-        ctx.globalAlpha = easeProgress;
+    switch (type) {
+      case 'fade': {
+        ctx.globalAlpha *= easedProgress;
         break;
-
-      case 'scale':
-        scale = easeProgress;
-        ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      }
+      case 'scale': {
+        const scale = easedProgress;
+        ctx.scale(scale, scale);
         break;
-
-      case 'slide':
-        slideDistance = 100; // ピクセル単位のスライド距離
-        slideOffset = slideDistance * (1 - easeProgress);
-        ctx.setTransform(1, 0, 0, 1, slideOffset, 0);
+      }
+      case 'slide': {
+        const { x } = this.config.position;
+        const startX = x - 100;
+        const distance = x - startX;
+        ctx.translate(startX + distance * easedProgress - x, 0);
         break;
+      }
     }
   }
 
-  private ease(progress: number, type?: string): number {
-    switch (type) {
+  private ease(progress: number): number {
+    if (!this.config.animation?.easing) return progress;
+
+    switch (this.config.animation.easing) {
       case 'easeIn':
         return progress * progress;
       case 'easeOut':

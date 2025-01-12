@@ -8,43 +8,38 @@ import { EffectBase } from './EffectBase';
 export class EffectManager {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private offscreen: OffscreenCanvas;
-  private offscreenCtx: OffscreenCanvasRenderingContext2D;
   private effects: Map<string, EffectBase>;
+  private audioBuffer: AudioBuffer | null;
+  private waveformData?: Float32Array;
+  private frequencyData?: Uint8Array;
   private currentTime: number;
   private duration: number;
+  private isPlaying: boolean;
+  private offscreen: OffscreenCanvas;
+  private offscreenCtx: OffscreenCanvasRenderingContext2D;
   private animationFrameId: number | null;
-  private waveformData: Float32Array;
-  private frequencyData: Uint8Array;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
-      throw new AppError(
-        ErrorType.EffectInitFailed,
-        'Failed to get canvas context'
-      );
+      throw new Error('Failed to get canvas context');
     }
     this.ctx = ctx;
+    this.effects = new Map();
+    this.audioBuffer = null;
+    this.currentTime = 0;
+    this.duration = 0;
+    this.isPlaying = false;
+    this.animationFrameId = null;
 
     // オフスクリーンキャンバスの初期化
     this.offscreen = new OffscreenCanvas(canvas.width, canvas.height);
     const offscreenCtx = this.offscreen.getContext('2d');
     if (!offscreenCtx) {
-      throw new AppError(
-        ErrorType.EffectInitFailed,
-        'Failed to get offscreen canvas context'
-      );
+      throw new Error('Failed to get offscreen canvas context');
     }
     this.offscreenCtx = offscreenCtx;
-
-    this.effects = new Map();
-    this.currentTime = 0;
-    this.duration = 0;
-    this.animationFrameId = null;
-    this.waveformData = new Float32Array();
-    this.frequencyData = new Uint8Array();
   }
 
   /**
@@ -129,9 +124,16 @@ export class EffectManager {
   }
 
   /**
-   * エフェクトを取得
+   * 指定したIDのエフェクトを取得
    */
   getEffect(id: string): EffectBase | undefined {
+    return this.effects.get(id);
+  }
+
+  /**
+   * エフェクトを更新
+   */
+  updateEffect(id: string, newConfig: Partial<BaseEffectConfig>): void {
     try {
       const effect = this.effects.get(id);
       if (!effect) {
@@ -140,36 +142,16 @@ export class EffectManager {
           `エフェクトID "${id}" が見つかりません`
         );
       }
-      return effect;
+
+      effect.updateConfig(newConfig);
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
       }
       throw new AppError(
         ErrorType.EffectUpdateFailed,
-        'エフェクトの取得に失敗しました',
+        'エフェクトの更新に失敗しました',
         error
-      );
-    }
-  }
-
-  /**
-   * エフェクトを更新
-   */
-  updateEffect(id: string, config: Partial<BaseEffectConfig>): void {
-    try {
-      const effect = this.effects.get(id);
-      if (!effect) {
-        throw new AppError(
-          ErrorType.EffectNotFound,
-          `Effect with id ${id} not found`
-        );
-      }
-      effect.updateConfig(config);
-    } catch (error) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        error instanceof Error ? error.message : 'Failed to update effect'
       );
     }
   }
@@ -200,28 +182,73 @@ export class EffectManager {
    * レンダリングを開始
    */
   start(): void {
-    if (this.animationFrameId !== null) return;
-    this.animate();
+    if (this.isPlaying) return;
+    this.isPlaying = true;
+    this.render();
   }
 
   /**
    * レンダリングを停止
    */
   stop(): void {
-    if (this.animationFrameId === null) return;
-    cancelAnimationFrame(this.animationFrameId);
-    this.animationFrameId = null;
+    if (!this.isPlaying) return;
+    this.isPlaying = false;
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
   }
 
   /**
-   * リソースを解放
+   * レンダリングループ
+   */
+  render(): void {
+    // オフスクリーンキャンバスをクリア
+    this.clearCanvas();
+
+    // エフェクトをzIndexの順にソート
+    const sortedEffects = Array.from(this.effects.values()).sort(
+      (a, b) => a.getConfig().zIndex - b.getConfig().zIndex
+    );
+
+    // 各エフェクトをレンダリング
+    for (const effect of sortedEffects) {
+      if (effect.isVisible(this.currentTime)) {
+        effect.render(this.offscreenCtx, {
+          currentTime: this.currentTime,
+          duration: this.duration,
+          waveformData: this.waveformData,
+          frequencyData: this.frequencyData,
+        });
+      }
+    }
+
+    // オフスクリーンの内容をメインキャンバスにコピー
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.drawImage(this.offscreen, 0, 0);
+
+    // 次のフレームをリクエスト
+    if (this.isPlaying) {
+      this.animationFrameId = requestAnimationFrame(() => this.render());
+    }
+  }
+
+  /**
+   * 音声の長さを更新
+   */
+  updateDuration(duration: number): void {
+    this.duration = duration;
+  }
+
+  /**
+   * リソースの解放
    */
   dispose(): void {
     this.stop();
-    for (const effect of this.effects.values()) {
-      effect.dispose();
-    }
     this.effects.clear();
+    this.audioBuffer = null;
+    this.waveformData = undefined;
+    this.frequencyData = undefined;
   }
 
   /**
@@ -231,41 +258,6 @@ export class EffectManager {
     return Array.from(this.effects.values())
       .sort((a, b) => a.getConfig().zIndex - b.getConfig().zIndex);
   }
-
-  /**
-   * 動画の長さを更新
-   */
-  updateDuration(duration: number): void {
-    this.duration = duration;
-  }
-
-  private animate = (): void => {
-    const ctx = this.canvas.getContext('2d');
-    
-    if (!ctx || !this.offscreenCtx) return;
-
-    // Clear both canvases
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.offscreenCtx.clearRect(0, 0, this.offscreen.width, this.offscreen.height);
-
-    // Render effects in order
-    const parameters: AudioVisualParameters = {
-      currentTime: this.currentTime,
-      duration: this.duration,
-      waveformData: this.waveformData,
-      frequencyData: this.frequencyData,
-    };
-
-    for (const effect of this.getSortedEffects()) {
-      effect.render(parameters, this.offscreen);
-    }
-
-    // Draw offscreen canvas to main canvas
-    ctx.drawImage(this.offscreen, 0, 0);
-
-    // Continue animation loop
-    this.animationFrameId = requestAnimationFrame(this.animate);
-  };
 
   /**
    * エフェクトのzIndexを更新
@@ -317,64 +309,75 @@ export class EffectManager {
   }
 
   /**
-   * エフェクトを一つ上に移動
+   * エフェクトを上に移動
    */
   moveEffectUp(id: string): void {
     try {
-      const effect = this.effects.get(id);
-      if (!effect) {
-        throw new AppError(
-          ErrorType.EffectNotFound,
-          `エフェクトID "${id}" が見つかりません`
-        );
-      }
+      const entries = Array.from(this.effects.entries());
+      const index = entries.findIndex(([key]) => key === id);
+      if (index <= 0) return;
 
-      const currentZIndex = effect.getConfig().zIndex;
-      const maxZIndex = Math.max(...Array.from(this.effects.values()).map(e => e.getConfig().zIndex));
+      const [prevId, prevEffect] = entries[index - 1];
+      const [currentId, currentEffect] = entries[index];
+
+      // zIndexを交換
+      const prevZIndex = prevEffect.getConfig().zIndex;
+      const currentZIndex = currentEffect.getConfig().zIndex;
       
-      if (currentZIndex < maxZIndex) {
-        this.updateEffectOrder(id, currentZIndex + 1);
-      }
+      this.updateEffect(prevId, { zIndex: currentZIndex });
+      this.updateEffect(currentId, { zIndex: prevZIndex });
     } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
       throw new AppError(
         ErrorType.EffectUpdateFailed,
-        'エフェクトを上に移動できませんでした',
-        error
+        error instanceof Error ? error.message : 'Failed to move effect up'
       );
     }
   }
 
   /**
-   * エフェクトを一つ下に移動
+   * エフェクトを下に移動
    */
   moveEffectDown(id: string): void {
     try {
-      const effect = this.effects.get(id);
-      if (!effect) {
-        throw new AppError(
-          ErrorType.EffectNotFound,
-          `エフェクトID "${id}" が見つかりません`
-        );
-      }
+      const entries = Array.from(this.effects.entries());
+      const index = entries.findIndex(([key]) => key === id);
+      if (index === -1 || index >= entries.length - 1) return;
 
-      const currentZIndex = effect.getConfig().zIndex;
-      const minZIndex = Math.min(...Array.from(this.effects.values()).map(e => e.getConfig().zIndex));
+      const [currentId, currentEffect] = entries[index];
+      const [nextId, nextEffect] = entries[index + 1];
+
+      // zIndexを交換
+      const currentZIndex = currentEffect.getConfig().zIndex;
+      const nextZIndex = nextEffect.getConfig().zIndex;
       
-      if (currentZIndex > minZIndex) {
-        this.updateEffectOrder(id, currentZIndex - 1);
-      }
+      this.updateEffect(currentId, { zIndex: nextZIndex });
+      this.updateEffect(nextId, { zIndex: currentZIndex });
     } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
       throw new AppError(
         ErrorType.EffectUpdateFailed,
-        'エフェクトを下に移動できませんでした',
-        error
+        error instanceof Error ? error.message : 'Failed to move effect down'
       );
     }
+  }
+
+  /**
+   * 音声バッファを取得
+   */
+  getAudioBuffer(): AudioBuffer | null {
+    return this.audioBuffer;
+  }
+
+  /**
+   * 音声バッファを設定
+   */
+  setAudioBuffer(buffer: AudioBuffer): void {
+    this.audioBuffer = buffer;
+  }
+
+  /**
+   * キャンバスを取得
+   */
+  getCanvas(): HTMLCanvasElement {
+    return this.canvas;
   }
 } 

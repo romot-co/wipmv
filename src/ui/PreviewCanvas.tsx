@@ -7,7 +7,7 @@ interface PreviewCanvasProps {
   isPlaying: boolean;
   waveformData: Float32Array;
   frequencyData: Uint8Array;
-  effectManager: EffectManager;
+  onManagerInit: (manager: EffectManager) => void;
 }
 
 /**
@@ -20,9 +20,10 @@ export function PreviewCanvas({
   isPlaying,
   waveformData,
   frequencyData,
-  effectManager,
+  onManagerInit,
 }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const managerRef = useRef<EffectManager | null>(null);
 
   // キャンバスの初期化とエフェクトマネージャーの設定
   useEffect(() => {
@@ -32,29 +33,45 @@ export function PreviewCanvas({
     // キャンバスのサイズを設定
     canvas.width = width;
     canvas.height = height;
-    canvas.style.backgroundColor = '#000';
 
-    // エフェクトマネージャーにキャンバスを設定
-    effectManager.setCanvas(canvas);
+    // エフェクトマネージャーの初期化
+    if (!managerRef.current) {
+      const manager = new EffectManager(canvas);
+      managerRef.current = manager;
+      onManagerInit(manager);
+    } else {
+      managerRef.current.setCanvas(canvas);
+    }
 
     return () => {
-      effectManager.clearCanvas();
+      if (managerRef.current) {
+        managerRef.current.dispose();
+        managerRef.current = null;
+      }
     };
-  }, [effectManager, width, height]);
+  }, [width, height, onManagerInit]);
 
   // オーディオデータの更新
   useEffect(() => {
-    effectManager.updateAudioData(waveformData, frequencyData);
-  }, [effectManager, waveformData, frequencyData]);
+    if (!managerRef.current) return;
+    if (waveformData && frequencyData) {
+      managerRef.current.updateAudioData(waveformData, frequencyData);
+      if (!isPlaying) {
+        managerRef.current.render(); // 停止中でも表示を更新
+      }
+    }
+  }, [waveformData, frequencyData, isPlaying]);
 
   // 再生状態の管理
   useEffect(() => {
+    if (!managerRef.current) return;
+    
     if (isPlaying) {
-      effectManager.start();
+      managerRef.current.start();
     } else {
-      effectManager.stop();
+      managerRef.current.stop();
     }
-  }, [effectManager, isPlaying]);
+  }, [isPlaying]);
 
   return (
     <canvas
@@ -64,6 +81,7 @@ export function PreviewCanvas({
         height: 'auto',
         maxWidth: width,
         maxHeight: height,
+        backgroundColor: '#000',
       }}
     />
   );

@@ -10,12 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/react-dropzone": "^4.2.2",
     "autoprefixer": "^10.4.20",
     "fft.js": "^4.0.4",
     "mp4-muxer": "^4.1.0",
     "postcss": "^8.4.49",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-dropzone": "^14.3.5",
     "webfft": "^1.0.3"
   },
   "devDependencies": {

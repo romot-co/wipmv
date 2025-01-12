@@ -1,100 +1,105 @@
-import React from 'react';
-import { WaveformEffectConfig } from '../../core/types';
+import { FC } from 'react';
+import { WaveformEffectConfig, EffectConfig, WaveformStyle } from '../../core/types';
 
 interface WaveformSettingsProps {
   config: WaveformEffectConfig;
-  onChange: (config: Partial<WaveformEffectConfig>) => void;
+  onChange: (newConfig: Partial<EffectConfig>) => void;
 }
 
-type ColorKey = 'primary' | 'secondary' | 'background';
-type OptionKey = 'barWidth' | 'barSpacing' | 'smoothing' | 'mirror';
-
-export function WaveformSettings({ config, onChange }: WaveformSettingsProps) {
-  const handleStyleChange = (style: 'line' | 'bar') => {
-    onChange({ style });
-  };
-
-  const handleColorChange = (key: ColorKey, value: string) => {
-    onChange({
-      colors: {
-        ...config.colors,
-        [key]: value
-      }
-    });
-  };
-
-  const handleOptionChange = (key: OptionKey, value: number | boolean) => {
-    onChange({
-      options: {
-        ...config.options,
-        [key]: value
-      }
-    });
-  };
-
+export const WaveformSettings: FC<WaveformSettingsProps> = ({ config, onChange }) => {
   return (
-    <div className="waveform-settings">
-      <h3>波形設定</h3>
-      
+    <div className="settings">
       <div className="setting-group">
         <label>スタイル</label>
         <select
           value={config.style}
-          onChange={(e) => handleStyleChange(e.target.value as 'line' | 'bar')}
+          onChange={(e) => onChange({ style: e.target.value as WaveformStyle })}
         >
           <option value="line">ライン</option>
           <option value="bar">バー</option>
+          <option value="mirror">ミラー</option>
         </select>
       </div>
 
       <div className="setting-group">
-        <label>メインカラー</label>
+        <label>色</label>
         <input
           type="color"
           value={config.colors.primary}
-          onChange={(e) => handleColorChange('primary', e.target.value)}
+          onChange={(e) => onChange({ colors: { ...config.colors, primary: e.target.value } })}
         />
       </div>
 
       <div className="setting-group">
-        <label>サブカラー</label>
+        <label>セカンダリカラー</label>
         <input
           type="color"
-          value={config.colors.secondary || '#888888'}
-          onChange={(e) => handleColorChange('secondary', e.target.value)}
+          value={config.colors.secondary}
+          onChange={(e) => onChange({ colors: { ...config.colors, secondary: e.target.value } })}
         />
       </div>
 
       <div className="setting-group">
-        <label>背景色</label>
+        <label>X座標</label>
         <input
-          type="color"
-          value={config.colors.background || '#000000'}
-          onChange={(e) => handleColorChange('background', e.target.value)}
+          type="number"
+          value={config.position.x}
+          onChange={(e) => onChange({ position: { ...config.position, x: parseInt(e.target.value) } })}
         />
       </div>
 
       <div className="setting-group">
-        <label>バー幅</label>
+        <label>Y座標</label>
         <input
-          type="range"
-          min="1"
-          max="10"
-          value={config.options?.barWidth || 2}
-          onChange={(e) => handleOptionChange('barWidth', Number(e.target.value))}
+          type="number"
+          value={config.position.y}
+          onChange={(e) => onChange({ position: { ...config.position, y: parseInt(e.target.value) } })}
         />
       </div>
 
       <div className="setting-group">
-        <label>バー間隔</label>
+        <label>幅</label>
         <input
-          type="range"
-          min="0"
-          max="5"
-          value={config.options?.barSpacing || 1}
-          onChange={(e) => handleOptionChange('barSpacing', Number(e.target.value))}
+          type="number"
+          value={config.position.width}
+          onChange={(e) => onChange({ position: { ...config.position, width: parseInt(e.target.value) } })}
+          min={1}
         />
       </div>
+
+      <div className="setting-group">
+        <label>高さ</label>
+        <input
+          type="number"
+          value={config.position.height}
+          onChange={(e) => onChange({ position: { ...config.position, height: parseInt(e.target.value) } })}
+          min={1}
+        />
+      </div>
+
+      {config.style === 'bar' && (
+        <>
+          <div className="setting-group">
+            <label>バー幅</label>
+            <input
+              type="number"
+              value={config.options?.barWidth ?? 2}
+              onChange={(e) => onChange({ options: { ...config.options, barWidth: parseInt(e.target.value) } })}
+              min={1}
+            />
+          </div>
+
+          <div className="setting-group">
+            <label>バー間隔</label>
+            <input
+              type="number"
+              value={config.options?.barSpacing ?? 1}
+              onChange={(e) => onChange({ options: { ...config.options, barSpacing: parseInt(e.target.value) } })}
+              min={0}
+            />
+          </div>
+        </>
+      )}
 
       <div className="setting-group">
         <label>スムージング</label>
@@ -103,19 +108,10 @@ export function WaveformSettings({ config, onChange }: WaveformSettingsProps) {
           min="0"
           max="1"
           step="0.1"
-          value={config.options?.smoothing || 0.5}
-          onChange={(e) => handleOptionChange('smoothing', Number(e.target.value))}
-        />
-      </div>
-
-      <div className="setting-group">
-        <label>ミラー表示</label>
-        <input
-          type="checkbox"
-          checked={config.options?.mirror || false}
-          onChange={(e) => handleOptionChange('mirror', e.target.checked)}
+          value={config.options?.smoothing ?? 0.5}
+          onChange={(e) => onChange({ options: { ...config.options, smoothing: parseFloat(e.target.value) } })}
         />
       </div>
     </div>
   );
-} 
+}; 

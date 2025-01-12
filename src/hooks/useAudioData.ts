@@ -13,8 +13,8 @@ interface AudioDataState {
  * 波形データとスペクトラムデータを提供する
  */
 export const useAudioData = (): AudioDataState => {
-  const [waveformData, setWaveformData] = useState<Float32Array>(new Float32Array());
-  const [frequencyData, setFrequencyData] = useState<Uint8Array>(new Uint8Array());
+  const [waveformData, setWaveformData] = useState<Float32Array>(new Float32Array(2048));
+  const [frequencyData, setFrequencyData] = useState<Uint8Array>(new Uint8Array(2048));
   const [error, setError] = useState<Error | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -74,7 +74,6 @@ export const useAudioData = (): AudioDataState => {
       source.buffer = audioBuffer;
       source.connect(analyser);
       analyser.connect(audioContext.destination);
-      source.start(0);
 
       // 前のAnalyserNodeをクリーンアップ
       if (analyserRef.current) {

@@ -1,67 +1,64 @@
 import { EffectBase } from '../../core/EffectBase';
-import { AudioVisualParameters } from '../../core/types';
-import { BackgroundEffectConfig } from './types';
+import { BackgroundEffectConfig, AudioVisualParameters } from '../../core/types';
 
 /**
  * 背景エフェクト
  * 単色、画像、グラデーションの背景を描画する
  */
 export class BackgroundEffect extends EffectBase {
-  private image?: HTMLImageElement;
+  protected override config: BackgroundEffectConfig;
 
   constructor(config: BackgroundEffectConfig) {
     super(config);
-    this.loadImage();
+    this.config = config;
   }
 
-  private loadImage(): void {
-    const config = this.config as BackgroundEffectConfig;
-    if (config.backgroundType === 'image' && config.imageUrl) {
-      this.image = new Image();
-      this.image.src = config.imageUrl;
-    }
-  }
+  render(
+    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    params: AudioVisualParameters
+  ): void {
+    if (!this.isVisible(params.currentTime)) return;
 
-  render(parameters: AudioVisualParameters, canvas: OffscreenCanvas): void {
-    if (!this.isVisible(parameters.currentTime)) return;
+    const { width, height } = ctx.canvas;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const config = this.config as BackgroundEffectConfig;
-    const { width, height } = canvas;
-
-    switch (config.backgroundType) {
+    switch (this.config.backgroundType) {
       case 'color':
-        if (config.color) {
-          ctx.fillStyle = config.color;
+        if (this.config.color) {
+          ctx.fillStyle = this.config.color;
           ctx.fillRect(0, 0, width, height);
         }
         break;
 
       case 'image':
-        if (this.image?.complete) {
-          ctx.drawImage(this.image, 0, 0, width, height);
+        if (this.config.imageUrl) {
+          // 画像の描画処理
+          // TODO: 画像のロードと描画を実装
         }
         break;
 
       case 'gradient':
-        if (config.gradient?.colors.length) {
-          const gradient = ctx.createLinearGradient(0, 0, width, height);
-          const colors = config.gradient.colors;
+        if (this.config.gradient) {
+          const { colors, angle } = this.config.gradient;
+          if (colors.length < 2) break;
+
+          // 角度に基づいて開始点と終了点を計算
+          const angleRad = (angle * Math.PI) / 180;
+          const cos = Math.cos(angleRad);
+          const sin = Math.sin(angleRad);
+          const x1 = width / 2 - cos * width / 2;
+          const y1 = height / 2 - sin * height / 2;
+          const x2 = width / 2 + cos * width / 2;
+          const y2 = height / 2 + sin * height / 2;
+
+          const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
           colors.forEach((color, index) => {
             gradient.addColorStop(index / (colors.length - 1), color);
           });
+
           ctx.fillStyle = gradient;
           ctx.fillRect(0, 0, width, height);
         }
         break;
-    }
-  }
-
-  dispose(): void {
-    if (this.image) {
-      this.image.src = '';
     }
   }
 } 
