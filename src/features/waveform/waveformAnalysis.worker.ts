@@ -15,9 +15,10 @@ interface WaveformAnalysisMessage {
 
 self.onmessage = (e: MessageEvent<WaveformAnalysisMessage>) => {
   const { data, options } = e.data;
+  const smoothingFactor = options?.smoothing ?? 0.5;
   
   // スムージング処理
-  const smoothed = smoothData(data, options.smoothing ?? 0.5);
+  const smoothed = smoothData(data, smoothingFactor);
   
   // ピーク値の計算
   const peaks = calculatePeaks(data);

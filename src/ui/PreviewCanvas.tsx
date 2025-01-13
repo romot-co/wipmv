@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { EffectManager } from '../core/EffectManager';
+import { Renderer } from '../core/Renderer';
 
 interface PreviewCanvasProps {
   width: number;
@@ -49,11 +50,6 @@ export function PreviewCanvas({
     // 実際のキャンバスサイズは元のサイズを維持
     canvasRef.current.width = width;
     canvasRef.current.height = height;
-
-    // エフェクトマネージャーに通知
-    if (managerRef.current) {
-      managerRef.current.setCanvas(canvasRef.current);
-    }
   }, [width, height]);
 
   // キャンバスの初期化とエフェクトマネージャーの設定
@@ -67,11 +63,10 @@ export function PreviewCanvas({
 
     // エフェクトマネージャーの初期化
     if (!managerRef.current) {
-      const manager = new EffectManager(canvas);
+      const renderer = new Renderer(canvas);
+      const manager = new EffectManager(renderer);
       managerRef.current = manager;
       onManagerInit(manager);
-    } else {
-      managerRef.current.setCanvas(canvas);
     }
 
     // リサイズイベントの設定
@@ -89,15 +84,29 @@ export function PreviewCanvas({
 
   // オーディオデータの更新
   useEffect(() => {
-    if (!managerRef.current) return;
+    if (!managerRef.current) {
+      console.log('PreviewCanvas: managerRef.current is null');
+      return;
+    }
     
     if (waveformData && frequencyData) {
-      managerRef.current.updateAudioData(waveformData, frequencyData);
+      console.log('PreviewCanvas: Updating audio data', {
+        waveformDataLength: waveformData.length,
+        frequencyDataLength: frequencyData.length
+      });
+      
+      managerRef.current.updateParams({
+        waveformData,
+        frequencyData
+      });
       
       // 停止中は1回だけ描画
       if (!isPlaying) {
+        console.log('PreviewCanvas: Rendering once while stopped');
         managerRef.current.render();
       }
+    } else {
+      console.log('PreviewCanvas: No audio data available');
     }
   }, [waveformData, frequencyData, isPlaying]);
 
@@ -106,9 +115,9 @@ export function PreviewCanvas({
     if (!managerRef.current) return;
     
     if (isPlaying) {
-      managerRef.current.start();
+      managerRef.current.startRenderLoop();
     } else {
-      managerRef.current.stop();
+      managerRef.current.stopRenderLoop();
       // 停止時に1回だけ描画
       managerRef.current.render();
     }

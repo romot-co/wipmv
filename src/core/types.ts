@@ -140,6 +140,7 @@ export interface WaveformColors {
 }
 
 export interface WaveformEffectConfig extends BaseEffectConfig {
+  type: EffectType.Waveform;
   position: {
     x: number;
     y: number;
@@ -151,7 +152,7 @@ export interface WaveformEffectConfig extends BaseEffectConfig {
     secondary?: string;
     background?: string;
   };
-  options?: {
+  options: {
     barWidth?: number;
     barSpacing?: number;
     smoothing?: number;

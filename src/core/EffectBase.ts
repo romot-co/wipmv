@@ -165,12 +165,13 @@ export abstract class EffectBase<TState extends BaseEffectState = BaseEffectStat
   ): void;
 
   /**
-   * 指定された時間にエフェクトが表示されるべきかを判定する
+   * 指定された時間でエフェクトが表示されるかどうかを判定
+   * @param currentTime 現在の再生時間
+   * @returns 表示される場合はtrue
    */
-  protected isVisible(currentTime: number): boolean {
-    const { startTime = 0, duration } = this.config;
-    if (duration === undefined) return true;
-    return currentTime >= startTime && currentTime < startTime + duration;
+  public isVisible(currentTime: number): boolean {
+    const { startTime = 0, endTime = Infinity } = this.config;
+    return currentTime >= startTime && currentTime <= endTime;
   }
 
   /**

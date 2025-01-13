@@ -7,13 +7,19 @@ interface WaveformSettingsProps {
 }
 
 export const WaveformSettings: FC<WaveformSettingsProps> = ({ config, onChange }) => {
+  const defaultColors = {
+    primary: '#ffffff',
+    secondary: '#00ff00',
+    background: '#000000'
+  };
+
   return (
     <div className="settings">
       <div className="setting-group">
         <label>スタイル</label>
         <select
-          value={config.style}
-          onChange={(e) => onChange({ style: e.target.value as WaveformStyle })}
+          value={config.options.style ?? 'bar'}
+          onChange={(e) => onChange({ options: { ...config.options, style: e.target.value as WaveformStyle } })}
         >
           <option value="line">ライン</option>
           <option value="bar">バー</option>
@@ -22,10 +28,10 @@ export const WaveformSettings: FC<WaveformSettingsProps> = ({ config, onChange }
       </div>
 
       <div className="setting-group">
-        <label>色</label>
+        <label>メインカラー</label>
         <input
           type="color"
-          value={config.colors.primary}
+          value={config.colors.primary || defaultColors.primary}
           onChange={(e) => onChange({ colors: { ...config.colors, primary: e.target.value } })}
         />
       </div>
@@ -34,8 +40,17 @@ export const WaveformSettings: FC<WaveformSettingsProps> = ({ config, onChange }
         <label>セカンダリカラー</label>
         <input
           type="color"
-          value={config.colors.secondary}
+          value={config.colors.secondary || defaultColors.secondary}
           onChange={(e) => onChange({ colors: { ...config.colors, secondary: e.target.value } })}
+        />
+      </div>
+
+      <div className="setting-group">
+        <label>背景色</label>
+        <input
+          type="color"
+          value={config.colors.background || defaultColors.background}
+          onChange={(e) => onChange({ colors: { ...config.colors, background: e.target.value } })}
         />
       </div>
 
@@ -77,13 +92,13 @@ export const WaveformSettings: FC<WaveformSettingsProps> = ({ config, onChange }
         />
       </div>
 
-      {config.style === 'bar' && (
+      {config.options.style === 'bar' && (
         <>
           <div className="setting-group">
             <label>バー幅</label>
             <input
               type="number"
-              value={config.options?.barWidth ?? 2}
+              value={config.options.barWidth ?? 2}
               onChange={(e) => onChange({ options: { ...config.options, barWidth: parseInt(e.target.value) } })}
               min={1}
             />
@@ -93,7 +108,7 @@ export const WaveformSettings: FC<WaveformSettingsProps> = ({ config, onChange }
             <label>バー間隔</label>
             <input
               type="number"
-              value={config.options?.barSpacing ?? 1}
+              value={config.options.barSpacing ?? 1}
               onChange={(e) => onChange({ options: { ...config.options, barSpacing: parseInt(e.target.value) } })}
               min={0}
             />
@@ -108,7 +123,7 @@ export const WaveformSettings: FC<WaveformSettingsProps> = ({ config, onChange }
           min="0"
           max="1"
           step="0.1"
-          value={config.options?.smoothing ?? 0.5}
+          value={config.options.smoothing ?? 0.5}
           onChange={(e) => onChange({ options: { ...config.options, smoothing: parseFloat(e.target.value) } })}
         />
       </div>

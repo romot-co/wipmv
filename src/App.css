@@ -1,246 +1,128 @@
-#root {
-  width: 100%;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
+:root {
+  --primary-color: #4a90e2;
+  --background-color: #1a1a1a;
+  --surface-color: #2a2a2a;
+  --text-color: #ffffff;
+  --text-secondary-color: #b3b3b3;
+  --border-color: #3a3a3a;
+  --spacing-unit: 1rem;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
+body {
+  margin: 0;
+  background-color: var(--background-color);
+  color: var(--text-color);
 }
 
 .app {
-  width: 100%;
-  height: 100%;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: #1a1a1a;
-  color: #fff;
 }
 
 .app-header {
-  background-color: #343a40;
-  color: white;
-  padding: 1rem;
-  text-align: center;
+  background-color: var(--surface-color);
+  padding: var(--spacing-unit);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.app-header h1 {
-  margin: 0;
-  font-size: 2rem;
-}
-
-.app-content {
+.app-main {
   flex: 1;
   display: flex;
-  padding: 2rem;
-  gap: 2rem;
-}
-
-.main-section {
-  flex: 2;
-  min-width: 0;
-}
-
-.settings-section {
-  flex: 1;
-  min-width: 300px;
-  max-width: 400px;
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-
-.effect-settings {
-  background-color: white;
-  border-radius: 8px;
-  padding: 1rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.encoder-settings-wrapper {
-  background-color: white;
-  border-radius: 8px;
-  padding: 1rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-/* レスポンシブ対応 */
-@media (max-width: 1200px) {
-  .app-content {
-    flex-direction: column;
-  }
-
-  .settings-section {
-    max-width: none;
-  }
+  padding: var(--spacing-unit);
+  gap: var(--spacing-unit);
 }
 
 .preview-section {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  padding: 20px;
+  gap: var(--spacing-unit);
+  min-width: 0; /* flexboxのバグ対策 */
 }
 
-.preview-section canvas {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-
-.upload-section,
-.generate-section,
-.error-section,
-.video-section {
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.upload-section h2,
-.video-section h2 {
-  margin: 0 0 16px 0;
-  color: #333;
-  font-size: 1.2em;
-}
-
-.generate-section button {
-  width: 100%;
-  padding: 12px;
-  background: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 1em;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.generate-section button:hover {
-  background: #45a049;
-}
-
-.generate-section button:disabled {
-  background: #cccccc;
-  cursor: not-allowed;
-}
-
-.error-section .error {
-  color: #d32f2f;
-  margin: 0;
-  padding: 12px;
-  background: #ffebee;
-  border-radius: 4px;
-}
-
-.video-section video {
-  width: 100%;
-  border-radius: 4px;
-  margin-bottom: 16px;
-}
-
-.download-button {
-  display: inline-block;
-  padding: 12px 24px;
-  background: #2196F3;
-  color: white;
-  text-decoration: none;
-  border-radius: 4px;
-  transition: background-color 0.2s;
-}
-
-.download-button:hover {
-  background: #1976D2;
-}
-
-.main-content {
-  flex: 1;
+.effect-panel {
+  width: 320px;
   display: flex;
-  min-height: 0;
-  overflow: hidden;
+  flex-direction: column;
+  gap: var(--spacing-unit);
+  background-color: var(--surface-color);
+  border-radius: 8px;
+  padding: var(--spacing-unit);
 }
 
-.controls-section {
-  width: 300px;
-  padding: 20px;
-  background-color: #2a2a2a;
-  border-left: 1px solid #333;
-  overflow-y: auto;
+.effect-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-unit);
 }
 
-.encode-section {
-  margin-top: 20px;
-  padding: 16px;
-  border-top: 1px solid #eee;
+.effect-settings {
+  flex: 1;
+  background-color: var(--background-color);
+  border-radius: 4px;
+  padding: var(--spacing-unit);
 }
 
-.encode-button {
-  width: 100%;
-  padding: 12px;
-  background-color: #4a90e2;
+/* ファイル選択UI */
+.app--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.file-input {
+  padding: var(--spacing-unit);
+  background-color: var(--surface-color);
+  border-radius: 4px;
+  border: 2px dashed var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.file-input:hover {
+  border-color: var(--primary-color);
+}
+
+/* エラー表示 */
+.error-section {
+  margin-top: var(--spacing-unit);
+  padding: var(--spacing-unit);
+  background-color: #ff4444;
+  border-radius: 4px;
+  color: white;
+}
+
+.error-message {
+  margin: 0;
+}
+
+/* ローディング表示 */
+.loading-message {
+  padding: var(--spacing-unit);
+  color: var(--text-secondary-color);
+}
+
+/* エクスポートボタン */
+.export-button {
+  padding: 0.5rem 1rem;
+  background-color: var(--primary-color);
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
 }
 
-.encode-button:hover:not(:disabled) {
+.export-button:hover:not(:disabled) {
   background-color: #357abd;
 }
 
-.encode-button:disabled {
-  background-color: #ccc;
+.export-button:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
-}
-
-.progress-bar {
-  margin-top: 8px;
-  width: 100%;
-  height: 4px;
-  background-color: #eee;
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.progress {
-  height: 100%;
-  background-color: #4a90e2;
-  transition: width 0.2s ease-out;
 }

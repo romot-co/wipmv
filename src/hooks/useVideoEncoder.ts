@@ -52,14 +52,37 @@ export function useVideoEncoder(): UseVideoEncoderReturn {
         const frameCount = Math.floor(totalDuration * frameRate);
         const samplesPerFrame = Math.floor(audioBuffer.sampleRate / frameRate);
 
+        // 波形データを事前に計算
+        const waveformData = new Uint8Array(1024);
+        const channelData = audioBuffer.getChannelData(0);
+        const samplesPerWaveform = Math.floor(audioBuffer.length / 1024);
+
+        // 波形データを計算
+        for (let i = 0; i < 1024; i++) {
+          let sum = 0;
+          for (let j = 0; j < samplesPerWaveform; j++) {
+            const idx = i * samplesPerWaveform + j;
+            if (idx < channelData.length) {
+              sum += Math.abs(channelData[idx]);
+            }
+          }
+          waveformData[i] = Math.min(255, Math.floor(sum / samplesPerWaveform * 255));
+        }
+
+        // 各フレームをエンコード
         for (let i = 0; i < frameCount; i++) {
           const currentSec = i / frameRate;
           const timestampUsec = Math.floor(currentSec * 1_000_000);
 
           // 1) Canvas描画
-          //    ここでは "オフライン用に effectManager.render()" → canvas.getContext() 
-          //    timeを渡して描画するなど
-          effectManager.render(currentSec);
+          effectManager.updateParams({
+            currentTime: currentSec,
+            duration: totalDuration,
+            waveformData,
+            frequencyData: new Uint8Array(1024), // ダミーデータ
+            isPlaying: true
+          });
+          effectManager.render();
 
           // 2) VideoFrame エンコード
           await service.encodeVideoFrame(canvas, timestampUsec);

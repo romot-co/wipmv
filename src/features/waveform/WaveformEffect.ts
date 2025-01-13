@@ -1,89 +1,180 @@
-import { EffectBase, BaseEffectState } from '../../core/EffectBase';
-import { WaveformEffectConfig, AudioVisualParameters } from '../../core/types';
+import { EffectBase } from '../../core/EffectBase';
+import { BaseEffectState, BaseEffectConfig, EffectType } from '../../core/types';
+import { AudioVisualParameters } from '../../core/types';
+
+interface WaveformEffectOptions {
+  smoothing?: number;
+  barWidth?: number;
+  barSpacing?: number;
+  style?: 'line' | 'bar' | 'mirror';
+}
+
+interface WaveformEffectConfig extends BaseEffectConfig {
+  type: EffectType.Waveform;
+  options?: WaveformEffectOptions;
+  position: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  colors: {
+    primary: string;
+    secondary?: string;
+    background?: string;
+  };
+}
 
 interface WaveformEffectState extends BaseEffectState {
   dataProcessing: boolean;
   lastProcessedDataId: string | null;
+  isReady: boolean;
+  isLoading: boolean;
+  error: Error | null;
   renderStyle: 'line' | 'bar' | 'mirror';
-  analysisComplete: boolean;
 }
 
-type WaveformData = {
+interface WaveformData {
   raw: Float32Array;
   smoothed: Float32Array;
   peaks: Float32Array;
   rms: number;
-};
+}
 
 /**
  * 波形エフェクト
  * オーディオの波形をリアルタイムに分析し、様々なスタイルで描画する
  */
 export class WaveformEffect extends EffectBase<WaveformEffectState> {
-  protected override config: WaveformEffectConfig;
+  private worker: Worker | null = null;
   private waveformData: WaveformData | null = null;
-  private analysisWorker: Worker | null = null;
+  protected override config: WaveformEffectConfig;
 
   constructor(config: WaveformEffectConfig) {
     const initialState: WaveformEffectState = {
-      isReady: true,
-      isLoading: false,
-      error: null,
       dataProcessing: false,
       lastProcessedDataId: null,
-      renderStyle: config.options?.style || 'bar',
-      analysisComplete: false
+      isReady: false,
+      isLoading: false,
+      error: null,
+      renderStyle: config.options?.style ?? 'bar'
     };
+
     super(config, initialState);
-    this.config = config;
-    this.initializeAnalysisWorker();
-  }
-
-  private initializeAnalysisWorker(): void {
-    // Web Workerの初期化（実際のWorkerコードは別ファイルで実装）
+    
+    // デフォルトのオプションを設定
+    this.config = {
+      ...config,
+      options: {
+        smoothing: config.options?.smoothing ?? 0.5,
+        barWidth: config.options?.barWidth ?? 2,
+        barSpacing: config.options?.barSpacing ?? 1,
+        style: config.options?.style ?? 'bar'
+      }
+    };
+    
     try {
-      this.analysisWorker = new Worker(new URL('./waveformAnalysis.worker.ts', import.meta.url));
-      this.analysisWorker.onmessage = this.handleWorkerMessage.bind(this);
+      this.worker = new Worker(new URL('./waveformAnalysis.worker.ts', import.meta.url));
     } catch (error) {
-      console.warn('Worker initialization failed, falling back to main thread processing');
+      console.error('Failed to create worker:', error);
+      this.state.error = error instanceof Error ? error : new Error('Failed to create worker');
     }
   }
 
-  private handleWorkerMessage(event: MessageEvent): void {
-    const { smoothed, peaks, rms } = event.data;
-    if (this.waveformData && this.waveformData.raw) {
-      this.waveformData = {
-        raw: this.waveformData.raw,
-        smoothed: new Float32Array(smoothed),
-        peaks: new Float32Array(peaks),
-        rms
-      };
-      this.updateState({
-        ...this.state,
-        dataProcessing: false,
-        analysisComplete: true
+  private processWaveformData(data: Float32Array): void {
+    console.log('WaveformEffect: Starting waveform data processing');
+    
+    const currentDataId = this.getDataId(data);
+    this.state.dataProcessing = true;
+    
+    if (this.worker) {
+      this.worker.postMessage({
+        data: Array.from(data),
+        options: {
+          smoothing: this.config.options?.smoothing ?? 0.5
+        }
       });
+      
+      this.worker.onmessage = (e) => {
+        console.log('WaveformEffect: Worker processing complete', e.data);
+        this.waveformData = {
+          raw: data,
+          smoothed: new Float32Array(e.data.processedData),
+          peaks: new Float32Array(e.data.peaks),
+          rms: e.data.rms
+        };
+        this.state.lastProcessedDataId = currentDataId;
+        this.state.dataProcessing = false;
+        this.state.isReady = true;
+      };
+      
+      this.worker.onerror = (error) => {
+        console.error('WaveformEffect: Worker error:', error);
+        this.state.dataProcessing = false;
+        this.state.error = error instanceof Error ? error : new Error('Worker processing failed');
+      };
+    } else {
+      // フォールバック処理
+      console.log('WaveformEffect: Using fallback processing');
+      this.waveformData = {
+        raw: data,
+        smoothed: data,
+        peaks: this.calculatePeaks(data),
+        rms: this.calculateRMS(data)
+      };
+      this.state.lastProcessedDataId = currentDataId;
+      this.state.dataProcessing = false;
+      this.state.isReady = true;
     }
+  }
+
+  private calculateRMS(data: Float32Array): number {
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      sum += data[i] * data[i];
+    }
+    return Math.sqrt(sum / data.length);
   }
 
   override render(
     ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
     params: AudioVisualParameters
   ): void {
-    if (!this.isVisible(params.currentTime)) return;
-    if (!params.waveformData) return;
-    if (!this.state.isReady) return;
+    // isVisibleチェックを一時的に無効化（常に表示）
+    // if (!this.isVisible(params.currentTime)) {
+    //   console.log('WaveformEffect: Effect is not visible at current time', params.currentTime);
+    //   return;
+    // }
 
-    const { position, colors } = this.config;
-    const { width, height } = position;
+    if (!params.waveformData) {
+      console.log('WaveformEffect: No waveform data available');
+      return;
+    }
 
     // 波形データが変更された場合のみ分析を実行
     const currentDataId = this.getDataId(params.waveformData);
+    console.log('WaveformEffect: Current state', {
+      currentTime: params.currentTime,
+      currentDataId,
+      lastProcessedDataId: this.state.lastProcessedDataId,
+      dataProcessing: this.state.dataProcessing,
+      isReady: this.state.isReady,
+      waveformDataLength: params.waveformData.length
+    });
+
     if (this.shouldProcessData(params.waveformData, currentDataId)) {
+      console.log('WaveformEffect: Processing new waveform data');
       this.processWaveformData(params.waveformData);
+      return; // データ処理中は描画をスキップ
     }
 
-    if (!this.waveformData) return;
+    if (!this.state.isReady || !this.waveformData) {
+      console.log('WaveformEffect: Effect is not ready');
+      return;
+    }
+
+    const { position, colors } = this.config;
+    const { width, height } = position;
 
     ctx.save();
     try {
@@ -95,6 +186,7 @@ export class WaveformEffect extends EffectBase<WaveformEffectState> {
       }
 
       // レンダリングスタイルに応じて描画メソッドを選択
+      console.log('WaveformEffect: Rendering with style', this.state.renderStyle);
       switch (this.state.renderStyle) {
         case 'line':
           this.renderLineStyle(ctx, width, height);
@@ -110,58 +202,6 @@ export class WaveformEffect extends EffectBase<WaveformEffectState> {
     } finally {
       ctx.restore();
     }
-  }
-
-  private processWaveformData(data: Float32Array): void {
-    this.updateState({ ...this.state, dataProcessing: true });
-    
-    if (this.analysisWorker) {
-      // Web Workerで非同期処理
-      this.analysisWorker.postMessage({
-        data: data,
-        options: this.config.options
-      });
-    } else {
-      // フォールバック: メインスレッドで処理
-      this.processDataInMainThread(data);
-    }
-  }
-
-  private processDataInMainThread(data: Float32Array): void {
-    try {
-      const smoothed = this.smoothData(data, this.config.options?.smoothing ?? 0.5);
-      const peaks = this.calculatePeaks(data);
-      const rms = this.calculateRMS(data);
-
-      this.waveformData = { raw: data, smoothed, peaks, rms };
-      this.updateState({
-        ...this.state,
-        dataProcessing: false,
-        analysisComplete: true,
-        error: null
-      });
-    } catch (error) {
-      this.updateState({
-        ...this.state,
-        dataProcessing: false,
-        error: error instanceof Error ? error : new Error('Failed to process waveform data')
-      });
-    }
-  }
-
-  /**
-   * 波形データをスムージング
-   */
-  private smoothData(data: Float32Array, factor: number): Float32Array {
-    const smoothed = new Float32Array(data.length);
-    const alpha = Math.max(0, Math.min(1, factor));
-    
-    smoothed[0] = data[0];
-    for (let i = 1; i < data.length; i++) {
-      smoothed[i] = alpha * data[i] + (1 - alpha) * smoothed[i - 1];
-    }
-    
-    return smoothed;
   }
 
   private renderLineStyle(
@@ -259,22 +299,16 @@ export class WaveformEffect extends EffectBase<WaveformEffectState> {
     return peaks;
   }
 
-  private calculateRMS(data: Float32Array): number {
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      sum += data[i] * data[i];
-    }
-    return Math.sqrt(sum / data.length);
-  }
-
   private getDataId(data: Float32Array): string {
     return `${data.length}_${data[0]}_${data[data.length - 1]}_${this.calculateRMS(data)}`;
   }
 
-  private shouldProcessData(newData: Float32Array, currentDataId: string): boolean {
-    if (this.state.dataProcessing) return false;
-    if (!this.waveformData?.raw) return true;
-    return currentDataId !== this.state.lastProcessedDataId;
+  private shouldProcessData(data: Float32Array, currentDataId: string): boolean {
+    // データ処理の条件を緩和
+    return (
+      !this.state.dataProcessing &&
+      (!this.waveformData || !this.state.lastProcessedDataId || this.state.lastProcessedDataId !== currentDataId)
+    );
   }
 
   /**
@@ -282,9 +316,9 @@ export class WaveformEffect extends EffectBase<WaveformEffectState> {
    */
   protected override disposeResources(): void {
     // Web Workerの終了
-    if (this.analysisWorker) {
-      this.analysisWorker.terminate();
-      this.analysisWorker = null;
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
     }
 
     // 波形データの解放
@@ -295,7 +329,7 @@ export class WaveformEffect extends EffectBase<WaveformEffectState> {
       ...this.state,
       dataProcessing: false,
       lastProcessedDataId: null,
-      analysisComplete: false
+      isReady: false
     });
   }
 
@@ -326,18 +360,15 @@ export class WaveformEffect extends EffectBase<WaveformEffectState> {
   protected override handleConfigChange(
     changes: ReturnType<typeof this.analyzeConfigChanges>
   ): void {
-    // 表示状態が変更された場合
+    // 表示状態が変更された場合でも isReady は変更しない
     if (changes.visibilityChanged) {
-      this.updateState({
-        ...this.state,
-        isReady: this.config.visible
-      });
+      // 何もしない
     }
 
     // タイミングが変更された場合
     if (changes.timingChanged && this.waveformData?.raw) {
-      // 必要に応じて波形データを再処理
-      this.processWaveformData(this.waveformData.raw);
+      // 波形データの再処理は不要
+      // this.processWaveformData(this.waveformData.raw);
     }
   }
 } 

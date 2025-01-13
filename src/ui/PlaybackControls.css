@@ -2,17 +2,17 @@
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.5rem;
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 0.5rem;
+  padding: 1rem;
+  background-color: var(--surface-color);
+  border-radius: 8px;
 }
 
 .play-pause-button {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 40px;
+  height: 40px;
   border: none;
   border-radius: 50%;
-  background: #4a90e2;
+  background-color: var(--primary-color);
   color: white;
   font-size: 1.2rem;
   cursor: pointer;
@@ -23,20 +23,7 @@
 }
 
 .play-pause-button:hover {
-  background: #357abd;
-  transform: scale(1.05);
-}
-
-.play-pause-button:active {
-  transform: scale(0.95);
-}
-
-.play-pause-button.playing {
-  background: #e24a4a;
-}
-
-.play-pause-button.playing:hover {
-  background: #bd3535;
+  background-color: #357abd;
 }
 
 .seek-container {
@@ -46,62 +33,33 @@
   gap: 0.5rem;
 }
 
-.seek-bar-wrapper {
-  position: relative;
-  height: 1rem;
+.seek-container input[type="range"] {
   width: 100%;
-}
-
-.seek-bar-progress {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  height: 0.25rem;
-  background: #4a90e2;
-  border-radius: 0.125rem;
-  transform: translateY(-50%);
-  pointer-events: none;
-  transition: width 0.1s linear;
-}
-
-.seek-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  height: 4px;
   -webkit-appearance: none;
-  background: transparent;
-  cursor: pointer;
+  background: var(--border-color);
+  border-radius: 2px;
+  outline: none;
 }
 
-.seek-bar::-webkit-slider-thumb {
+.seek-container input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 1rem;
-  height: 1rem;
+  width: 12px;
+  height: 12px;
+  background: var(--primary-color);
   border-radius: 50%;
-  background: #4a90e2;
-  border: 2px solid white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.seek-bar::-webkit-slider-thumb:hover {
+.seek-container input[type="range"]::-webkit-slider-thumb:hover {
   transform: scale(1.2);
 }
 
-.seek-bar::-webkit-slider-runnable-track {
-  width: 100%;
-  height: 0.25rem;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 0.125rem;
-  cursor: pointer;
-}
-
 .time-display {
+  display: flex;
+  gap: 0.5rem;
+  color: var(--text-secondary-color);
+  font-size: 0.9rem;
   font-family: monospace;
-  font-size: 0.875rem;
-  color: #666;
-  text-align: center;
 } 

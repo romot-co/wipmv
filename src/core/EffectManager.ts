@@ -10,11 +10,6 @@ interface EffectManagerState {
   effectStates: Map<string, BaseEffectState>;
 }
 
-interface EffectManagerListener {
-  onEffectStateChange: (effectId: string, state: BaseEffectState) => void;
-  onEffectsChange: (effects: Map<string, EffectBase>) => void;
-}
-
 /**
  * エフェクトマネージャー
  * - 複数のエフェクトを管理し、適切なタイミングで描画を行う
@@ -22,7 +17,6 @@ interface EffectManagerListener {
  */
 export class EffectManager {
   private state: EffectManagerState;
-  private listeners: Set<EffectManagerListener> = new Set();
   private renderer: Renderer;
   private audioService: AudioPlaybackService | null = null;
   private animationFrameId: number | null = null;
@@ -46,78 +40,76 @@ export class EffectManager {
   }
 
   /**
-   * リスナーを追加
+   * エフェクトを追加
    */
-  public addListener(listener: EffectManagerListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+  public addEffect(effect: EffectBase): void {
+    console.log('EffectManager.addEffect - 開始:', effect);
+    const config = effect.getConfig();
+    this.state.effects.set(config.id, effect);
+    this.state.effectStates.set(config.id, effect.getState());
+    
+    this.sortEffectsByZIndex();
+    this.render();
+    console.log('EffectManager.addEffect - 完了。現在のエフェクト:', this.state.effects);
   }
 
   /**
-   * エフェクト状態の変更を通知
+   * エフェクトを削除
    */
-  private notifyStateChange(effectId: string, state: BaseEffectState): void {
-    this.state.effectStates.set(effectId, state);
-    this.listeners.forEach(listener => {
-      listener.onEffectStateChange(effectId, state);
-    });
+  public removeEffect(effectOrId: EffectBase | string): void {
+    const id = typeof effectOrId === 'string' ? effectOrId : effectOrId.getConfig().id;
+    const effect = this.state.effects.get(id);
+    
+    if (effect) {
+      if (this.isDisposable(effect)) {
+        effect.dispose();
+      }
+      this.state.effects.delete(id);
+      this.state.effectStates.delete(id);
+      this.render();
+    }
   }
 
   /**
-   * エフェクトリストの変更を通知
+   * 全エフェクトを取得
    */
-  private notifyEffectsChange(): void {
-    this.listeners.forEach(listener => {
-      listener.onEffectsChange(this.state.effects);
-    });
+  public getEffects(): EffectBase[] {
+    return Array.from(this.state.effects.values());
+  }
+
+  /**
+   * エフェクトの状態を取得
+   */
+  public getEffectState(id: string): BaseEffectState | undefined {
+    return this.state.effectStates.get(id);
   }
 
   /**
    * AudioPlaybackServiceを接続
    */
-  public connectAudioService(service: AudioPlaybackService): () => void {
+  public connectAudioService(service: AudioPlaybackService): void {
     this.audioService = service;
-    
-    // 状態変更を購読
-    const unsubscribe = service.subscribe((state) => {
-      this.audioState = state;
-      this.handleAudioStateChange(state);
-    });
-    
-    // クリーンアップ関数を返す
-    return () => {
-      unsubscribe();
-      this.stopRenderLoop();
-      this.audioService = null;
-    };
   }
-
-  /**
-   * オーディオ状態変更のハンドラ
-   */
-  private handleAudioStateChange = (state: AudioPlaybackState): void => {
-    this.updateParams({
-      currentTime: state.currentTime,
-      duration: state.duration
-    });
-
-    // 再生状態に応じてレンダリングループを制御
-    if (state.isPlaying) {
-      this.startRenderLoop();
-    } else {
-      this.stopRenderLoop();
-    }
-  };
 
   /**
    * レンダリングループの開始
    */
-  private startRenderLoop(): void {
+  public startRenderLoop(): void {
     // 既存のループを停止
     this.stopRenderLoop();
     
     const loop = () => {
-      if (this.audioService && this.audioState.isPlaying) {
+      if (this.audioService) {
+        // 現在時刻を取得して更新
+        const audioTime = this.audioService.getCurrentTime();
+        const duration = this.audioService.getDuration();
+        
+        // パラメータを更新
+        this.updateParams({
+          currentTime: audioTime,
+          duration: duration
+        });
+
         // 波形データの取得と更新
         const analyser = this.audioService.getAnalyserNode();
         if (analyser) {
@@ -138,8 +130,9 @@ export class EffectManager {
         }
         
         this.render();
-        this.animationFrameId = requestAnimationFrame(loop);
       }
+
+      this.animationFrameId = requestAnimationFrame(loop);
     };
     
     this.animationFrameId = requestAnimationFrame(loop);
@@ -148,44 +141,10 @@ export class EffectManager {
   /**
    * レンダリングループの停止
    */
-  private stopRenderLoop(): void {
+  public stopRenderLoop(): void {
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
-    }
-  }
-
-  /**
-   * エフェクトを追加
-   */
-  public addEffect(effect: EffectBase): void {
-    const config = effect.getConfig();
-    this.state.effects.set(config.id, effect);
-    this.state.effectStates.set(config.id, effect.getState());
-    
-    // エフェクトの状態変更を監視
-    effect.addStateListener((state) => {
-      this.notifyStateChange(config.id, state);
-    });
-    
-    this.sortEffectsByZIndex();
-    this.notifyEffectsChange();
-  }
-
-  /**
-   * エフェクトを削除
-   */
-  public removeEffect(effectOrId: EffectBase | string): void {
-    const id = typeof effectOrId === 'string' ? effectOrId : effectOrId.getConfig().id;
-    const effect = this.state.effects.get(id);
-    
-    if (effect) {
-      if (this.isDisposable(effect)) {
-        effect.dispose();
-      }
-      this.state.effects.delete(id);
-      this.state.effectStates.delete(id);
-      this.notifyEffectsChange();
     }
   }
 
@@ -197,7 +156,7 @@ export class EffectManager {
     if (effect) {
       effect.updateConfig(newConfig);
       this.sortEffectsByZIndex();
-      this.notifyEffectsChange();
+      this.render();
     }
   }
 
@@ -223,7 +182,39 @@ export class EffectManager {
     const ctx = this.renderer.getOffscreenContext();
     this.renderer.clear();
 
-    for (const effect of this.state.effects.values()) {
+    console.log('EffectManager: Starting render with params', {
+      currentTime: this.currentParams.currentTime,
+      hasWaveformData: !!this.currentParams.waveformData,
+      hasFrequencyData: !!this.currentParams.frequencyData,
+      effectsCount: this.state.effects.size
+    });
+
+    if (this.currentParams.waveformData) {
+      console.log('EffectManager: Waveform data details', {
+        length: this.currentParams.waveformData.length,
+        sampleValues: this.currentParams.waveformData.slice(0, 5)
+      });
+    }
+
+    // エフェクトをz-indexでソート
+    const sortedEffects = Array.from(this.state.effects.values())
+      .sort((a, b) => a.getZIndex() - b.getZIndex());
+
+    // 各エフェクトを描画
+    for (const effect of sortedEffects) {
+      const config = effect.getConfig();
+      console.log('EffectManager: Rendering effect', {
+        id: config.id,
+        type: config.type,
+        isVisible: effect.isVisible(this.currentParams.currentTime)
+      });
+
+      // 表示チェック
+      if (!effect.isVisible(this.currentParams.currentTime)) {
+        console.log('EffectManager: Effect is not visible at current time', this.currentParams.currentTime);
+        continue;
+      }
+
       effect.render(ctx, this.currentParams);
     }
 
@@ -240,20 +231,6 @@ export class EffectManager {
       )
     );
     this.state.effects = sortedEffects;
-  }
-
-  /**
-   * 全エフェクトを取得
-   */
-  public getEffects(): EffectBase[] {
-    return Array.from(this.state.effects.values());
-  }
-
-  /**
-   * エフェクトの状態を取得
-   */
-  public getEffectState(id: string): BaseEffectState | undefined {
-    return this.state.effectStates.get(id);
   }
 
   /**

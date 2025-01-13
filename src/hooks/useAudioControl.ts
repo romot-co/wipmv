@@ -12,6 +12,8 @@ export function useAudioControl({ manager, audioService }: UseAudioControlProps)
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<Error | null>(null);
+  const [waveformData, setWaveformData] = useState<Float32Array>(new Float32Array());
+  const [frequencyData, setFrequencyData] = useState<Uint8Array>(new Uint8Array());
 
   // 状態変更の購読
   useEffect(() => {
@@ -20,6 +22,17 @@ export function useAudioControl({ manager, audioService }: UseAudioControlProps)
       setIsPlaying(state.isPlaying);
       setCurrentTime(state.currentTime);
       setDuration(state.duration);
+
+      // オーディオデータの更新
+      const analyser = audioService.getAnalyserNode();
+      if (analyser) {
+        const waveform = new Float32Array(analyser.frequencyBinCount);
+        const frequency = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getFloatTimeDomainData(waveform);
+        analyser.getByteFrequencyData(frequency);
+        setWaveformData(waveform);
+        setFrequencyData(frequency);
+      }
 
       // EffectManagerの更新
       if (manager) {
@@ -98,6 +111,8 @@ export function useAudioControl({ manager, audioService }: UseAudioControlProps)
     pause,
     stop,
     seek,
-    getAnalyser: () => audioService.getAnalyserNode()
+    getAnalyser: () => audioService.getAnalyserNode(),
+    getWaveformData: () => waveformData,
+    getFrequencyData: () => frequencyData
   };
 } 
