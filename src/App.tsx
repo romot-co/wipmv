@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { Container, Flex, Box, Card, Button, Text, Section } from '@radix-ui/themes';
 import { PlaybackControls } from './ui/PlaybackControls';
 import { EffectList } from './ui/EffectList';
 import { EffectSettings } from './ui/EffectSettings';
@@ -272,12 +273,14 @@ export const App: React.FC = () => {
     type: keyof typeof errors;
     error: Error;
   }> = ({ type, error }) => (
-    <div className="error-section">
-      <p className="error-message">{error.message}</p>
-      <button onClick={() => clearError(type)} className="retry-button">
-        再試行
-      </button>
-    </div>
+    <Card className="error-section">
+      <Flex direction="column" gap="3" p="3">
+        <Text color="red" size="2" weight="medium">{error.message}</Text>
+        <Button onClick={() => clearError(type)} variant="soft" color="gray">
+          再試行
+        </Button>
+      </Flex>
+    </Card>
   );
 
   // AudioSourceの取得
@@ -286,42 +289,54 @@ export const App: React.FC = () => {
   // 初期状態またはオーディオ未ロード時の表示
   if (appState === 'initial' || !isAudioLoaded || !duration || !analyser) {
     return (
-      <div className="app app--empty">
-        <AudioUploader 
-          audioService={audioService}
-          onAudioLoad={() => {
-            setIsAudioLoaded(true);
-            clearError('audio');
-            transition('ready');
-          }}
-          onError={(error) => handleError('audio', error)}
-        />
-        {errors.audio && <ErrorMessage type="audio" error={errors.audio} />}
-        {!analyser && <div className="loading-message">オーディオ解析を準備中...</div>}
-      </div>
+      <Flex className="app--empty">
+        <Container size="2">
+          <Flex direction="column" gap="4" align="center">
+            <Section size="2">
+              <AudioUploader 
+                audioService={audioService}
+                onAudioLoad={() => {
+                  setIsAudioLoaded(true);
+                  clearError('audio');
+                  transition('ready');
+                }}
+                onError={(error) => handleError('audio', error)}
+              />
+            </Section>
+            {errors.audio && <ErrorMessage type="audio" error={errors.audio} />}
+            {!analyser && (
+              <Text className="loading-message" size="2" color="gray">
+                オーディオ解析を準備中...
+              </Text>
+            )}
+          </Flex>
+        </Container>
+      </Flex>
     );
   }
 
   // エラー状態の表示
   if (appState === 'error') {
     return (
-      <div className="app app--error">
-        <div className="error-container">
-          {Object.entries(errors).map(([type, error]) => (
-            <ErrorMessage 
-              key={type} 
-              type={type as keyof typeof errors} 
-              error={error} 
-            />
-          ))}
-        </div>
-      </div>
+      <Flex className="app app--error">
+        <Container size="2">
+          <Flex direction="column" gap="4">
+            {Object.entries(errors).map(([type, error]) => (
+              <ErrorMessage 
+                key={type} 
+                type={type as keyof typeof errors} 
+                error={error} 
+              />
+            ))}
+          </Flex>
+        </Container>
+      </Flex>
     );
   }
 
   return (
-    <div className="app">
-      <div className="preview-section">
+    <Container className="app">
+      <Section className="preview-section" size="3">
         <PreviewCanvas {...previewProps} />
         {audioService.getAudioBuffer() && (
           <ExportButton
@@ -331,28 +346,36 @@ export const App: React.FC = () => {
             onProgress={(progress) => console.log('Export progress:', progress)}
           />
         )}
-      </div>
-      <div className="controls-section">
-        <PlaybackControls {...playbackProps} />
-        <AddEffectButton onAdd={handleEffectAdd} />
-      </div>
-      <div className="effects-section">
-        <EffectList
-          effects={effects}
-          selectedEffectId={selectedEffectId}
-          onEffectSelect={setSelectedEffectId}
-          onEffectRemove={handleEffectRemove}
-          onEffectMove={handleEffectMove}
-        />
-        {selectedEffect && (
-          <EffectSettings
-            effect={selectedEffect}
-            onUpdate={handleEffectUpdate}
-            duration={duration || 0}
+      </Section>
+      
+      <Card className="controls-section">
+        <Flex gap="4" align="center">
+          <PlaybackControls {...playbackProps} />
+          <AddEffectButton onAdd={handleEffectAdd} />
+        </Flex>
+      </Card>
+
+      <Card className="effects-section">
+        <Box>
+          <EffectList
+            effects={effects}
+            selectedEffectId={selectedEffectId}
+            onEffectSelect={setSelectedEffectId}
+            onEffectRemove={handleEffectRemove}
+            onEffectMove={handleEffectMove}
           />
+        </Box>
+        {selectedEffect && (
+          <Box>
+            <EffectSettings
+              effect={selectedEffect}
+              onUpdate={handleEffectUpdate}
+              duration={duration || 0}
+            />
+          </Box>
         )}
-      </div>
-    </div>
+      </Card>
+    </Container>
   );
 };
 

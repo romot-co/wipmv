@@ -1,5 +1,7 @@
 // src/components/PlaybackControls.tsx
 import React from 'react';
+import { Flex, Button, Slider, Text, Box } from '@radix-ui/themes';
+import { PlayIcon, PauseIcon, TimerIcon } from '@radix-ui/react-icons';
 import './PlaybackControls.css';
 
 interface Props {
@@ -27,29 +29,46 @@ export const PlaybackControls: React.FC<Props> = ({
   };
 
   return (
-    <div className="playback-controls">
-      <button 
-        className={`play-pause-button ${isPlaying ? 'playing' : ''}`}
-        onClick={isPlaying ? onPause : onPlay}
-        aria-label={isPlaying ? '一時停止' : '再生'}
-      >
-        {isPlaying ? '⏸' : '▶'}
-      </button>
-      <div className="seek-container">
-        <input
-          type="range"
-          min={0}
-          max={duration}
-          step={0.01}
-          value={currentTime}
-          onChange={(e) => onSeek(parseFloat(e.target.value))}
-        />
-        <div className="time-display">
-          <span>{formatTime(currentTime)}</span>
-          <span>/</span>
-          <span>{formatTime(duration)}</span>
-        </div>
-      </div>
-    </div>
+    <Box className="playback-controls fade-in">
+      <Flex gap="4" align="center">
+        <Button
+          variant="soft"
+          onClick={isPlaying ? onPause : onPlay}
+          aria-label={isPlaying ? '一時停止' : '再生'}
+          size="3"
+          color="gray"
+          className="hover-highlight"
+        >
+          {isPlaying ? <PauseIcon width="20" height="20" /> : <PlayIcon width="20" height="20" />}
+        </Button>
+        
+        <Flex align="center" gap="2" style={{ minWidth: '80px' }}>
+          <TimerIcon />
+          <Text size="2" color="gray" weight="medium">
+            {formatTime(currentTime)}
+          </Text>
+        </Flex>
+
+        <Flex direction="column" gap="1" style={{ flex: 1 }} className="seek-container">
+          <Slider
+            value={[currentTime]}
+            min={0}
+            max={duration}
+            step={0.01}
+            onValueChange={(value) => onSeek(value[0])}
+            size="2"
+            variant="surface"
+            radius="full"
+            className="active-element"
+          />
+        </Flex>
+
+        <Flex align="center" gap="2" style={{ minWidth: '80px', justifyContent: 'flex-end' }}>
+          <Text size="2" color="gray" weight="medium">
+            {formatTime(duration)}
+          </Text>
+        </Flex>
+      </Flex>
+    </Box>
   );
 };

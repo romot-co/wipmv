@@ -1,6 +1,8 @@
 import React from 'react';
 import { EffectBase } from '../core/EffectBase';
 import { EffectType } from '../core/types';
+import { Card, Flex, Text, IconButton } from '@radix-ui/themes';
+import { ChevronUpIcon, ChevronDownIcon, Cross2Icon, BackpackIcon, TextIcon, ActivityLogIcon, ImageIcon } from '@radix-ui/react-icons';
 import './EffectList.css';
 
 interface Props {
@@ -13,10 +15,10 @@ interface Props {
 
 // エフェクトタイプごとのアイコンとラベル
 const effectTypeInfo = {
-  [EffectType.Background]: { icon: '🎨', label: '背景' },
-  [EffectType.Text]: { icon: '📝', label: 'テキスト' },
-  [EffectType.Waveform]: { icon: '📊', label: '波形' },
-  [EffectType.Watermark]: { icon: '🖼', label: '透かし' },
+  [EffectType.Background]: { icon: BackpackIcon, label: '背景' },
+  [EffectType.Text]: { icon: TextIcon, label: 'テキスト' },
+  [EffectType.Waveform]: { icon: ActivityLogIcon, label: '波形' },
+  [EffectType.Watermark]: { icon: ImageIcon, label: '透かし' },
 };
 
 export const EffectList: React.FC<Props> = ({
@@ -30,66 +32,66 @@ export const EffectList: React.FC<Props> = ({
   const sortedEffects = [...effects].reverse();
 
   return (
-    <div className="effect-list">
+    <Flex direction="column" gap="2">
       {sortedEffects.map((effect, index) => {
         const config = effect.getConfig();
-        const typeInfo = effectTypeInfo[config.type];
+        const TypeIcon = effectTypeInfo[config.type].icon;
         const isSelected = config.id === selectedEffectId;
 
         return (
-          <div
+          <Card
             key={config.id}
-            className={`effect-item ${isSelected ? 'selected' : ''}`}
+            variant={isSelected ? 'classic' : 'surface'}
+            style={{ cursor: 'pointer' }}
             onClick={() => onEffectSelect(config.id)}
           >
-            <div className="effect-item-content">
-              <div className="effect-item-icon">
-                {typeInfo.icon}
-              </div>
-              <div className="effect-item-type">
-                {typeInfo.label}
-              </div>
-              <div className="effect-item-index">
-                (z-index: {config.zIndex})
-              </div>
-            </div>
-            <div className="effect-item-controls">
-              <button
-                className="effect-item-button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEffectMove(config.id, 'up');
-                }}
-                disabled={index === 0}
-                title="上へ移動"
-              >
-                ↑
-              </button>
-              <button
-                className="effect-item-button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEffectMove(config.id, 'down');
-                }}
-                disabled={index === sortedEffects.length - 1}
-                title="下へ移動"
-              >
-                ↓
-              </button>
-              <button
-                className="effect-item-button delete"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEffectRemove(config.id);
-                }}
-                title="削除"
-              >
-                ×
-              </button>
-            </div>
-          </div>
+            <Flex justify="between" align="center" gap="3" p="2">
+              <Flex align="center" gap="2">
+                <TypeIcon />
+                <Text size="2">{effectTypeInfo[config.type].label}</Text>
+                <Text size="1" color="gray">
+                  (z-index: {config.zIndex})
+                </Text>
+              </Flex>
+              <Flex gap="1">
+                <IconButton
+                  size="1"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEffectMove(config.id, 'up');
+                  }}
+                  disabled={index === 0}
+                >
+                  <ChevronUpIcon />
+                </IconButton>
+                <IconButton
+                  size="1"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEffectMove(config.id, 'down');
+                  }}
+                  disabled={index === sortedEffects.length - 1}
+                >
+                  <ChevronDownIcon />
+                </IconButton>
+                <IconButton
+                  size="1"
+                  variant="ghost"
+                  color="red"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEffectRemove(config.id);
+                  }}
+                >
+                  <Cross2Icon />
+                </IconButton>
+              </Flex>
+            </Flex>
+          </Card>
         );
       })}
-    </div>
+    </Flex>
   );
 }; 

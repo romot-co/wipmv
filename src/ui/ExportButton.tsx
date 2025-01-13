@@ -3,6 +3,8 @@ import { EffectManager } from '../core/EffectManager';
 import { VideoEncoderService } from '../core/VideoEncoderService';
 import { EncodeSettings } from './EncodeSettings';
 import { EncodeCanvas } from './EncodeCanvas';
+import { Flex, Button, Dialog } from '@radix-ui/themes';
+import { GearIcon, DownloadIcon, Cross2Icon } from '@radix-ui/react-icons';
 import './ExportButton.css';
 
 interface ExportButtonProps {
@@ -142,37 +144,48 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
   };
 
   return (
-    <div className="export-button-container">
-      <button
-        className="export-button settings"
-        onClick={() => setShowSettings(!showSettings)}
+    <Flex gap="2" align="center" className="export-button-container">
+      <Dialog.Root open={showSettings} onOpenChange={setShowSettings}>
+        <Dialog.Trigger>
+          <Button
+            variant="soft"
+            disabled={isExporting}
+            size="2"
+          >
+            <GearIcon />
+            設定
+          </Button>
+        </Dialog.Trigger>
+
+        <Dialog.Content>
+          <Dialog.Title>エクスポート設定</Dialog.Title>
+          <EncodeSettings
+            {...encodeSettings}
+            onSettingsChange={setEncodeSettings}
+          />
+        </Dialog.Content>
+      </Dialog.Root>
+
+      <Button
+        variant="solid"
         disabled={isExporting}
-      >
-        設定
-      </button>
-
-      {showSettings && (
-        <EncodeSettings
-          {...encodeSettings}
-          onSettingsChange={setEncodeSettings}
-        />
-      )}
-
-      <button
-        className={`export-button ${isExporting ? 'exporting' : ''}`}
         onClick={handleExport}
-        disabled={isExporting}
+        size="2"
       >
+        <DownloadIcon />
         {isExporting ? 'エクスポート中...' : 'エクスポート'}
-      </button>
+      </Button>
 
       {isExporting && (
-        <button
-          className="export-button cancel"
+        <Button
+          variant="soft"
+          color="red"
           onClick={handleCancel}
+          size="2"
         >
+          <Cross2Icon />
           キャンセル
-        </button>
+        </Button>
       )}
 
       <EncodeCanvas
@@ -182,6 +195,6 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
           encodeManagerRef.current = manager;
         }}
       />
-    </div>
+    </Flex>
   );
 }; 
