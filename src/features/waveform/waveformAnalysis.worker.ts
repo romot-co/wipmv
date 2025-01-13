@@ -1,76 +1,65 @@
 /**
- * 波形分析を行うWeb Worker
- * メインスレッドから波形データを受け取り、分析結果を返す
+ * 波形解析用のWeb Worker
+ * オーディオデータのオフライン解析を行い、ピークとRMS値を計算
  */
 
-interface WaveformAnalysisOptions {
-  smoothing?: number;
-  responsive?: boolean;
+interface AnalyzeMessage {
+  type: 'analyze';
+  channelData: Float32Array;
+  sampleRate: number;
+  segmentCount: number;
 }
 
-interface WaveformAnalysisMessage {
-  data: Float32Array;
-  options: WaveformAnalysisOptions;
+interface ResultMessage {
+  type: 'result';
+  peaks: Float32Array;
+  rms: Float32Array;
 }
 
-self.onmessage = (e: MessageEvent<WaveformAnalysisMessage>) => {
-  const { data, options } = e.data;
-  const smoothingFactor = options?.smoothing ?? 0.5;
-  
-  // スムージング処理
-  const smoothed = smoothData(data, smoothingFactor);
-  
-  // ピーク値の計算
-  const peaks = calculatePeaks(data);
-  
-  // RMS（二乗平均平方根）の計算
-  const rms = calculateRMS(data);
-  
-  // 結果を返送
-  self.postMessage({
-    smoothed: smoothed,
-    peaks: peaks,
-    rms: rms
-  });
+// メッセージハンドラ
+self.onmessage = (e: MessageEvent<AnalyzeMessage>) => {
+  if (e.data.type === 'analyze') {
+    const { channelData, segmentCount } = e.data;
+    const result = analyzeWaveform(channelData, segmentCount);
+    self.postMessage(result, {
+      transfer: [result.peaks.buffer, result.rms.buffer]
+    });
+  }
 };
 
 /**
- * 波形データをスムージング
+ * 波形データを解析し、ピークとRMS値を計算
  */
-function smoothData(data: Float32Array, factor: number): Float32Array {
-  if (factor <= 0) return data;
-  if (factor >= 1) factor = 0.9999;
+function analyzeWaveform(
+  channelData: Float32Array,
+  segmentCount: number
+): ResultMessage {
+  const samplesPerSegment = Math.floor(channelData.length / segmentCount);
+  const peaks = new Float32Array(segmentCount);
+  const rms = new Float32Array(segmentCount);
 
-  const smoothed = new Float32Array(data.length);
-  let lastValue = data[0];
+  for (let i = 0; i < segmentCount; i++) {
+    let maxPeak = 0;
+    let sumSquares = 0;
+    const startIndex = i * samplesPerSegment;
+    const endIndex = Math.min(startIndex + samplesPerSegment, channelData.length);
 
-  for (let i = 0; i < data.length; i++) {
-    const currentValue = data[i];
-    smoothed[i] = lastValue + factor * (currentValue - lastValue);
-    lastValue = smoothed[i];
+    for (let j = startIndex; j < endIndex; j++) {
+      const value = Math.abs(channelData[j]);
+      maxPeak = Math.max(maxPeak, value);
+      sumSquares += value * value;
+    }
+
+    peaks[i] = maxPeak;
+    rms[i] = Math.sqrt(sumSquares / samplesPerSegment);
   }
 
-  return smoothed;
+  return {
+    type: 'result',
+    peaks,
+    rms
+  };
 }
 
-/**
- * ピーク値を計算
- */
-function calculatePeaks(data: Float32Array): Float32Array {
-  const peaks = new Float32Array(data.length);
-  for (let i = 0; i < data.length; i++) {
-    peaks[i] = Math.abs(data[i]);
-  }
-  return peaks;
-}
-
-/**
- * RMS（二乗平均平方根）を計算
- */
-function calculateRMS(data: Float32Array): number {
-  let sum = 0;
-  for (let i = 0; i < data.length; i++) {
-    sum += data[i] * data[i];
-  }
-  return Math.sqrt(sum / data.length);
-} 
+// TypeScriptのコンパイラに、これがモジュールであることを伝える
+export {}; 

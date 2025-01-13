@@ -1,0 +1,79 @@
+.effect-time-settings {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.time-setting {
+  margin-bottom: 1rem;
+}
+
+.time-setting label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+.time-inputs {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.time-text {
+  width: 120px;
+  padding: 0.5rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.time-text:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.time-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 4px;
+  background: #dee2e6;
+  border-radius: 2px;
+  outline: none;
+}
+
+.time-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #007bff;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.time-slider::-webkit-slider-thumb:hover {
+  background: #0056b3;
+}
+
+.time-preview {
+  height: 24px;
+  background: #e9ecef;
+  border-radius: 4px;
+  position: relative;
+  margin-top: 1rem;
+}
+
+.time-range {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: #007bff;
+  opacity: 0.6;
+  border-radius: 4px;
+  transition: left 0.2s, width 0.2s;
+} 

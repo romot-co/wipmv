@@ -123,4 +123,11 @@ export class Renderer {
   isOffscreenCanvasSupported(): boolean {
     return this.isOffscreenSupported;
   }
+
+  /**
+   * 現在のキャンバスを取得
+   */
+  public getCanvas(): HTMLCanvasElement {
+    return this.canvas;
+  }
 }

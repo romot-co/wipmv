@@ -1,191 +1,121 @@
-import { BaseEffectConfig, AudioVisualParameters, Disposable } from './types';
+import { BaseEffectConfig, AudioVisualParameters } from './types';
 
 export interface BaseEffectState {
-  isReady: boolean;
-  isLoading: boolean;
-  error: Error | null;
+  isVisible: boolean;
+  isPlaying: boolean;
+  startTime: number;
+  endTime: number;
 }
 
-export type EffectStateListener = (state: BaseEffectState) => void;
+export abstract class EffectBase {
+  private config: BaseEffectConfig;
+  private state: BaseEffectState;
 
-/**
- * エフェクトの基底クラス
- * 全てのエフェクトはこのクラスを継承する
- * @template TState エフェクト固有の状態型
- */
-export abstract class EffectBase<TState extends BaseEffectState = BaseEffectState> implements Disposable {
-  protected config: BaseEffectConfig;
-  private stateListeners: Set<EffectStateListener> = new Set();
-  protected state: TState;
-  private isDisposed = false;
-
-  constructor(config: BaseEffectConfig, initialState: TState) {
-    this.config = config;
-    this.state = initialState;
+  constructor(config: BaseEffectConfig) {
+    this.config = {
+      ...config,
+      startTime: config.startTime ?? 0,
+      endTime: config.endTime ?? Infinity,
+      zIndex: config.zIndex ?? 0
+    };
+    this.state = {
+      isVisible: true,
+      isPlaying: false,
+      startTime: this.config.startTime,
+      endTime: this.config.endTime
+    };
   }
 
-  /**
-   * 設定を取得
-   */
-  getConfig(): BaseEffectConfig {
-    return this.config;
+  public getConfig<T extends BaseEffectConfig = BaseEffectConfig>(): T {
+    return this.config as T;
   }
 
-  /**
-   * z-indexを取得
-   */
-  getZIndex(): number {
+  public getState(): BaseEffectState {
+    return this.state;
+  }
+
+  protected setState(newState: Partial<BaseEffectState>): void {
+    this.state = { ...this.state, ...newState };
+  }
+
+  public isVisible(currentTime: number): boolean {
+    return (
+      this.state.isVisible &&
+      currentTime >= this.state.startTime &&
+      currentTime <= this.state.endTime
+    );
+  }
+
+  public setStartTime(time: number): void {
+    if (isNaN(time) || time < 0) {
+      time = 0;
+    }
+    if (time > this.state.endTime) {
+      throw new Error('Start time cannot be greater than end time');
+    }
+    this.setState({ startTime: time });
+    this.config.startTime = time;
+  }
+
+  public setEndTime(time: number): void {
+    if (isNaN(time)) {
+      time = Infinity;
+    }
+    if (time < this.state.startTime) {
+      throw new Error('End time cannot be less than start time');
+    }
+    this.setState({ endTime: time });
+    this.config.endTime = time;
+  }
+
+  public setTimeRange(startTime: number, endTime: number): void {
+    if (isNaN(startTime) || startTime < 0) {
+      startTime = 0;
+    }
+    if (isNaN(endTime)) {
+      endTime = Infinity;
+    }
+    if (startTime > endTime) {
+      throw new Error('Start time cannot be greater than end time');
+    }
+    this.setState({ startTime, endTime });
+    this.config.startTime = startTime;
+    this.config.endTime = endTime;
+  }
+
+  public getStartTime(): number {
+    return this.state.startTime;
+  }
+
+  public getEndTime(): number {
+    return this.state.endTime;
+  }
+
+  public getZIndex(): number {
     return this.config.zIndex;
   }
 
-  /**
-   * リソースを解放する
-   * - リスナーの解除
-   * - 状態のリセット
-   * - サブクラス固有のリソース解放
-   */
-  dispose(): void {
-    if (this.isDisposed) return;
+  public updateConfig(newConfig: Partial<BaseEffectConfig>): void {
+    this.config = {
+      ...this.config,
+      ...newConfig
+    };
 
-    // リスナーの解除
-    this.stateListeners.clear();
-
-    // 状態のリセット
-    this.updateState({
-      isReady: false,
-      isLoading: false,
-      error: null
-    } as Partial<TState>);
-
-    // サブクラス固有のリソース解放
-    this.disposeResources();
-
-    this.isDisposed = true;
-  }
-
-  /**
-   * サブクラスで固有のリソース解放処理を実装
-   */
-  protected abstract disposeResources(): void;
-
-  /**
-   * 破棄済みかどうかをチェック
-   */
-  protected checkDisposed(): void {
-    if (this.isDisposed) {
-      throw new Error('このエフェクトは既に破棄されています');
+    // 時間設定が更新された場合は状態も更新
+    if ('startTime' in newConfig || 'endTime' in newConfig) {
+      this.setTimeRange(
+        newConfig.startTime ?? this.state.startTime,
+        newConfig.endTime ?? this.state.endTime
+      );
     }
   }
 
-  /**
-   * 状態変更リスナーを登録する
-   */
-  addStateListener(listener: EffectStateListener): () => void {
-    this.checkDisposed();
-    this.stateListeners.add(listener);
-    // 現在の状態を即時通知
-    listener(this.state);
-    
-    // クリーンアップ関数を返す
-    return () => {
-      this.stateListeners.delete(listener);
-    };
-  }
-
-  /**
-   * 状態を更新する
-   */
-  protected updateState(newState: Partial<TState>): void {
-    this.checkDisposed();
-    this.state = { ...this.state, ...newState };
-    this.notifyStateChange();
-  }
-
-  /**
-   * 状態変更を通知する
-   */
-  private notifyStateChange(): void {
-    this.stateListeners.forEach(listener => listener(this.state));
-  }
-
-  /**
-   * エフェクトの設定を更新する
-   * @param newConfig 新しい設定（部分的）
-   * @param batch バッチ更新モード（複数の更新をまとめて行う場合）
-   */
-  updateConfig(newConfig: Partial<BaseEffectConfig>, batch = false): void {
-    this.checkDisposed();
-
-    // 変更前の値を保存
-    const oldConfig = { ...this.config };
-
-    // 設定を更新
-    this.config = { ...this.config, ...newConfig };
-
-    // 変更の影響を分析
-    const changes = this.analyzeConfigChanges(oldConfig, this.config);
-
-    // 状態の更新が必要な場合のみ更新
-    if (changes.requiresStateUpdate && !batch) {
-      this.handleConfigChange(changes);
-    }
-  }
-
-  /**
-   * 設定変更の影響を分析
-   */
-  protected analyzeConfigChanges(oldConfig: BaseEffectConfig, newConfig: BaseEffectConfig) {
-    return {
-      // 表示/非表示の変更
-      visibilityChanged: oldConfig.visible !== newConfig.visible,
-      
-      // タイミングの変更
-      timingChanged: 
-        oldConfig.startTime !== newConfig.startTime ||
-        oldConfig.endTime !== newConfig.endTime ||
-        oldConfig.duration !== newConfig.duration,
-      
-      // レイヤー順の変更
-      zIndexChanged: oldConfig.zIndex !== newConfig.zIndex,
-      
-      // 状態の更新が必要かどうか
-      requiresStateUpdate:
-        oldConfig.visible !== newConfig.visible ||
-        oldConfig.startTime !== newConfig.startTime ||
-        oldConfig.endTime !== newConfig.endTime ||
-        oldConfig.duration !== newConfig.duration
-    };
-  }
-
-  /**
-   * 設定変更に応じた処理を実行
-   */
-  protected abstract handleConfigChange(
-    changes: ReturnType<typeof this.analyzeConfigChanges>
-  ): void;
-
-  /**
-   * 指定された時間でエフェクトが表示されるかどうかを判定
-   * @param currentTime 現在の再生時間
-   * @returns 表示される場合はtrue
-   */
-  public isVisible(currentTime: number): boolean {
-    const { startTime = 0, endTime = Infinity } = this.config;
-    return currentTime >= startTime && currentTime <= endTime;
-  }
-
-  /**
-   * エフェクトを描画する
-   */
-  abstract render(
+  public abstract render(
     ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
     params: AudioVisualParameters
   ): void;
 
-  /**
-   * 状態を取得
-   */
-  public getState(): TState {
-    return this.state;
+  public dispose(): void {
+    // サブクラスでオーバーライド可能
   }
 } 

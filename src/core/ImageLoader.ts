@@ -1,5 +1,3 @@
-import { AppError, ErrorType } from './types';
-
 /**
  * 画像読み込みの結果型
  */
@@ -147,7 +145,10 @@ export class ImageLoader {
   ): Promise<ImageLoadResult> {
     return new Promise((resolve, reject) => {
       const image = new Image();
-      let timeoutId: number;
+      const timeoutId: number = window.setTimeout(() => {
+        cleanup();
+        reject(new Error(`Image load timeout: ${url}`));
+      }, timeout);
 
       const cleanup = () => {
         image.onload = null;
@@ -166,11 +167,6 @@ export class ImageLoader {
         cleanup();
         reject(new Error(`Failed to load image: ${url}`));
       };
-
-      timeoutId = window.setTimeout(() => {
-        cleanup();
-        reject(new Error(`Image load timeout: ${url}`));
-      }, timeout);
 
       image.src = url;
     });

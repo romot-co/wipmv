@@ -1,34 +1,53 @@
 import React from 'react';
-import { WatermarkEffectConfig, EffectConfig, WatermarkStyle, WatermarkPosition } from '../../../core/types';
-import { ImageUploader, RangeSlider } from '../../common';
+import { WatermarkEffectConfig } from '../../../core/types';
 
 interface WatermarkSettingsProps {
   config: WatermarkEffectConfig;
-  onChange: (newConfig: Partial<EffectConfig>) => void;
+  onChange: (newConfig: Partial<WatermarkEffectConfig>) => void;
 }
 
-/**
- * ウォーターマークエフェクトの設定UIコンポーネント
- * 画像、位置、透明度などの設定を提供
- */
 export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
   config,
-  onChange,
+  onChange
 }) => {
-  const handleStyleChange = (styleUpdate: Partial<WatermarkStyle>) => {
+  const handleImageUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onChange({ imageUrl: e.target.value });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result;
+        if (typeof result === 'string') {
+          onChange({ imageUrl: result });
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePositionChange = (
+    key: keyof WatermarkEffectConfig['position'],
+    value: number
+  ) => {
     onChange({
-      style: {
-        ...config.style,
-        ...styleUpdate
+      position: {
+        ...config.position,
+        [key]: value
       }
     });
   };
 
-  const handlePositionChange = (positionUpdate: Partial<WatermarkPosition>) => {
+  const handleStyleChange = (
+    key: keyof WatermarkEffectConfig['style'],
+    value: number | string
+  ) => {
     onChange({
-      position: {
-        ...config.position,
-        ...positionUpdate
+      style: {
+        ...config.style,
+        [key]: value
       }
     });
   };
@@ -36,80 +55,153 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
   return (
     <div className="watermark-settings">
       <div className="setting-group">
-        <ImageUploader
-          label="ウォーターマーク画像"
-          value={config.imageUrl}
-          onChange={(url) => onChange({ imageUrl: url })}
+        <label>画像アップロード</label>
+        <input
+          type="file"
           accept="image/*"
-          placeholder="画像URLを入力またはファイルを選択"
+          onChange={handleFileChange}
         />
       </div>
 
       <div className="setting-group">
-        <RangeSlider
-          label="透明度"
+        <label>画像URL</label>
+        <input
+          type="text"
+          value={config.imageUrl}
+          onChange={handleImageUrlChange}
+          placeholder="https://example.com/image.jpg"
+        />
+      </div>
+
+      <div className="setting-group">
+        <label>位置 X</label>
+        <input
+          type="number"
+          value={config.position.x}
+          onChange={(e) => handlePositionChange('x', Number(e.target.value))}
+        />
+      </div>
+
+      <div className="setting-group">
+        <label>位置 Y</label>
+        <input
+          type="number"
+          value={config.position.y}
+          onChange={(e) => handlePositionChange('y', Number(e.target.value))}
+        />
+      </div>
+
+      <div className="setting-group">
+        <label>幅</label>
+        <input
+          type="number"
+          value={config.position.width}
+          onChange={(e) => handlePositionChange('width', Number(e.target.value))}
+          min={1}
+        />
+      </div>
+
+      <div className="setting-group">
+        <label>高さ</label>
+        <input
+          type="number"
+          value={config.position.height}
+          onChange={(e) => handlePositionChange('height', Number(e.target.value))}
+          min={1}
+        />
+      </div>
+
+      <div className="setting-group">
+        <label>不透明度</label>
+        <input
+          type="range"
           value={config.style.opacity}
-          onChange={(value) => handleStyleChange({ opacity: value })}
+          onChange={(e) => handleStyleChange('opacity', Number(e.target.value))}
           min={0}
           max={1}
           step={0.1}
         />
+        <span>{config.style.opacity}</span>
       </div>
 
       <div className="setting-group">
-        <RangeSlider
-          label="X座標"
-          value={config.position.x}
-          onChange={(value) => handlePositionChange({ x: value })}
-          min={0}
-          max={1000}
-          unit="px"
-        />
-      </div>
-
-      <div className="setting-group">
-        <RangeSlider
-          label="Y座標"
-          value={config.position.y}
-          onChange={(value) => handlePositionChange({ y: value })}
-          min={0}
-          max={1000}
-          unit="px"
-        />
-      </div>
-
-      <div className="setting-group">
-        <RangeSlider
-          label="幅"
-          value={config.position.width ?? 100}
-          onChange={(value) => handlePositionChange({ width: value })}
-          min={10}
-          max={1000}
-          unit="px"
-        />
-      </div>
-
-      <div className="setting-group">
-        <RangeSlider
-          label="高さ"
-          value={config.position.height ?? 100}
-          onChange={(value) => handlePositionChange({ height: value })}
-          min={10}
-          max={1000}
-          unit="px"
-        />
-      </div>
-
-      <div className="setting-group">
-        <RangeSlider
-          label="回転"
-          value={config.position.rotation ?? 0}
-          onChange={(value) => handlePositionChange({ rotation: value })}
-          min={0}
-          max={360}
-          unit="°"
-        />
+        <label>ブレンドモード</label>
+        <select
+          value={config.style.blendMode}
+          onChange={(e) => handleStyleChange('blendMode', e.target.value)}
+        >
+          <option value="source-over">通常</option>
+          <option value="multiply">乗算</option>
+          <option value="screen">スクリーン</option>
+          <option value="overlay">オーバーレイ</option>
+          <option value="darken">暗く</option>
+          <option value="lighten">明るく</option>
+        </select>
       </div>
     </div>
   );
-}; 
+};
+
+// スタイルの追加
+const style = document.createElement('style');
+style.textContent = `
+.watermark-settings {
+  padding: 1rem;
+}
+
+.setting-group {
+  margin-bottom: 1rem;
+}
+
+.setting-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.setting-group input[type="text"],
+.setting-group input[type="number"],
+.setting-group select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.setting-group input[type="file"] {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #fff;
+}
+
+.setting-group input[type="file"]::-webkit-file-upload-button {
+  padding: 0.5rem 1rem;
+  margin-right: 1rem;
+  border: none;
+  border-radius: 4px;
+  background-color: #007bff;
+  color: white;
+  cursor: pointer;
+}
+
+.setting-group input[type="file"]::-webkit-file-upload-button:hover {
+  background-color: #0056b3;
+}
+
+.setting-group input[type="range"] {
+  width: 100%;
+  margin-right: 1rem;
+}
+
+.setting-group input[type="number"] {
+  width: 100px;
+}
+
+.setting-group span {
+  font-size: 0.9rem;
+  color: #666;
+}
+`;
+document.head.appendChild(style); 

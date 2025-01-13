@@ -159,17 +159,19 @@ export class AudioPlaybackService {
   }
 
   public pause() {
-    if (!this.isPlaying || !this.sourceNode) return;
+    // 再生状態を先に更新
+    this.isPlaying = false;
 
     // 定期的な状態更新を停止
     this.stopStateUpdates();
 
     // 現在の再生位置を保存して停止
-    this.startOffset = this.getCurrentTime();
-    this.sourceNode.stop();
-    this.sourceNode.disconnect();
-    this.sourceNode = null;
-    this.isPlaying = false;
+    if (this.sourceNode) {
+      this.startOffset = this.getCurrentTime();
+      this.sourceNode.stop();
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
+    }
 
     this.notifyStateChange();
   }
@@ -292,17 +294,21 @@ export class AudioPlaybackService {
    * 再生終了時の処理
    */
   private handlePlaybackEnd(): void {
-    // 定期的な状態更新を停止
-    this.stopStateUpdates();
-
-    if (this.sourceNode) {
-      this.sourceNode.stop();
-      this.sourceNode.disconnect();
-      this.sourceNode = null;
+    console.log('再生終了');
+    
+    // 一時停止状態の場合は再生を開始しない
+    if (!this.isPlaying) {
+      this.startOffset = 0;
+      this.notifyStateChange();
+      return;
     }
-    this.startOffset = this.getDuration();
-    this.isPlaying = false;
-    this.notifyStateChange();
+    
+    // ループ再生のために最初から再生を開始
+    this.startOffset = 0;
+    this.play().catch(error => {
+      console.error('ループ再生中にエラーが発生しました:', error);
+      this.handlePlaybackError(error);
+    });
   }
 
   // 追加: 定期的な状態更新を開始

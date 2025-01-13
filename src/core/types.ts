@@ -68,11 +68,18 @@ export interface BaseAnimation {
 export interface BaseEffectConfig {
   id: string;         // エフェクトの一意のID
   type: EffectType;   // エフェクト種別
-  visible: boolean;   // 表示非表示
-  startTime?: number; // 表示開始時刻(秒)
-  endTime?: number;   // 表示終了時刻(秒)
   zIndex: number;     // レイヤ順
-  duration?: number;
+  startTime: number;  // 表示開始時刻(秒)
+  endTime: number;    // 表示終了時刻(秒)
+  visible: boolean;   // 表示非表示
+}
+
+/**
+ * エフェクトの基本状態
+ */
+export interface BaseEffectState {
+  isVisible: boolean;  // 表示状態
+  isPlaying: boolean;  // 再生状態
 }
 
 /**
@@ -133,6 +140,7 @@ export interface TextEffectConfig extends BaseEffectConfig {
  * 波形エフェクト
  */
 export type WaveformStyle = 'line' | 'bar' | 'mirror';
+export type WaveformAnalysisMode = 'realtime' | 'offline';
 
 export interface WaveformColors {
   primary: string;
@@ -142,6 +150,14 @@ export interface WaveformColors {
 
 export interface WaveformEffectConfig extends BaseEffectConfig {
   type: EffectType.Waveform;
+  options: {
+    smoothing?: number;
+    barWidth?: number;
+    barSpacing?: number;
+    style?: 'line' | 'bar' | 'mirror';
+    analysisMode?: 'realtime' | 'offline';
+    segmentCount?: number;
+  };
   position: {
     x: number;
     y: number;
@@ -152,13 +168,6 @@ export interface WaveformEffectConfig extends BaseEffectConfig {
     primary: string;
     secondary?: string;
     background?: string;
-  };
-  options: {
-    barWidth?: number;
-    barSpacing?: number;
-    smoothing?: number;
-    style?: 'line' | 'bar' | 'mirror';
-    responsive?: boolean;
   };
 }
 
@@ -317,5 +326,3 @@ export interface InspectorProps {
 export interface Disposable {
   dispose(): void;
 }
-
-export type { BaseEffectState } from './EffectBase';

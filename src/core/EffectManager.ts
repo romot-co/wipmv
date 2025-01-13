@@ -348,4 +348,24 @@ export class EffectManager {
     this.updateEffect(id, { zIndex: lowerEffect.getConfig().zIndex });
     this.updateEffect(effects[index + 1][0], { zIndex: tempZIndex });
   }
+
+  /**
+   * 別のマネージャーの状態をコピー
+   */
+  public copyStateFrom(other: EffectManager): void {
+    // エフェクト配列をディープコピー
+    this.state.effects = new Map(other.state.effects);
+    this.state.effectStates = new Map(other.state.effectStates);
+  }
+
+  /**
+   * 現在のCanvasを取得
+   */
+  public getCanvas(): HTMLCanvasElement {
+    return this.renderer.getCanvas();
+  }
+
+  public getRenderer(): Renderer {
+    return this.renderer;
+  }
 }

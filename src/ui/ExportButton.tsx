@@ -1,6 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { EffectManager } from '../core/EffectManager';
 import { VideoEncoderService } from '../core/VideoEncoderService';
+import { EncodeSettings } from './EncodeSettings';
+import { EncodeCanvas } from './EncodeCanvas';
 import './ExportButton.css';
 
 interface ExportButtonProps {
@@ -10,12 +12,6 @@ interface ExportButtonProps {
   onProgress?: (progress: number) => void;
 }
 
-/**
- * 動画エクスポートボタンコンポーネント
- * - エンコード処理の開始
- * - 進捗表示
- * - エラーハンドリング
- */
 export const ExportButton: React.FC<ExportButtonProps> = ({
   audioBuffer,
   manager,
@@ -23,19 +19,28 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
   onProgress
 }) => {
   const [isExporting, setIsExporting] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [isCanceled, setIsCanceled] = useState(false);
+  const encodeManagerRef = useRef<EffectManager | null>(null);
+
+  // エンコード設定の初期値
+  const [encodeSettings, setEncodeSettings] = useState({
+    width: 960,
+    height: 600,
+    frameRate: 30,
+    videoBitrate: 5000000,
+    audioBitrate: 128000
+  });
 
   const handleExport = async () => {
-    if (!canvasRef.current || isExporting || !manager) return;
+    if (!encodeManagerRef.current || isExporting || !manager) return;
 
     try {
       setIsExporting(true);
+      setIsCanceled(false);
+
       const encoder = new VideoEncoderService({
-        width: 1920,
-        height: 1080,
-        frameRate: 30,
-        videoBitrate: 5000000,
-        audioBitrate: 128000,
+        ...encodeSettings,
         sampleRate: audioBuffer.sampleRate,
         channels: audioBuffer.numberOfChannels
       });
@@ -43,33 +48,65 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       await encoder.initialize();
 
       // 進捗計算用の変数
-      const totalFrames = Math.ceil(audioBuffer.duration * 30); // 30fps
+      const totalFrames = Math.ceil(audioBuffer.duration * encodeSettings.frameRate);
       let processedFrames = 0;
 
+      // エフェクト状態を高解像度マネージャーにコピー
+      encodeManagerRef.current.copyStateFrom(manager);
+
       // フレームごとの処理
-      for (let time = 0; time < audioBuffer.duration; time += 1/30) {
+      for (let time = 0; time < audioBuffer.duration; time += 1/encodeSettings.frameRate) {
+        if (isCanceled) {
+          throw new Error('エクスポートがキャンセルされました');
+        }
+
+        // 波形データを計算
+        const waveformSamplesPerFrame = Math.floor(audioBuffer.sampleRate / encodeSettings.frameRate);
+        const waveformStartSample = Math.floor(time * audioBuffer.sampleRate);
+        const waveformData = new Float32Array(1024);
+        
+        // 波形データを生成
+        for (let i = 0; i < waveformData.length; i++) {
+          const start = waveformStartSample + Math.floor(i * waveformSamplesPerFrame / waveformData.length);
+          const end = waveformStartSample + Math.floor((i + 1) * waveformSamplesPerFrame / waveformData.length);
+          let sum = 0;
+          let count = 0;
+          
+          for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+            const channelData = audioBuffer.getChannelData(channel);
+            for (let j = start; j < end && j < channelData.length; j++) {
+              sum += Math.abs(channelData[j]);
+              count++;
+            }
+          }
+          
+          waveformData[i] = count > 0 ? sum / count : 0;
+        }
+
         // パラメータを更新
-        manager.updateParams({
+        encodeManagerRef.current.updateParams({
           currentTime: time,
           duration: audioBuffer.duration,
-          isPlaying: true
+          isPlaying: true,
+          waveformData
         });
 
         // フレームをレンダリング
-        manager.render();
+        encodeManagerRef.current.render();
 
         // フレームをエンコード
-        if (canvasRef.current) {
-          await encoder.encodeVideoFrame(canvasRef.current, time * 1000000);
-        }
+        await encoder.encodeVideoFrame(
+          encodeManagerRef.current.getCanvas(),
+          time * 1000000
+        );
 
         // 音声データをエンコード
-        const samplesPerFrame = Math.floor(audioBuffer.sampleRate / 30);
-        const startSample = Math.floor(time * audioBuffer.sampleRate);
+        const audioSamplesPerFrame = Math.floor(audioBuffer.sampleRate / encodeSettings.frameRate);
+        const audioStartSample = Math.floor(time * audioBuffer.sampleRate);
         await encoder.encodeAudioBuffer(
           audioBuffer,
-          startSample,
-          samplesPerFrame,
+          audioStartSample,
+          audioSamplesPerFrame,
           time * 1000000
         );
 
@@ -95,12 +132,32 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       onError(error instanceof Error ? error : new Error('エクスポートに失敗しました'));
     } finally {
       setIsExporting(false);
+      setIsCanceled(false);
       onProgress?.(0);
     }
   };
 
+  const handleCancel = () => {
+    setIsCanceled(true);
+  };
+
   return (
     <div className="export-button-container">
+      <button
+        className="export-button settings"
+        onClick={() => setShowSettings(!showSettings)}
+        disabled={isExporting}
+      >
+        設定
+      </button>
+
+      {showSettings && (
+        <EncodeSettings
+          {...encodeSettings}
+          onSettingsChange={setEncodeSettings}
+        />
+      )}
+
       <button
         className={`export-button ${isExporting ? 'exporting' : ''}`}
         onClick={handleExport}
@@ -108,7 +165,23 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       >
         {isExporting ? 'エクスポート中...' : 'エクスポート'}
       </button>
-      <canvas ref={canvasRef} style={{ display: 'none' }} width={1920} height={1080} />
+
+      {isExporting && (
+        <button
+          className="export-button cancel"
+          onClick={handleCancel}
+        >
+          キャンセル
+        </button>
+      )}
+
+      <EncodeCanvas
+        width={encodeSettings.width}
+        height={encodeSettings.height}
+        onInit={(manager) => {
+          encodeManagerRef.current = manager;
+        }}
+      />
     </div>
   );
 }; 

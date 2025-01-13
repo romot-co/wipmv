@@ -83,7 +83,9 @@ export const App: React.FC = () => {
             backgroundType: 'color',
             color: '#000000',
             zIndex,
-            visible: true
+            visible: true,
+            startTime: 0,
+            endTime: duration || 0
           });
           break;
         case EffectType.Text:
@@ -98,7 +100,9 @@ export const App: React.FC = () => {
             },
             position: { x: 100, y: 100 },
             zIndex,
-            visible: true
+            visible: true,
+            startTime: 0,
+            endTime: duration || 0
           });
           break;
         case EffectType.Waveform:
@@ -109,8 +113,18 @@ export const App: React.FC = () => {
             colors: {
               primary: '#ffffff'
             },
+            options: {
+              style: 'bar',
+              analysisMode: 'realtime',
+              barWidth: 2,
+              barSpacing: 1,
+              smoothing: 0.5,
+              segmentCount: 128
+            },
             zIndex,
-            visible: true
+            visible: true,
+            startTime: 0,
+            endTime: duration || 0
           });
           break;
         case EffectType.Watermark:
@@ -124,7 +138,9 @@ export const App: React.FC = () => {
               blendMode: 'source-over'
             },
             zIndex,
-            visible: true
+            visible: true,
+            startTime: 0,
+            endTime: duration || 0
           });
           break;
       }
@@ -332,6 +348,7 @@ export const App: React.FC = () => {
           <EffectSettings
             effect={selectedEffect}
             onUpdate={handleEffectUpdate}
+            duration={duration || 0}
           />
         )}
       </div>

@@ -1,0 +1,47 @@
+.encode-settings {
+  padding: 1rem;
+  background: #f5f5f5;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.encode-settings h3 {
+  margin: 0 0 1rem;
+  font-size: 1.2rem;
+  color: #333;
+}
+
+.setting-group {
+  margin-bottom: 1rem;
+}
+
+.setting-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.setting-group input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.setting-group input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.resolution-inputs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.resolution-inputs input {
+  width: calc(50% - 0.5rem);
+} 
