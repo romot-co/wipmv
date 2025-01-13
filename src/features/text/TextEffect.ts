@@ -154,8 +154,40 @@ export class TextEffect extends EffectBase<TextEffectState> {
     }
   }
 
-  override dispose(): void {
+  /**
+   * リソースの解放処理
+   * アニメーション関連の状態をリセット
+   */
+  protected override disposeResources(): void {
     this.animationStartTime = null;
-    super.dispose();
+    this.updateState({
+      animationProgress: 0,
+      animationActive: false
+    });
+  }
+
+  /**
+   * 設定変更の影響を処理
+   */
+  protected override handleConfigChange(
+    changes: ReturnType<typeof this.analyzeConfigChanges>
+  ): void {
+    // 表示状態が変更された場合
+    if (changes.visibilityChanged) {
+      this.updateState({
+        ...this.state,
+        isReady: this.config.visible
+      });
+    }
+
+    // タイミングが変更された場合
+    if (changes.timingChanged) {
+      this.animationStartTime = null;
+      this.updateState({
+        ...this.state,
+        animationProgress: 0,
+        animationActive: false
+      });
+    }
   }
 } 

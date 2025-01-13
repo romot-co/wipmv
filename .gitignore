@@ -24,8 +24,8 @@ dist-ssr
 *.sw?
 
 # Spec
-src/doc/spec.md
-src/doc/prompt.md
+docs/spec.md
+docs/prompt.md
 
 # Workinglog
 workinglog.md

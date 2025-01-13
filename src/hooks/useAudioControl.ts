@@ -7,7 +7,20 @@ interface UseAudioControlProps {
   audioService: AudioPlaybackService;
 }
 
-export function useAudioControl({ manager, audioService }: UseAudioControlProps) {
+interface UseAudioControlReturn {
+  currentTime: number;
+  isPlaying: boolean;
+  duration: number;
+  error: Error | null;
+  play: () => Promise<void>;
+  pause: () => Promise<void>;
+  seek: (time: number) => Promise<void>;
+  getAnalyser: () => AnalyserNode | null;
+  getWaveformData: () => Float32Array;
+  getFrequencyData: () => Uint8Array;
+}
+
+export function useAudioControl({ manager, audioService }: UseAudioControlProps): UseAudioControlReturn {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -23,22 +36,12 @@ export function useAudioControl({ manager, audioService }: UseAudioControlProps)
       setCurrentTime(state.currentTime);
       setDuration(state.duration);
 
-      // オーディオデータの更新
-      const analyser = audioService.getAnalyserNode();
-      if (analyser) {
-        const waveform = new Float32Array(analyser.frequencyBinCount);
-        const frequency = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getFloatTimeDomainData(waveform);
-        analyser.getByteFrequencyData(frequency);
-        setWaveformData(waveform);
-        setFrequencyData(frequency);
-      }
-
       // EffectManagerの更新
       if (manager) {
         manager.updateParams({
           currentTime: state.currentTime,
-          duration: state.duration
+          duration: state.duration,
+          isPlaying: state.isPlaying
         });
       }
     });
@@ -46,7 +49,10 @@ export function useAudioControl({ manager, audioService }: UseAudioControlProps)
     // EffectManagerとの接続
     let managerCleanup: (() => void) | undefined;
     if (manager) {
-      managerCleanup = manager.connectAudioService(audioService);
+      manager.connectAudioService(audioService);
+      managerCleanup = () => {
+        manager.disconnectAudioService();
+      };
     }
 
     return () => {
@@ -55,6 +61,33 @@ export function useAudioControl({ manager, audioService }: UseAudioControlProps)
       setError(null);
     };
   }, [manager, audioService]);
+
+  // アナライザーデータの更新を最適化
+  useEffect(() => {
+    let rafId: number;
+    const updateAnalyserData = () => {
+      const analyser = audioService.getAnalyserNode();
+      if (analyser && isPlaying) {
+        const waveform = new Float32Array(analyser.frequencyBinCount);
+        const frequency = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getFloatTimeDomainData(waveform);
+        analyser.getByteFrequencyData(frequency);
+        setWaveformData(waveform);
+        setFrequencyData(frequency);
+        rafId = requestAnimationFrame(updateAnalyserData);
+      }
+    };
+    
+    if (isPlaying) {
+      rafId = requestAnimationFrame(updateAnalyserData);
+    }
+    
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [isPlaying, audioService]);
 
   // 再生制御
   const play = useCallback(async () => {
@@ -80,17 +113,6 @@ export function useAudioControl({ manager, audioService }: UseAudioControlProps)
     }
   }, [audioService]);
 
-  const stop = useCallback(async () => {
-    try {
-      setError(null);
-      await audioService.stop();
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error('Failed to stop audio');
-      setError(err);
-      throw err;
-    }
-  }, [audioService]);
-
   const seek = useCallback(async (time: number) => {
     try {
       setError(null);
@@ -109,7 +131,6 @@ export function useAudioControl({ manager, audioService }: UseAudioControlProps)
     error,
     play,
     pause,
-    stop,
     seek,
     getAnalyser: () => audioService.getAnalyserNode(),
     getWaveformData: () => waveformData,

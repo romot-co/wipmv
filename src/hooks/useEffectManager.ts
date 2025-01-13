@@ -2,14 +2,31 @@
 
 import { useRef, useEffect } from 'react';
 import { EffectManager } from '../core/EffectManager';
+import { Renderer } from '../core/Renderer';
+import { EffectBase } from '../core/EffectBase';
+import { AudioVisualParameters } from '../core/types';
 
-export function useEffectManager(canvasRef: React.RefObject<HTMLCanvasElement>) {
+interface UseEffectManagerReturn {
+  renderFrame: (params: AudioVisualParameters) => void;
+  addEffect: (effect: EffectBase) => void;
+  removeEffect: (effectOrId: EffectBase | string) => void;
+  getManager: () => EffectManager | null;
+}
+
+/**
+ * エフェクトマネージャーを管理するフック
+ * - キャンバスの初期化
+ * - エフェクトの追加・削除
+ * - レンダリング制御
+ */
+export function useEffectManager(canvasRef: React.RefObject<HTMLCanvasElement>): UseEffectManagerReturn {
   const managerRef = useRef<EffectManager | null>(null);
 
   // 初期化
   useEffect(() => {
     if (canvasRef.current) {
-      managerRef.current = new EffectManager(canvasRef.current);
+      const renderer = new Renderer(canvasRef.current);
+      managerRef.current = new EffectManager(renderer);
     }
     return () => {
       managerRef.current?.dispose();
@@ -17,16 +34,19 @@ export function useEffectManager(canvasRef: React.RefObject<HTMLCanvasElement>) 
     };
   }, [canvasRef]);
 
-  const renderFrame = (time: number, waveData?: Float32Array, freqData?: Uint8Array) => {
-    managerRef.current?.render(time, waveData, freqData);
+  const renderFrame = (params: AudioVisualParameters) => {
+    if (managerRef.current) {
+      managerRef.current.updateParams(params);
+      managerRef.current.render();
+    }
   };
 
-  const addEffect = (effect: any) => {
+  const addEffect = (effect: EffectBase) => {
     managerRef.current?.addEffect(effect);
   };
 
-  const removeEffect = (id: string) => {
-    managerRef.current?.removeEffect(id);
+  const removeEffect = (effectOrId: EffectBase | string) => {
+    managerRef.current?.removeEffect(effectOrId);
   };
 
   return {

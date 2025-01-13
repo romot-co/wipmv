@@ -22,7 +22,8 @@ export class EffectManager {
   private animationFrameId: number | null = null;
   private currentParams: AudioVisualParameters = {
     currentTime: 0,
-    duration: 0
+    duration: 0,
+    isPlaying: false
   };
   private audioState: AudioPlaybackState = {
     isPlaying: false,
@@ -30,6 +31,8 @@ export class EffectManager {
     duration: 0,
     isSuspended: false
   };
+  private lastRenderTime: number = 0;
+  private readonly FRAME_INTERVAL: number = 1000 / 60; // 60fps
 
   constructor(renderer: Renderer) {
     this.renderer = renderer;
@@ -87,56 +90,97 @@ export class EffectManager {
   /**
    * AudioPlaybackServiceを接続
    */
-  public connectAudioService(service: AudioPlaybackService): void {
+  public connectAudioService(service: AudioPlaybackService | null): void {
     this.audioService = service;
+  }
+
+  /**
+   * AudioPlaybackServiceを切断
+   */
+  public disconnectAudioService(): void {
+    this.audioService = null;
   }
 
   /**
    * レンダリングループの開始
    */
   public startRenderLoop(): void {
-    // 既存のループを停止
-    this.stopRenderLoop();
+    if (this.animationFrameId !== null) return;
     
-    const loop = () => {
-      if (this.audioService) {
-        // 現在時刻を取得して更新
-        const audioTime = this.audioService.getCurrentTime();
-        const duration = this.audioService.getDuration();
-        
-        // パラメータを更新
-        this.updateParams({
-          currentTime: audioTime,
-          duration: duration
-        });
-
-        // 波形データの取得と更新
-        const analyser = this.audioService.getAnalyserNode();
-        if (analyser) {
-          try {
-            const waveformData = new Float32Array(analyser.frequencyBinCount);
-            const frequencyData = new Uint8Array(analyser.frequencyBinCount);
-            
-            analyser.getFloatTimeDomainData(waveformData);
-            analyser.getByteFrequencyData(frequencyData);
-            
-            this.updateParams({
-              waveformData,
-              frequencyData
-            });
-          } catch (error) {
-            console.warn('Failed to get audio data:', error);
-          }
-        }
-        
-        this.render();
+    const loop = (timestamp: number) => {
+      if (!this.audioService) {
+        this.stopRenderLoop();
+        return;
       }
 
+      // フレームレート制御
+      const elapsed = timestamp - this.lastRenderTime;
+      if (elapsed < this.FRAME_INTERVAL) {
+        this.animationFrameId = requestAnimationFrame(loop);
+        return;
+      }
+
+      try {
+        // 音声の状態を取得
+        const audioTime = this.audioService.getCurrentTime();
+        const duration = this.audioService.getDuration();
+        const analyser = this.audioService.getAnalyserNode();
+
+        // パラメータを一括更新
+        const params: Partial<AudioVisualParameters> = {
+          currentTime: audioTime,
+          duration: duration,
+          isPlaying: true
+        };
+
+        // 波形データがある場合のみ更新
+        if (analyser) {
+          // メモリ再利用のためのバッファを保持
+          if (!this._waveformBuffer || !this._frequencyBuffer) {
+            this._waveformBuffer = new Float32Array(analyser.frequencyBinCount);
+            this._frequencyBuffer = new Uint8Array(analyser.frequencyBinCount);
+          }
+          
+          analyser.getFloatTimeDomainData(this._waveformBuffer);
+          analyser.getByteFrequencyData(this._frequencyBuffer);
+          params.waveformData = this._waveformBuffer;
+          params.frequencyData = this._frequencyBuffer;
+        }
+
+        this.updateParams(params);
+        
+        // 表示されているエフェクトのみレンダリング
+        if (this.hasVisibleEffects(audioTime)) {
+          this.render();
+        }
+
+        this.lastRenderTime = timestamp;
+      } catch (error) {
+        console.error('レンダリングループでエラーが発生:', error);
+        this.stopRenderLoop();
+        return;
+      }
+      
       this.animationFrameId = requestAnimationFrame(loop);
     };
     
     this.animationFrameId = requestAnimationFrame(loop);
   }
+
+  /**
+   * 表示されているエフェクトがあるかチェック
+   */
+  private hasVisibleEffects(currentTime: number): boolean {
+    return Array.from(this.state.effects.values()).some(effect => 
+      effect.isVisible(currentTime)
+    );
+  }
+
+  /**
+   * メモリ再利用のためのバッファ
+   */
+  private _waveformBuffer?: Float32Array;
+  private _frequencyBuffer?: Uint8Array;
 
   /**
    * レンダリングループの停止
@@ -145,6 +189,14 @@ export class EffectManager {
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
+      
+      // 停止時のパラメータ更新
+      this.updateParams({
+        isPlaying: false
+      });
+      
+      // 最後の状態を描画
+      this.render();
     }
   }
 
@@ -245,6 +297,10 @@ export class EffectManager {
     });
     this.state.effects.clear();
     this.state.effectStates.clear();
+    
+    // バッファのクリア
+    this._waveformBuffer = undefined;
+    this._frequencyBuffer = undefined;
   }
 
   /**

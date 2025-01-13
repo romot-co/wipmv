@@ -104,54 +104,58 @@ export class AudioPlaybackService {
     return this.audioBuffer;
   }
 
-  public play() {
-    if (!this.audioContext || !this.audioBuffer) {
-      console.log('再生できません:', { context: !!this.audioContext, buffer: !!this.audioBuffer });
-      return;
-    }
+  public async play() {
+    try {
+      if (!this.audioContext || !this.audioBuffer) {
+        throw new Error('オーディオの再生に必要なリソースが初期化されていません');
+      }
 
-    console.log('再生開始');
-    
-    // 既存のソースノードを停止・破棄
-    if (this.sourceNode) {
-      this.sourceNode.stop();
+      console.log('再生開始');
+      
+      // 既存のソースノードを停止・破棄
+      if (this.sourceNode) {
+        this.sourceNode.stop();
+        this.sourceNode.disconnect();
+      }
+
+      // 新しいソースノードを作成
+      this.sourceNode = this.audioContext.createBufferSource();
+      this.sourceNode.buffer = this.audioBuffer;
+
+      // 再生終了時のハンドラを設定
+      this.sourceNode.onended = () => {
+        this.handlePlaybackEnd();
+      };
+
+      // アナライザーノードの設定
+      if (!this.analyser) {
+        console.log('アナライザーノードの初期化（再生時）');
+        this.analyser = this.audioContext.createAnalyser();
+        this.analyser.fftSize = 2048;
+      }
+
+      // 接続: sourceNode -> analyser -> destination
       this.sourceNode.disconnect();
+      this.analyser.disconnect();
+      
+      this.sourceNode.connect(this.analyser);
+      this.analyser.connect(this.audioContext.destination);
+      console.log('オーディオノードの接続完了');
+
+      // 再生開始
+      this.sourceNode.start(0, this.startOffset);
+      this.startTime = this.audioContext.currentTime;
+      this.isPlaying = true;
+
+      // 定期的な状態更新を開始
+      this.startStateUpdates();
+
+      this.notifyStateChange();
+      console.log('再生開始完了');
+    } catch (error) {
+      this.handlePlaybackError(error);
+      throw error;
     }
-
-    // 新しいソースノードを作成
-    this.sourceNode = this.audioContext.createBufferSource();
-    this.sourceNode.buffer = this.audioBuffer;
-
-    // 再生終了時のハンドラを設定
-    this.sourceNode.onended = () => {
-      this.handlePlaybackEnd();
-    };
-
-    // アナライザーノードの設定
-    if (!this.analyser) {
-      console.log('アナライザーノードの初期化（再生時）');
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
-    }
-
-    // 接続: sourceNode -> analyser -> destination
-    this.sourceNode.disconnect();
-    this.analyser.disconnect();
-    
-    this.sourceNode.connect(this.analyser);
-    this.analyser.connect(this.audioContext.destination);
-    console.log('オーディオノードの接続完了');
-
-    // 再生開始
-    this.sourceNode.start(0, this.startOffset);
-    this.startTime = this.audioContext.currentTime;
-    this.isPlaying = true;
-
-    // 定期的な状態更新を開始
-    this.startStateUpdates();
-
-    this.notifyStateChange();
-    console.log('再生開始完了');
   }
 
   public pause() {
@@ -248,12 +252,39 @@ export class AudioPlaybackService {
   }
 
   public dispose() {
-    this.stopStateUpdates();  // 追加: インターバルのクリーンアップ
-    this.stop();
-    this.audioContext?.close();
-    this.audioContext = null;
+    // 定期的な状態更新を停止
+    this.stopStateUpdates();
+
+    // 再生を停止
+    if (this.sourceNode) {
+      try {
+        this.sourceNode.stop();
+      } catch (error) {
+        console.warn('ソースノードの停止中にエラーが発生しました:', error);
+      }
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
+    }
+
+    // アナライザーノードの解放
+    if (this.analyser) {
+      this.analyser.disconnect();
+      this.analyser = null;
+    }
+
+    // AudioContextの解放
+    if (this.audioContext) {
+      this.audioContext.close().catch(error => {
+        console.warn('AudioContextのクローズ中にエラーが発生しました:', error);
+      });
+      this.audioContext = null;
+    }
+
+    // 状態のリセット
     this.audioBuffer = null;
-    this.analyser = null;
+    this.isPlaying = false;
+    this.startOffset = 0;
+    this.startTime = 0;
     this.stateChangeListeners = [];
   }
 
@@ -290,6 +321,13 @@ export class AudioPlaybackService {
       window.clearInterval(this.updateInterval);
       this.updateInterval = null;
     }
+  }
+
+  private handlePlaybackError(error: unknown) {
+    this.isPlaying = false;
+    this.notifyStateChange();
+    const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました';
+    console.error('AudioPlaybackService エラー:', errorMessage);
   }
 }
 

@@ -1,0 +1,24 @@
+.audio-uploader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.file-input {
+  padding: 0.5rem;
+  border: 2px dashed #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.3s ease;
+}
+
+.file-input:hover {
+  border-color: #666;
+}
+
+.file-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+} 

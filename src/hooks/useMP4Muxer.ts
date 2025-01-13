@@ -16,18 +16,18 @@ interface MP4MuxerState {
  * ビデオ・オーディオトラックの追加、チャンクデータの処理を行う
  */
 export const useMP4Muxer = (): MP4MuxerState => {
-  const muxerRef = useRef<Muxer | null>(null);
+  const muxerRef = useRef<Muxer<ArrayBufferTarget> | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [isMuxing, setIsMuxing] = useState(false);
 
-  const initializeMuxer = useCallback((options: MuxerOptions) => {
+  const initializeMuxer = useCallback((options: MuxerOptions<ArrayBufferTarget>) => {
     try {
       if (muxerRef.current) {
         // 既存のMuxerをクリーンアップ
         muxerRef.current = null;
       }
       const target = new ArrayBufferTarget();
-      muxerRef.current = new Muxer({ ...options, target, fastStart: true });
+      muxerRef.current = new Muxer<ArrayBufferTarget>({ ...options, target, fastStart: true });
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e : new Error('Failed to initialize muxer'));

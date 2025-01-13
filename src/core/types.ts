@@ -82,6 +82,7 @@ export interface BaseEffectConfig {
 export interface AudioVisualParameters {
   currentTime: number;     // 現在時刻(秒)
   duration: number;        // 全体の尺(秒)
+  isPlaying: boolean;      // 再生中かどうか
   waveformData?: Float32Array;   // 波形データ(オプション)
   frequencyData?: Uint8Array;   // 周波数データ(オプション)
 }
