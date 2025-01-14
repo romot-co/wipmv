@@ -51,7 +51,7 @@ export class VideoEncoderService {
       bitrate: this.config.videoBitrate,
       framerate: this.config.frameRate
     };
-    await this.videoEncoder.configure(videoCfg);
+    this.videoEncoder.configure(videoCfg);
 
     // AudioEncoder
     this.audioEncoder = new AudioEncoder({
@@ -66,7 +66,7 @@ export class VideoEncoderService {
       numberOfChannels: this.config.channels,
       bitrate: this.config.audioBitrate
     };
-    await this.audioEncoder.configure(audioCfg);
+    this.audioEncoder.configure(audioCfg);
   }
 
   /**

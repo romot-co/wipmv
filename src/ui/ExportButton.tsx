@@ -4,6 +4,8 @@ import { VideoEncoderService } from '../core/VideoEncoderService';
 import { EncodeSettings } from './EncodeSettings';
 import { Flex, Button, Dialog, Text } from '@radix-ui/themes';
 import { GearIcon, DownloadIcon, Cross2Icon } from '@radix-ui/react-icons';
+import { EffectType, WaveformEffectConfig } from '../core/types';
+import { WaveformEffect } from '../features/waveform/WaveformEffect';
 import './ExportButton.css';
 
 interface ExportButtonProps {
@@ -48,6 +50,39 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       setIsCanceled(false);
       setExportProgress(0);
 
+      // 1. WaveformEffectを取得
+      const effects = manager.getEffects();
+      const waveformEffect = effects.find(
+        effect => effect.getConfig().type === EffectType.Waveform
+      ) as WaveformEffect | undefined;
+
+      // 2. オフライン解析の実行
+      if (waveformEffect) {
+        try {
+          // analysisMode を offline に設定
+          const config = waveformEffect.getConfig() as WaveformEffectConfig;
+          waveformEffect.updateConfig({
+            ...config,
+            options: {
+              ...config.options,
+              analysisMode: 'offline',
+              // セグメント数を調整して高品質な波形を実現
+              segmentCount: Math.max(config.options.segmentCount || 1024, 2048)
+            }
+          } as WaveformEffectConfig);
+
+          // オーディオデータの解析を開始
+          const channelData = audioBuffer.getChannelData(0);
+          console.log('オフライン波形解析を開始...');
+          await waveformEffect.startOfflineAnalysis(channelData);
+          await waveformEffect.waitForAnalysisComplete();
+          console.log('オフライン波形解析が完了しました');
+        } catch (error) {
+          console.error('波形解析中にエラーが発生しました:', error);
+          throw error;
+        }
+      }
+
       // エンコーダを初期化
       const encoder = new VideoEncoderService({
         ...videoSettings,
@@ -60,71 +95,78 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       const totalFrames = Math.ceil(audioBuffer.duration * videoSettings.frameRate);
       let frameCount = 0;
 
-      // 1. もしリアルタイム描画中なら、manager側で stopRenderLoop() しておくと衝突が少なくなる(任意)
+      // リアルタイム描画を停止
       manager.stopRenderLoop();
 
-      // 2. frameごとの処理
-      for (let time = 0; time < audioBuffer.duration; time += 1 / videoSettings.frameRate) {
-        if (isCanceled) {
-          throw new Error('エクスポートがキャンセルされました');
+      try {
+        // フレームごとの処理
+        for (let time = 0; time < audioBuffer.duration; time += 1 / videoSettings.frameRate) {
+          if (isCanceled) {
+            throw new Error('エクスポートがキャンセルされました');
+          }
+
+          const timeMs = time * 1000;
+
+          // オフラインモードでの描画
+          manager.updateParams({
+            currentTime: time,
+            duration: audioBuffer.duration,
+            isPlaying: false,
+            // waveformDataは不要（オフラインモードで自動的に処理される）
+          });
+          
+          // 描画を実行
+          manager.render();
+
+          const canvas = manager.getCanvas();
+          await encoder.encodeVideoFrame(canvas, timeMs * 1000);
+
+          frameCount++;
+          const progress = (frameCount / totalFrames) * 100;
+          setExportProgress(progress);
+          onProgress?.(progress);
         }
 
-        const timeMs = time * 1000;
-
-        // ここでは "offline" のように, managerを都度手動で描画
-        manager.updateParams({
-          currentTime: time,
-          duration: audioBuffer.duration,
-          isPlaying: false // 強制的に再生中ではない
-        });
-        manager.render(); // 1フレーム分を描画
-
-        const canvas = manager.getCanvas();
-        await encoder.encodeVideoFrame(canvas, timeMs * 1000); // encode
-
-        // 進捗
-        frameCount++;
-        const progress = (frameCount / totalFrames) * 100;
-        setExportProgress(progress);
-        onProgress?.(progress);
-      }
-
-      // 音声データのエンコード
-      const samplesPerFrame = Math.floor(audioBuffer.sampleRate / videoSettings.frameRate);
-      for (let startSample = 0; startSample < audioBuffer.length; startSample += samplesPerFrame) {
-        if (isCanceled) {
-          throw new Error('エクスポートがキャンセルされました');
+        // 音声データのエンコード
+        const samplesPerFrame = Math.floor(audioBuffer.sampleRate / videoSettings.frameRate);
+        for (let startSample = 0; startSample < audioBuffer.length; startSample += samplesPerFrame) {
+          if (isCanceled) {
+            throw new Error('エクスポートがキャンセルされました');
+          }
+          await encoder.encodeAudioBuffer(
+            audioBuffer,
+            startSample,
+            Math.min(samplesPerFrame, audioBuffer.length - startSample),
+            (startSample / audioBuffer.sampleRate) * 1_000_000 // μs
+          );
         }
-        await encoder.encodeAudioBuffer(
-          audioBuffer,
-          startSample,
-          Math.min(samplesPerFrame, audioBuffer.length - startSample),
-          (startSample / audioBuffer.sampleRate) * 1_000_000 // μs
-        );
+
+        // 完了
+        const result = await encoder.finalize();
+
+        // ダウンロード
+        const blob = new Blob([result], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'output.mp4';
+        a.click();
+        URL.revokeObjectURL(url);
+
+      } catch (error) {
+        onError(error instanceof Error ? error : new Error('エクスポートに失敗しました'));
+      } finally {
+        setIsExporting(false);
+        setIsCanceled(false);
+        setExportProgress(0);
+        onProgress?.(0);
+
+        // エクスポート終わったら, 再びmanager.startRenderLoop()しておくなど
+        manager.startRenderLoop();
       }
-
-      // 完了
-      const result = await encoder.finalize();
-
-      // ダウンロード
-      const blob = new Blob([result], { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'output.mp4';
-      a.click();
-      URL.revokeObjectURL(url);
 
     } catch (error) {
       onError(error instanceof Error ? error : new Error('エクスポートに失敗しました'));
-    } finally {
-      setIsExporting(false);
-      setIsCanceled(false);
-      setExportProgress(0);
-      onProgress?.(0);
-
-      // エクスポート終わったら, 再びmanager.startRenderLoop()しておくなど
-      manager.startRenderLoop();
     }
   };
 
