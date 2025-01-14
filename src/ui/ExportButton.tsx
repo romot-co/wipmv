@@ -48,42 +48,43 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       setIsCanceled(false);
       setExportProgress(0);
 
+      // エンコーダを初期化
       const encoder = new VideoEncoderService({
         ...videoSettings,
         sampleRate: audioBuffer.sampleRate,
         channels: audioBuffer.numberOfChannels
       });
-
       await encoder.initialize();
 
-      // フレーム数の計算
+      // フレーム数を計算
       const totalFrames = Math.ceil(audioBuffer.duration * videoSettings.frameRate);
       let frameCount = 0;
 
-      // フレームごとの処理
+      // 1. もしリアルタイム描画中なら、manager側で stopRenderLoop() しておくと衝突が少なくなる(任意)
+      manager.stopRenderLoop();
+
+      // 2. frameごとの処理
       for (let time = 0; time < audioBuffer.duration; time += 1 / videoSettings.frameRate) {
         if (isCanceled) {
           throw new Error('エクスポートがキャンセルされました');
         }
 
-        // 現在の時刻をミリ秒に変換
         const timeMs = time * 1000;
 
-        // プレビューの更新
+        // ここでは "offline" のように, managerを都度手動で描画
         manager.updateParams({
           currentTime: time,
           duration: audioBuffer.duration,
-          isPlaying: false
+          isPlaying: false // 強制的に再生中ではない
         });
+        manager.render(); // 1フレーム分を描画
 
-        // フレームの描画とエンコード
-        manager.render();
         const canvas = manager.getCanvas();
-        await encoder.encodeVideoFrame(canvas, timeMs * 1000); // マイクロ秒に変換
+        await encoder.encodeVideoFrame(canvas, timeMs * 1000); // encode
 
-        // 進捗の更新
+        // 進捗
         frameCount++;
-        const progress = (frameCount / totalFrames * 100);
+        const progress = (frameCount / totalFrames) * 100;
         setExportProgress(progress);
         onProgress?.(progress);
       }
@@ -94,18 +95,17 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         if (isCanceled) {
           throw new Error('エクスポートがキャンセルされました');
         }
-
         await encoder.encodeAudioBuffer(
           audioBuffer,
           startSample,
           Math.min(samplesPerFrame, audioBuffer.length - startSample),
-          (startSample / audioBuffer.sampleRate) * 1000000 // マイクロ秒
+          (startSample / audioBuffer.sampleRate) * 1_000_000 // μs
         );
       }
 
-      // エンコード完了
+      // 完了
       const result = await encoder.finalize();
-      
+
       // ダウンロード
       const blob = new Blob([result], { type: 'video/mp4' });
       const url = URL.createObjectURL(blob);
@@ -122,6 +122,9 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       setIsCanceled(false);
       setExportProgress(0);
       onProgress?.(0);
+
+      // エクスポート終わったら, 再びmanager.startRenderLoop()しておくなど
+      manager.startRenderLoop();
     }
   };
 
@@ -172,4 +175,4 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       )}
     </Flex>
   );
-}; 
+};

@@ -1,109 +1,58 @@
 /**
  * useAudioControl
- *
- * AudioPlaybackServiceの再生状態をReactのstateに同期し、
- * 再生や一時停止、シークなどの操作を提供する。
- * 波形/周波数データもラップして返すことで、コンポーネント側は
- * 「useAudioControl から取得した関数を呼ぶだけで完結」する。
+ * - React Hooks でUI操作を簡単にする
+ * - AudioPlaybackService のメソッドをラップし、再生/停止/シーク/エラー管理などを提供
+ * - 進捗バーなどのために "currentTime" "duration" などをstate管理しても良いが
+ *   毎フレーム更新する必要はなく、onPlay/onPause/onSeekのタイミング等適度でOK
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AudioPlaybackService } from '../core/AudioPlaybackService';
 
-interface UseAudioControlState {
+interface AudioControlState {
+  isPlaying: boolean;
   currentTime: number;
   duration: number;
-  isPlaying: boolean;
   error: Error | null;
 }
 
-interface UseAudioControlReturn {
-  state: UseAudioControlState;
-  play: () => Promise<void>;
-  pause: () => void;
-  stop: () => void;
-  seek: (time: number) => Promise<void>;
-  getAnalyser: () => AnalyserNode | null;
-  getWaveformData: () => Float32Array;
-  getFrequencyData: () => Uint8Array;
-}
-
-export function useAudioControl(
-  audioService: AudioPlaybackService
-): UseAudioControlReturn {
-  const [state, setState] = useState<UseAudioControlState>({
+export function useAudioControl(audioService: AudioPlaybackService) {
+  const [state, setState] = useState<AudioControlState>({
+    isPlaying: false,
     currentTime: 0,
     duration: 0,
-    isPlaying: false,
     error: null,
   });
-
-  const rafIdRef = useRef<number | null>(null);
-
-  /**
-   * 再生状況をフレームごとに更新
-   */
-  const updateFrame = useCallback(() => {
-    if (!audioService) return;
-
-    const currentTime = audioService.getCurrentTime();
-    const duration = audioService.getDuration();
-    const isPlaying = audioService.isPlaying();
-
-    setState((prev) => ({
-      ...prev,
-      currentTime,
-      duration,
-      isPlaying,
-    }));
-
-    if (isPlaying) {
-      rafIdRef.current = requestAnimationFrame(updateFrame);
-    } else {
-      rafIdRef.current = null;
-    }
-  }, [audioService]);
-
-  useEffect(() => {
-    if (rafIdRef.current == null) {
-      rafIdRef.current = requestAnimationFrame(updateFrame);
-    }
-    return () => {
-      if (rafIdRef.current != null) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
-    };
-  }, [updateFrame]);
 
   /**
    * play
    */
   const play = useCallback(async () => {
     try {
-      setState((prev) => ({ ...prev, error: null }));
       await audioService.play();
-      if (rafIdRef.current == null) {
-        rafIdRef.current = requestAnimationFrame(updateFrame);
-      }
+      const duration = audioService.getDuration();
+      setState((prev) => ({
+        ...prev,
+        isPlaying: true,
+        duration,
+        error: null,
+      }));
     } catch (err) {
-      const e = err instanceof Error ? err : new Error('再生に失敗しました');
-      setState((prev) => ({ ...prev, error: e }));
-      throw e;
+      const error = err instanceof Error ? err : new Error("再生に失敗しました");
+      setState((prev) => ({ ...prev, error }));
     }
-  }, [audioService, updateFrame]);
+  }, [audioService]);
 
   /**
    * pause
    */
   const pause = useCallback(() => {
     try {
-      setState((prev) => ({ ...prev, error: null }));
       audioService.pause();
+      setState((prev) => ({ ...prev, isPlaying: false, error: null }));
     } catch (err) {
-      const e = err instanceof Error ? err : new Error('一時停止に失敗しました');
-      setState((prev) => ({ ...prev, error: e }));
-      throw e;
+      const error = err instanceof Error ? err : new Error("一時停止に失敗しました");
+      setState((prev) => ({ ...prev, error }));
     }
   }, [audioService]);
 
@@ -112,49 +61,52 @@ export function useAudioControl(
    */
   const stop = useCallback(() => {
     try {
-      setState((prev) => ({ ...prev, error: null }));
       audioService.stop();
+      setState((prev) => ({ ...prev, isPlaying: false, error: null, currentTime: 0 }));
     } catch (err) {
-      const e = err instanceof Error ? err : new Error('停止に失敗しました');
-      setState((prev) => ({ ...prev, error: e }));
-      throw e;
+      const error = err instanceof Error ? err : new Error("停止に失敗しました");
+      setState((prev) => ({ ...prev, error }));
     }
   }, [audioService]);
 
   /**
    * seek
    */
-  const seek = useCallback(async (time: number) => {
-    try {
-      setState((prev) => ({ ...prev, error: null }));
-      await audioService.seek(time);
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('シークに失敗しました');
-      setState((prev) => ({ ...prev, error: e }));
-      throw e;
+  const seek = useCallback(
+    async (time: number) => {
+      try {
+        await audioService.seek(time);
+        setState((prev) => ({
+          ...prev,
+          error: null,
+          // シーク直後にcurrentTimeを同期
+          currentTime: audioService.getCurrentTime(),
+        }));
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error("シークに失敗しました");
+        setState((prev) => ({ ...prev, error }));
+      }
+    },
+    [audioService]
+  );
+
+  /**
+   * 進捗バーや現在時刻の表示に使いたい場合、
+   * 例えば1秒に数回だけポーリングするなど
+   */
+  useEffect(() => {
+    let timerId: number | null = null;
+    if (state.isPlaying) {
+      // 例えば500msごとにcurrentTimeを同期
+      timerId = window.setInterval(() => {
+        const currentTime = audioService.getCurrentTime();
+        setState((prev) => ({ ...prev, currentTime }));
+      }, 500);
     }
-  }, [audioService]);
-
-  /**
-   * AnalyserNodeを取得
-   */
-  const getAnalyser = useCallback(() => {
-    return audioService.getAnalyserNode();
-  }, [audioService]);
-
-  /**
-   * 波形データを取得
-   */
-  const getWaveformData = useCallback(() => {
-    return audioService.getWaveformData();
-  }, [audioService]);
-
-  /**
-   * 周波数データを取得
-   */
-  const getFrequencyData = useCallback(() => {
-    return audioService.getFrequencyData();
-  }, [audioService]);
+    return () => {
+      if (timerId) clearInterval(timerId);
+    };
+  }, [state.isPlaying, audioService]);
 
   return {
     state,
@@ -162,8 +114,5 @@ export function useAudioControl(
     pause,
     stop,
     seek,
-    getAnalyser,
-    getWaveformData,
-    getFrequencyData,
   };
 }

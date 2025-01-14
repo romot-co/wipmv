@@ -2,10 +2,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import { EffectManager } from '../core/EffectManager';
 import { Renderer } from '../core/Renderer';
 
+// PreviewCanvas が受け取るpropsをシンプルにする
 interface PreviewCanvasProps {
-  isPlaying: boolean;
-  waveformData: Float32Array;
-  frequencyData: Uint8Array;
   onManagerInit: (manager: EffectManager) => void;
   videoSettings: {
     width: number;
@@ -17,13 +15,11 @@ interface PreviewCanvasProps {
 }
 
 /**
- * プレビューキャンバスコンポーネント
- * エフェクトのリアルタイムプレビューを表示
+ * プレビューキャンバス
+ * - Canvasを初期化し、EffectManagerをインスタンス化
+ * - リサイズ処理のみ担当
  */
 export function PreviewCanvas({
-  isPlaying,
-  waveformData,
-  frequencyData,
   onManagerInit,
   videoSettings,
 }: PreviewCanvasProps) {
@@ -47,93 +43,69 @@ export function PreviewCanvas({
     let scaledHeight: number;
 
     if (containerAspectRatio > targetAspectRatio) {
-      // コンテナが横長の場合、高さに合わせる
+      // コンテナが横長 => 高さに合わせる
       scaledHeight = containerHeight;
       scaledWidth = containerHeight * targetAspectRatio;
     } else {
-      // コンテナが縦長の場合、幅に合わせる
+      // コンテナが縦長 => 幅に合わせる
       scaledWidth = containerWidth;
       scaledHeight = containerWidth / targetAspectRatio;
     }
 
-    // スケールを計算（2の倍数に丸める）
+    // スケールを2の倍数に丸める(任意)
     scaledWidth = Math.floor(scaledWidth / 2) * 2;
     scaledHeight = Math.floor(scaledHeight / 2) * 2;
 
-    canvasRef.current.style.width = `${scaledWidth}px`;
-    canvasRef.current.style.height = `${scaledHeight}px`;
+    // DOM上のサイズだけ変更
+    const canvas = canvasRef.current;
+    canvas.style.width = `${scaledWidth}px`;
+    canvas.style.height = `${scaledHeight}px`;
 
-    // 実際のキャンバスサイズを設定
-    canvasRef.current.width = videoSettings.width;
-    canvasRef.current.height = videoSettings.height;
+    // 実際の内部解像度
+    canvas.width = videoSettings.width;
+    canvas.height = videoSettings.height;
 
-    // レンダラーのサイズも更新
+    // EffectManagerにサイズを合わせる
     if (managerRef.current) {
       const renderer = managerRef.current.getRenderer();
       renderer.setSize(videoSettings.width, videoSettings.height);
-      managerRef.current.render();
+      managerRef.current.render(); // リサイズ後に1回描画
     }
   }, [videoSettings]);
 
-  // キャンバスの初期化とエフェクトマネージャーの設定
+  // マウント時とvideoSettings変更時に実行
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // キャンバスのサイズを設定
+    // 初期サイズ
     canvas.width = videoSettings.width;
     canvas.height = videoSettings.height;
 
-    // エフェクトマネージャーの初期化
+    // EffectManager 初期化
     if (!managerRef.current) {
+      // Rendererは例示用, 実際にはcanvasに直接ctxを取る形でもOK
       const renderer = new Renderer(canvas);
       const manager = new EffectManager(renderer);
       managerRef.current = manager;
+
+      // 親へ通知
       onManagerInit(manager);
     }
 
-    // リサイズイベントの設定
+    // リサイズイベントを設定
     window.addEventListener('resize', handleResize);
     handleResize();
 
     return () => {
       window.removeEventListener('resize', handleResize);
       if (managerRef.current) {
-        managerRef.current.dispose();
+        // dispose
+        managerRef.current.stopRenderLoop();
         managerRef.current = null;
       }
     };
   }, [videoSettings, onManagerInit, handleResize]);
-
-  // オーディオデータの更新
-  useEffect(() => {
-    if (!managerRef.current) return;
-    
-    if (waveformData && frequencyData) {
-      managerRef.current.updateParams({
-        waveformData,
-        frequencyData
-      });
-      
-      // 停止中は1回だけ描画
-      if (!isPlaying) {
-        managerRef.current.render();
-      }
-    }
-  }, [waveformData, frequencyData, isPlaying]);
-
-  // 再生状態の管理
-  useEffect(() => {
-    if (!managerRef.current) return;
-    
-    if (isPlaying) {
-      managerRef.current.startRenderLoop();
-    } else {
-      managerRef.current.stopRenderLoop();
-      // 停止時に1回だけ描画
-      managerRef.current.render();
-    }
-  }, [isPlaying]);
 
   return (
     <div
@@ -160,4 +132,4 @@ export function PreviewCanvas({
       />
     </div>
   );
-} 
+}

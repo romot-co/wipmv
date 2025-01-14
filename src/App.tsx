@@ -1,13 +1,13 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Container, Flex, Box, Card, Button, Text, Section } from '@radix-ui/themes';
 import { PlaybackControls } from './ui/PlaybackControls';
 import { EffectList } from './ui/EffectList';
 import { EffectSettings } from './ui/EffectSettings';
-import { AddEffectButton } from './ui/AddEffectButton';
 import { PreviewCanvas } from './ui/PreviewCanvas';
 import { ExportButton } from './ui/ExportButton';
 import { AudioUploader } from './ui/AudioUploader';
 import { useAudioControl } from './hooks/useAudioControl';
+
 import { 
   EffectConfig, 
   EffectType,
@@ -17,6 +17,7 @@ import {
   WaveformEffectConfig,
   WatermarkEffectConfig
 } from './core/types';
+
 import { EffectManager } from './core/EffectManager';
 import { AudioPlaybackService } from './core/AudioPlaybackService';
 import { EffectBase } from './core/EffectBase';
@@ -29,11 +30,11 @@ import { createDefaultEffects } from './core/DefaultEffectService';
 import './App.css';
 
 export const App: React.FC = () => {
-  // アプリケーションの状態を定義
+  // アプリケーション状態
   type AppState = 'initial' | 'ready' | 'error';
   const [appState, setAppState] = useState<AppState>('initial');
-  
-  // 動画設定の状態
+
+  // 動画設定
   const [videoSettings, setVideoSettings] = useState({
     width: 1280,
     height: 720,
@@ -41,15 +42,14 @@ export const App: React.FC = () => {
     videoBitrate: 5000000,  // 5Mbps
     audioBitrate: 128000    // 128kbps
   });
-  
-  // エクスポートの進捗状態
+
+  // エクスポート進捗
   const [exportProgress, setExportProgress] = useState(0);
-  
   const handleExportProgress = useCallback((progress: number) => {
     setExportProgress(progress);
   }, []);
 
-  // エラー状態の集約
+  // エラー集約
   const [errors, setErrors] = useState<{
     audio?: Error;
     effect?: Error;
@@ -57,12 +57,14 @@ export const App: React.FC = () => {
   }>({});
 
   const [selectedEffectId, setSelectedEffectId] = useState<string>();
+
+  // **AudioPlaybackService**をシングルトン的に保持
   const [audioService] = useState(() => new AudioPlaybackService());
-  const [isAudioLoaded, setIsAudioLoaded] = useState(false);
+
   const [manager, setManager] = useState<EffectManager | null>(null);
   const [effects, setEffects] = useState<EffectBase[]>([]);
 
-  // エラーハンドリングの統一
+  // エラーハンドリング
   const handleError = useCallback((type: keyof typeof errors, error: Error) => {
     console.error(`${type}エラー:`, error);
     setErrors(prev => ({
@@ -72,7 +74,7 @@ export const App: React.FC = () => {
     setAppState('error');
   }, []);
 
-  // 状態遷移を関数として定義
+  // 状態遷移
   const transition = useCallback((newState: AppState) => {
     console.log(`状態遷移: ${appState} -> ${newState}`);
     setAppState(newState);
@@ -90,29 +92,30 @@ export const App: React.FC = () => {
     }
   }, [errors, transition]);
 
+  // EffectManager初期化時に呼ばれる
   const handleManagerInit = useCallback((newManager: EffectManager) => {
     console.log('EffectManager初期化:', newManager);
     setManager(newManager);
-  }, []);
 
-  // オーディオ制御フックを先に定義
+    // AudioServiceを接続して描画ループ開始
+    newManager.connectAudioService(audioService);
+    newManager.startRenderLoop();
+  }, [audioService]);
+
+  // オーディオ制御フック (UI操作用)
   const {
     state: { currentTime, duration, isPlaying },
     play,
     pause,
     seek,
-    getWaveformData,
-    getFrequencyData,
-    getAnalyser
   } = useAudioControl(audioService);
 
+  // エフェクト追加
   const handleEffectAdd = useCallback((type: EffectType) => {
     if (!manager) return;
     try {
       const zIndex = manager.getEffects().length;
       let effect: EffectBase;
-
-      // 現在のdurationを使用
       const currentDuration = duration || 0;
 
       switch (type) {
@@ -192,6 +195,7 @@ export const App: React.FC = () => {
     }
   }, [manager, handleError, duration]);
 
+  // エフェクト削除
   const handleEffectRemove = useCallback((id: string) => {
     if (!manager) return;
     manager.removeEffect(id);
@@ -201,6 +205,7 @@ export const App: React.FC = () => {
     }
   }, [manager, selectedEffectId]);
 
+  // エフェクトの上下移動
   const handleEffectMove = useCallback((id: string, direction: 'up' | 'down') => {
     if (!manager) return;
     if (direction === 'up') {
@@ -211,13 +216,14 @@ export const App: React.FC = () => {
     setEffects(manager.getEffects());
   }, [manager]);
 
+  // エフェクト設定の更新
   const handleEffectUpdate = useCallback((config: Partial<EffectConfig>) => {
     if (!manager || !selectedEffectId) return;
     manager.updateEffect(selectedEffectId, config);
     setEffects(manager.getEffects());
   }, [manager, selectedEffectId]);
 
-  // 選択中のエフェクトを取得（メモ化）
+  // 選択中エフェクト
   const selectedEffect = useMemo(() => {
     if (!selectedEffectId || !manager) return undefined;
     return manager.getEffects().find(e => e.getConfig().id === selectedEffectId);
@@ -252,23 +258,23 @@ export const App: React.FC = () => {
     setEffects(manager.getEffects());
   }, [manager]);
 
-  // オーディオロード時の処理を最適化
+  // オーディオロード時
   const handleAudioLoad = useCallback(() => {
-    setIsAudioLoaded(true);
     clearError('audio');
     transition('ready');
 
-    // プロジェクトデータの読み込みと初期化
+    // プロジェクトデータの読み込み
     const projectData = ProjectService.loadProject();
     if (projectData && manager) {
-      // 設定の復元
+      // 設定復元
       setVideoSettings(projectData.videoSettings);
 
-      // エフェクトの復元
+      // 既存エフェクトをクリア
       manager.getEffects().forEach(effect => {
         manager.removeEffect(effect.getConfig().id);
       });
 
+      // プロジェクトデータから復元
       projectData.effects.forEach((effectConfig: BaseEffectConfig & { type: EffectType }) => {
         let effect: EffectBase;
         switch (effectConfig.type) {
@@ -295,58 +301,11 @@ export const App: React.FC = () => {
       }
     }
 
-    // エフェクトリストを更新
+    // エフェクトリスト更新
     if (manager) {
       setEffects(manager.getEffects());
     }
   }, [clearError, transition, manager, audioService, handleDefaultEffects, setVideoSettings]);
-
-  // オーディオとレンダリングの制御を一元化
-  useEffect(() => {
-    if (!manager || !isAudioLoaded) return;
-
-    // オーディオデータの更新
-    const updateAudioData = () => {
-      manager.updateParams({
-        currentTime,
-        waveformData: isPlaying ? getWaveformData() : new Float32Array(),
-        frequencyData: isPlaying ? getFrequencyData() : new Uint8Array()
-      });
-    };
-
-    // 再生状態に応じて制御
-    if (isPlaying) {
-      updateAudioData();
-      manager.startRenderLoop();
-    } else {
-      updateAudioData();
-      manager.stopRenderLoop();
-    }
-
-    return () => {
-      manager.stopRenderLoop();
-    };
-  }, [manager, isAudioLoaded, isPlaying, currentTime, getWaveformData, getFrequencyData]);
-
-  // プレビューキャンバスのプロパティをメモ化（最適化）
-  const previewProps = useMemo(() => ({
-    isPlaying,
-    waveformData: getWaveformData(),
-    frequencyData: getFrequencyData(),
-    onManagerInit: handleManagerInit,
-    onError: (error: Error) => handleError('effect', error),
-    videoSettings
-  }), [isPlaying, getWaveformData, getFrequencyData, handleManagerInit, handleError, videoSettings]);
-
-  // プレイバックコントロールのプロパティをメモ化
-  const playbackProps = useMemo(() => ({
-    isPlaying,
-    currentTime,
-    duration,
-    onPlay: async () => await play(),
-    onPause: async () => pause(),
-    onSeek: seek
-  }), [isPlaying, currentTime, duration, play, pause, seek]);
 
   // エラー表示コンポーネント
   const ErrorMessage: React.FC<{
@@ -363,38 +322,57 @@ export const App: React.FC = () => {
     </Card>
   );
 
-  // AudioSourceの取得
-  const analyser = getAnalyser();
+  // AudioSourceの取得 (analyser)
+  const analyser = audioService.getAnalyserNode();
 
-  // プロジェクトの保存
+  // プロジェクト保存
   const saveProject = useCallback(() => {
     if (!manager) return;
-
     try {
       const audioBuffer = audioService.getAudioBuffer();
       ProjectService.saveProject({
         videoSettings,
         effects: manager.getEffects().map(effect => effect.getConfig()),
-        audioInfo: audioBuffer ? {
-          fileName: 'audio.mp3', // TODO: 実際のファイル名を保存
-          duration: audioBuffer.duration,
-          sampleRate: audioBuffer.sampleRate,
-          numberOfChannels: audioBuffer.numberOfChannels
-        } : undefined
+        audioInfo: audioBuffer
+          ? {
+              fileName: 'audio.mp3', // TODO: 実際のファイル名を保持
+              duration: audioBuffer.duration,
+              sampleRate: audioBuffer.sampleRate,
+              numberOfChannels: audioBuffer.numberOfChannels
+            }
+          : undefined
       });
     } catch (error) {
       handleError('effect', error instanceof Error ? error : new Error('プロジェクトの保存に失敗しました'));
     }
   }, [manager, videoSettings, audioService, handleError]);
 
+  // PlaybackControls 用
+  const playbackProps = useMemo(() => ({
+    isPlaying,
+    currentTime,
+    duration,
+    onPlay: async () => await play(),
+    onPause: async () => pause(),
+    onSeek: seek
+  }), [isPlaying, currentTime, duration, play, pause, seek]);
+
+  // PreviewCanvas 用
+  const previewProps = useMemo(() => ({
+    isPlaying,
+    onManagerInit: handleManagerInit,  // PreviewCanvas内でEffectManager作成時に呼ぶ
+    onError: (error: Error) => handleError('effect', error),
+    videoSettings
+  }), [isPlaying, handleManagerInit, handleError, videoSettings]);
+
   return (
     <Container className="app">
-      {appState === 'initial' || !isAudioLoaded || !duration || !analyser ? (
+      {appState === 'initial' ? (
         <Flex className="app--empty">
           <Container size="2">
             <Flex direction="column" gap="4" align="center">
               <Section size="2">
-                <AudioUploader 
+                <AudioUploader
                   audioService={audioService}
                   onAudioLoad={handleAudioLoad}
                   onError={(error) => handleError('audio', error)}
@@ -414,10 +392,10 @@ export const App: React.FC = () => {
           <Container size="2">
             <Flex direction="column" gap="4">
               {Object.entries(errors).map(([type, error]) => (
-                <ErrorMessage 
-                  key={type} 
-                  type={type as keyof typeof errors} 
-                  error={error} 
+                <ErrorMessage
+                  key={type}
+                  type={type as keyof typeof errors}
+                  error={error}
                 />
               ))}
             </Flex>
@@ -427,10 +405,12 @@ export const App: React.FC = () => {
         <>
           <Flex className="main-content">
             <Section className="preview-section" size="3">
+              {/* PreviewCanvasコンポーネントがEffectManagerを初期化し、handleManagerInitを呼ぶ */}
               <PreviewCanvas {...previewProps} />
               <Card className="controls-section">
                 <PlaybackControls {...playbackProps} />
                 <Flex gap="2">
+                  {/* Export処理 */}
                   <ExportButton
                     audioBuffer={audioService.getAudioBuffer()!}
                     manager={manager}
@@ -439,6 +419,7 @@ export const App: React.FC = () => {
                     videoSettings={videoSettings}
                     onSettingsChange={setVideoSettings}
                   />
+                  {/* プロジェクト保存 */}
                   <Button
                     variant="surface"
                     color="gray"
@@ -455,12 +436,9 @@ export const App: React.FC = () => {
               </Card>
             </Section>
 
+            {/* エフェクト管理 UI */}
             <Box className="effects-panel">
               <Card className="effects-section">
-                <Flex gap="2" align="center">
-                  <Text size="2" weight="medium">エフェクト</Text>
-                  <AddEffectButton onAdd={handleEffectAdd} />
-                </Flex>
                 <Box className="effect-list">
                   <EffectList
                     effects={effects}
