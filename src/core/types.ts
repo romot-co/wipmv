@@ -2,6 +2,17 @@
 // 共有型定義
 
 /**
+ * 動画設定
+ */
+export interface VideoSettings {
+  width: number;
+  height: number;
+  frameRate: number;
+  videoBitrate: number;
+  audioBitrate: number;
+}
+
+/**
  * AudioBuffer をアプリ内部で扱う際に
  * どんな情報をまとめて持つか
  */
@@ -325,4 +336,21 @@ export interface InspectorProps {
 
 export interface Disposable {
   dispose(): void;
+}
+
+export interface ProjectData {
+  version: string;
+  videoSettings: VideoSettings;
+  effects: Array<
+    | BackgroundEffectConfig
+    | TextEffectConfig
+    | WaveformEffectConfig
+    | WatermarkEffectConfig
+  >;
+  audioInfo?: {
+    fileName: string;
+    duration: number;
+    sampleRate: number;
+    numberOfChannels: number;
+  };
 }

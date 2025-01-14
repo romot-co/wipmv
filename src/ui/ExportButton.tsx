@@ -1,9 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { EffectManager } from '../core/EffectManager';
 import { VideoEncoderService } from '../core/VideoEncoderService';
 import { EncodeSettings } from './EncodeSettings';
-import { EncodeCanvas } from './EncodeCanvas';
-import { Flex, Button, Dialog } from '@radix-ui/themes';
+import { Flex, Button, Dialog, Text } from '@radix-ui/themes';
 import { GearIcon, DownloadIcon, Cross2Icon } from '@radix-ui/react-icons';
 import './ExportButton.css';
 
@@ -12,189 +11,165 @@ interface ExportButtonProps {
   manager: EffectManager | null;
   onError: (error: Error) => void;
   onProgress?: (progress: number) => void;
+  videoSettings: {
+    width: number;
+    height: number;
+    frameRate: number;
+    videoBitrate: number;
+    audioBitrate: number;
+  };
+  onSettingsChange: (settings: {
+    width: number;
+    height: number;
+    frameRate: number;
+    videoBitrate: number;
+    audioBitrate: number;
+  }) => void;
 }
 
 export const ExportButton: React.FC<ExportButtonProps> = ({
   audioBuffer,
   manager,
   onError,
-  onProgress
+  onProgress,
+  videoSettings,
+  onSettingsChange
 }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isCanceled, setIsCanceled] = useState(false);
-  const encodeManagerRef = useRef<EffectManager | null>(null);
-
-  // エンコード設定の初期値
-  const [encodeSettings, setEncodeSettings] = useState({
-    width: 960,
-    height: 600,
-    frameRate: 30,
-    videoBitrate: 5000000,
-    audioBitrate: 128000
-  });
+  const [exportProgress, setExportProgress] = useState(0);
 
   const handleExport = async () => {
-    if (!encodeManagerRef.current || isExporting || !manager) return;
+    if (!manager || !audioBuffer) return;
 
     try {
       setIsExporting(true);
       setIsCanceled(false);
+      setExportProgress(0);
 
       const encoder = new VideoEncoderService({
-        ...encodeSettings,
+        ...videoSettings,
         sampleRate: audioBuffer.sampleRate,
         channels: audioBuffer.numberOfChannels
       });
 
       await encoder.initialize();
 
-      // 進捗計算用の変数
-      const totalFrames = Math.ceil(audioBuffer.duration * encodeSettings.frameRate);
-      let processedFrames = 0;
-
-      // エフェクト状態を高解像度マネージャーにコピー
-      encodeManagerRef.current.copyStateFrom(manager);
+      // フレーム数の計算
+      const totalFrames = Math.ceil(audioBuffer.duration * videoSettings.frameRate);
+      let frameCount = 0;
 
       // フレームごとの処理
-      for (let time = 0; time < audioBuffer.duration; time += 1/encodeSettings.frameRate) {
+      for (let time = 0; time < audioBuffer.duration; time += 1 / videoSettings.frameRate) {
         if (isCanceled) {
           throw new Error('エクスポートがキャンセルされました');
         }
 
-        // 波形データを計算
-        const waveformSamplesPerFrame = Math.floor(audioBuffer.sampleRate / encodeSettings.frameRate);
-        const waveformStartSample = Math.floor(time * audioBuffer.sampleRate);
-        const waveformData = new Float32Array(1024);
-        
-        // 波形データを生成
-        for (let i = 0; i < waveformData.length; i++) {
-          const start = waveformStartSample + Math.floor(i * waveformSamplesPerFrame / waveformData.length);
-          const end = waveformStartSample + Math.floor((i + 1) * waveformSamplesPerFrame / waveformData.length);
-          let sum = 0;
-          let count = 0;
-          
-          for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-            const channelData = audioBuffer.getChannelData(channel);
-            for (let j = start; j < end && j < channelData.length; j++) {
-              sum += Math.abs(channelData[j]);
-              count++;
-            }
-          }
-          
-          waveformData[i] = count > 0 ? sum / count : 0;
-        }
+        // 現在の時刻をミリ秒に変換
+        const timeMs = time * 1000;
 
-        // パラメータを更新
-        encodeManagerRef.current.updateParams({
+        // プレビューの更新
+        manager.updateParams({
           currentTime: time,
           duration: audioBuffer.duration,
-          isPlaying: true,
-          waveformData
+          isPlaying: false
         });
 
-        // フレームをレンダリング
-        encodeManagerRef.current.render();
+        // フレームの描画とエンコード
+        manager.render();
+        const canvas = manager.getCanvas();
+        await encoder.encodeVideoFrame(canvas, timeMs * 1000); // マイクロ秒に変換
 
-        // フレームをエンコード
-        await encoder.encodeVideoFrame(
-          encodeManagerRef.current.getCanvas(),
-          time * 1000000
-        );
+        // 進捗の更新
+        frameCount++;
+        const progress = (frameCount / totalFrames * 100);
+        setExportProgress(progress);
+        onProgress?.(progress);
+      }
 
-        // 音声データをエンコード
-        const audioSamplesPerFrame = Math.floor(audioBuffer.sampleRate / encodeSettings.frameRate);
-        const audioStartSample = Math.floor(time * audioBuffer.sampleRate);
+      // 音声データのエンコード
+      const samplesPerFrame = Math.floor(audioBuffer.sampleRate / videoSettings.frameRate);
+      for (let startSample = 0; startSample < audioBuffer.length; startSample += samplesPerFrame) {
+        if (isCanceled) {
+          throw new Error('エクスポートがキャンセルされました');
+        }
+
         await encoder.encodeAudioBuffer(
           audioBuffer,
-          audioStartSample,
-          audioSamplesPerFrame,
-          time * 1000000
+          startSample,
+          Math.min(samplesPerFrame, audioBuffer.length - startSample),
+          (startSample / audioBuffer.sampleRate) * 1000000 // マイクロ秒
         );
-
-        // 進捗を更新
-        processedFrames++;
-        onProgress?.(processedFrames / totalFrames);
       }
 
       // エンコード完了
-      const data = await encoder.finalize();
+      const result = await encoder.finalize();
       
       // ダウンロード
-      const blob = new Blob([data], { type: 'video/mp4' });
+      const blob = new Blob([result], { type: 'video/mp4' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `export-${new Date().toISOString()}.mp4`;
+      a.download = 'output.mp4';
       a.click();
       URL.revokeObjectURL(url);
 
     } catch (error) {
-      console.error('エクスポート中にエラーが発生しました:', error);
       onError(error instanceof Error ? error : new Error('エクスポートに失敗しました'));
     } finally {
       setIsExporting(false);
       setIsCanceled(false);
+      setExportProgress(0);
       onProgress?.(0);
     }
   };
 
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
     setIsCanceled(true);
-  };
+  }, []);
 
   return (
-    <Flex gap="2" align="center" className="export-button-container">
+    <Flex gap="2">
       <Dialog.Root open={showSettings} onOpenChange={setShowSettings}>
         <Dialog.Trigger>
-          <Button
-            variant="soft"
-            disabled={isExporting}
-            size="2"
-          >
-            <GearIcon />
-            設定
+          <Button variant="surface" color="gray" disabled={isExporting}>
+            <GearIcon width="16" height="16" />
+            エクスポート設定
           </Button>
         </Dialog.Trigger>
 
         <Dialog.Content>
           <Dialog.Title>エクスポート設定</Dialog.Title>
           <EncodeSettings
-            {...encodeSettings}
-            onSettingsChange={setEncodeSettings}
+            {...videoSettings}
+            onSettingsChange={onSettingsChange}
           />
         </Dialog.Content>
       </Dialog.Root>
 
-      <Button
-        variant="solid"
-        disabled={isExporting}
-        onClick={handleExport}
-        size="2"
-      >
-        <DownloadIcon />
-        {isExporting ? 'エクスポート中...' : 'エクスポート'}
-      </Button>
-
-      {isExporting && (
+      {!isExporting ? (
         <Button
-          variant="soft"
-          color="red"
-          onClick={handleCancel}
-          size="2"
+          disabled={!manager}
+          onClick={handleExport}
+          color="blue"
         >
-          <Cross2Icon />
-          キャンセル
+          <DownloadIcon width="16" height="16" />
+          エクスポート
         </Button>
+      ) : (
+        <Flex gap="2">
+          <Text size="2">エクスポート中... {Math.round(exportProgress)}%</Text>
+          <Button
+            onClick={handleCancel}
+            color="red"
+            variant="soft"
+          >
+            <Cross2Icon width="16" height="16" />
+            キャンセル
+          </Button>
+        </Flex>
       )}
-
-      <EncodeCanvas
-        width={encodeSettings.width}
-        height={encodeSettings.height}
-        onInit={(manager) => {
-          encodeManagerRef.current = manager;
-        }}
-      />
     </Flex>
   );
 }; 

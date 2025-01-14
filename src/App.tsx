@@ -8,14 +8,24 @@ import { PreviewCanvas } from './ui/PreviewCanvas';
 import { ExportButton } from './ui/ExportButton';
 import { AudioUploader } from './ui/AudioUploader';
 import { useAudioControl } from './hooks/useAudioControl';
-import { EffectConfig, EffectType } from './core/types';
+import { 
+  EffectConfig, 
+  EffectType,
+  BaseEffectConfig,
+  BackgroundEffectConfig,
+  TextEffectConfig,
+  WaveformEffectConfig,
+  WatermarkEffectConfig
+} from './core/types';
 import { EffectManager } from './core/EffectManager';
 import { AudioPlaybackService } from './core/AudioPlaybackService';
 import { EffectBase } from './core/EffectBase';
+import { ProjectService } from './core/ProjectService';
 import { BackgroundEffect } from './features/background/BackgroundEffect';
 import { TextEffect } from './features/text/TextEffect';
 import { WaveformEffect } from './features/waveform/WaveformEffect';
 import { WatermarkEffect } from './features/watermark/WatermarkEffect';
+import { createDefaultEffects } from './core/DefaultEffectService';
 import './App.css';
 
 export const App: React.FC = () => {
@@ -23,6 +33,22 @@ export const App: React.FC = () => {
   type AppState = 'initial' | 'ready' | 'error';
   const [appState, setAppState] = useState<AppState>('initial');
   
+  // 動画設定の状態
+  const [videoSettings, setVideoSettings] = useState({
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    videoBitrate: 5000000,  // 5Mbps
+    audioBitrate: 128000    // 128kbps
+  });
+  
+  // エクスポートの進捗状態
+  const [exportProgress, setExportProgress] = useState(0);
+  
+  const handleExportProgress = useCallback((progress: number) => {
+    setExportProgress(progress);
+  }, []);
+
   // エラー状態の集約
   const [errors, setErrors] = useState<{
     audio?: Error;
@@ -232,6 +258,56 @@ export const App: React.FC = () => {
     };
   }, [manager]);
 
+  // オーディオデータの更新時の処理を最適化
+  useEffect(() => {
+    if (!manager || !isAudioLoaded) return;
+    
+    const audioBuffer = audioService.getAudioBuffer();
+    if (!audioBuffer) return;
+
+    // 初期状態の設定
+    manager.updateParams({
+      currentTime: 0,
+      waveformData: new Float32Array(),  // 空の配列で初期化
+      frequencyData: new Uint8Array()    // 空の配列で初期化
+    });
+
+    // 初期レンダリング（一度だけ）
+    manager.render();
+
+    return () => {
+      manager.stopRenderLoop();
+    };
+  }, [manager, isAudioLoaded, audioService]);
+
+  // 再生中のオーディオデータ更新
+  useEffect(() => {
+    if (!manager || !isAudioLoaded || !isPlaying) return;
+
+    const updateAudioData = () => {
+      manager.updateParams({
+        currentTime,
+        waveformData: getWaveformData(),
+        frequencyData: getFrequencyData()
+      });
+    };
+
+    // 再生中のみアニメーションフレームで更新
+    let animationFrameId: number;
+    const animate = () => {
+      updateAudioData();
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [manager, isAudioLoaded, isPlaying, currentTime, getWaveformData, getFrequencyData]);
+
   // レンダリングループの制御（最適化）
   useEffect(() => {
     if (!manager) return;
@@ -240,6 +316,8 @@ export const App: React.FC = () => {
       manager.startRenderLoop();
     } else {
       manager.stopRenderLoop();
+      // 停止時に1回だけ描画
+      manager.render();
     }
 
     return () => {
@@ -249,14 +327,13 @@ export const App: React.FC = () => {
 
   // プレビューキャンバスのプロパティをメモ化（最適化）
   const previewProps = useMemo(() => ({
-    width: 960,
-    height: 600,
     isPlaying,
     waveformData: getWaveformData(),
     frequencyData: getFrequencyData(),
     onManagerInit: handleManagerInit,
-    onError: (error: Error) => handleError('effect', error)
-  }), [isPlaying, getWaveformData, getFrequencyData, handleManagerInit, handleError]);
+    onError: (error: Error) => handleError('effect', error),
+    videoSettings
+  }), [isPlaying, getWaveformData, getFrequencyData, handleManagerInit, handleError, videoSettings]);
 
   // プレイバックコントロールのプロパティをメモ化
   const playbackProps = useMemo(() => ({
@@ -286,95 +363,225 @@ export const App: React.FC = () => {
   // AudioSourceの取得
   const analyser = getAnalyser();
 
-  // 初期状態またはオーディオ未ロード時の表示
-  if (appState === 'initial' || !isAudioLoaded || !duration || !analyser) {
-    return (
-      <Flex className="app--empty">
-        <Container size="2">
-          <Flex direction="column" gap="4" align="center">
-            <Section size="2">
-              <AudioUploader 
-                audioService={audioService}
-                onAudioLoad={() => {
-                  setIsAudioLoaded(true);
-                  clearError('audio');
-                  transition('ready');
-                }}
-                onError={(error) => handleError('audio', error)}
-              />
-            </Section>
-            {errors.audio && <ErrorMessage type="audio" error={errors.audio} />}
-            {!analyser && (
-              <Text className="loading-message" size="2" color="gray">
-                オーディオ解析を準備中...
-              </Text>
-            )}
-          </Flex>
-        </Container>
-      </Flex>
-    );
-  }
+  // プロジェクトの保存
+  const saveProject = useCallback(() => {
+    if (!manager) return;
 
-  // エラー状態の表示
-  if (appState === 'error') {
-    return (
-      <Flex className="app app--error">
-        <Container size="2">
-          <Flex direction="column" gap="4">
-            {Object.entries(errors).map(([type, error]) => (
-              <ErrorMessage 
-                key={type} 
-                type={type as keyof typeof errors} 
-                error={error} 
-              />
-            ))}
-          </Flex>
-        </Container>
-      </Flex>
-    );
-  }
+    try {
+      const audioBuffer = audioService.getAudioBuffer();
+      ProjectService.saveProject({
+        videoSettings,
+        effects: manager.getEffects().map(effect => effect.getConfig()),
+        audioInfo: audioBuffer ? {
+          fileName: 'audio.mp3', // TODO: 実際のファイル名を保存
+          duration: audioBuffer.duration,
+          sampleRate: audioBuffer.sampleRate,
+          numberOfChannels: audioBuffer.numberOfChannels
+        } : undefined
+      });
+    } catch (error) {
+      handleError('effect', error instanceof Error ? error : new Error('プロジェクトの保存に失敗しました'));
+    }
+  }, [manager, videoSettings, audioService, handleError]);
+
+  // プロジェクトの復元
+  const loadProject = useCallback(async () => {
+    try {
+      const projectData = ProjectService.loadProject();
+      if (!projectData || !manager) return;
+
+      // 設定の復元
+      setVideoSettings(projectData.videoSettings);
+
+      // エフェクトの復元
+      manager.getEffects().forEach(effect => {
+        manager.removeEffect(effect.getConfig().id);
+      });
+
+      projectData.effects.forEach((effectConfig: BaseEffectConfig & { type: EffectType }) => {
+        let effect: EffectBase;
+        switch (effectConfig.type) {
+          case EffectType.Background:
+            effect = new BackgroundEffect(effectConfig as BackgroundEffectConfig);
+            break;
+          case EffectType.Text:
+            effect = new TextEffect(effectConfig as TextEffectConfig);
+            break;
+          case EffectType.Waveform:
+            effect = new WaveformEffect(effectConfig as WaveformEffectConfig);
+            break;
+          case EffectType.Watermark:
+            effect = new WatermarkEffect(effectConfig as WatermarkEffectConfig);
+            break;
+          default:
+            throw new Error(`Unknown effect type: ${effectConfig.type}`);
+        }
+        manager.addEffect(effect);
+      });
+
+      setEffects(manager.getEffects());
+    } catch (error) {
+      handleError('effect', error instanceof Error ? error : new Error('プロジェクトの読み込みに失敗しました'));
+    }
+  }, [manager, handleError]);
+
+  // デフォルトエフェクトの作成
+  const handleDefaultEffects = useCallback((duration: number) => {
+    if (!manager) return;
+
+    const defaultConfigs = createDefaultEffects(duration);
+    defaultConfigs.forEach((config: BaseEffectConfig & { type: EffectType }) => {
+      let effect: EffectBase;
+      switch (config.type) {
+        case EffectType.Background:
+          effect = new BackgroundEffect(config as BackgroundEffectConfig);
+          break;
+        case EffectType.Text:
+          effect = new TextEffect(config as TextEffectConfig);
+          break;
+        case EffectType.Waveform:
+          effect = new WaveformEffect(config as WaveformEffectConfig);
+          break;
+        case EffectType.Watermark:
+          effect = new WatermarkEffect(config as WatermarkEffectConfig);
+          break;
+        default:
+          throw new Error(`Unknown effect type: ${config.type}`);
+      }
+      manager.addEffect(effect);
+    });
+
+    setEffects(manager.getEffects());
+  }, [manager]);
+
+  // オーディオロード時の処理を修正
+  const handleAudioLoad = useCallback(() => {
+    setIsAudioLoaded(true);
+    clearError('audio');
+    transition('ready');
+
+    // プロジェクトデータがない場合はデフォルトエフェクトを作成
+    const projectData = ProjectService.loadProject();
+    if (!projectData && manager) {
+      const audioBuffer = audioService.getAudioBuffer();
+      if (audioBuffer) {
+        handleDefaultEffects(audioBuffer.duration);
+      }
+    }
+  }, [audioService, manager, clearError, transition, handleDefaultEffects]);
+
+  // 初回マウント時にプロジェクトを読み込み
+  useEffect(() => {
+    if (appState === 'ready') {
+      loadProject();
+    }
+  }, [appState, loadProject]);
+
+  // 定期的な自動保存
+  useEffect(() => {
+    if (appState !== 'ready') return;
+
+    const saveInterval = setInterval(saveProject, 60000); // 1分ごと
+    return () => clearInterval(saveInterval);
+  }, [appState, saveProject]);
 
   return (
     <Container className="app">
-      <Section className="preview-section" size="3">
-        <PreviewCanvas {...previewProps} />
-        {audioService.getAudioBuffer() && (
-          <ExportButton
-            audioBuffer={audioService.getAudioBuffer()!}
-            manager={manager}
-            onError={(error) => handleError('export', error)}
-            onProgress={(progress) => console.log('Export progress:', progress)}
-          />
-        )}
-      </Section>
-      
-      <Card className="controls-section">
-        <Flex gap="4" align="center">
-          <PlaybackControls {...playbackProps} />
-          <AddEffectButton onAdd={handleEffectAdd} />
+      {appState === 'initial' || !isAudioLoaded || !duration || !analyser ? (
+        <Flex className="app--empty">
+          <Container size="2">
+            <Flex direction="column" gap="4" align="center">
+              <Section size="2">
+                <AudioUploader 
+                  audioService={audioService}
+                  onAudioLoad={handleAudioLoad}
+                  onError={(error) => handleError('audio', error)}
+                />
+              </Section>
+              {errors.audio && <ErrorMessage type="audio" error={errors.audio} />}
+              {!analyser && (
+                <Text size="2" color="gray">
+                  オーディオ解析を準備中...
+                </Text>
+              )}
+            </Flex>
+          </Container>
         </Flex>
-      </Card>
+      ) : appState === 'error' ? (
+        <Flex className="app--error">
+          <Container size="2">
+            <Flex direction="column" gap="4">
+              {Object.entries(errors).map(([type, error]) => (
+                <ErrorMessage 
+                  key={type} 
+                  type={type as keyof typeof errors} 
+                  error={error} 
+                />
+              ))}
+            </Flex>
+          </Container>
+        </Flex>
+      ) : (
+        <>
+          <Section className="preview-section" size="3">
+            <PreviewCanvas {...previewProps} />
+            {isAudioLoaded && (
+              <Flex direction="column" gap="2">
+                <Flex gap="2">
+                  <ExportButton
+                    audioBuffer={audioService.getAudioBuffer()!}
+                    manager={manager}
+                    onError={(error) => handleError('export', error)}
+                    onProgress={handleExportProgress}
+                    videoSettings={videoSettings}
+                    onSettingsChange={setVideoSettings}
+                  />
+                  <Button
+                    variant="surface"
+                    color="gray"
+                    onClick={saveProject}
+                  >
+                    プロジェクトを保存
+                  </Button>
+                </Flex>
+                {exportProgress > 0 && (
+                  <Text size="2" color="gray">
+                    エクスポート進捗: {Math.round(exportProgress)}%
+                  </Text>
+                )}
+              </Flex>
+            )}
+          </Section>
 
-      <Card className="effects-section">
-        <Box>
-          <EffectList
-            effects={effects}
-            selectedEffectId={selectedEffectId}
-            onEffectSelect={setSelectedEffectId}
-            onEffectRemove={handleEffectRemove}
-            onEffectMove={handleEffectMove}
-          />
-        </Box>
-        {selectedEffect && (
-          <Box>
-            <EffectSettings
-              effect={selectedEffect}
-              onUpdate={handleEffectUpdate}
-              duration={duration || 0}
-            />
-          </Box>
-        )}
-      </Card>
+          <Card className="controls-section">
+            <Flex gap="4" align="center">
+              <PlaybackControls {...playbackProps} />
+              <AddEffectButton onAdd={handleEffectAdd} />
+            </Flex>
+          </Card>
+
+          <Card className="effects-section">
+            <Box className="effect-list">
+              <EffectList
+                effects={effects}
+                selectedEffectId={selectedEffectId}
+                onEffectSelect={setSelectedEffectId}
+                onEffectRemove={handleEffectRemove}
+                onEffectMove={handleEffectMove}
+              />
+            </Box>
+            {selectedEffect && (
+              <Box className="effect-settings">
+                <EffectSettings
+                  effect={selectedEffect}
+                  onUpdate={handleEffectUpdate}
+                  duration={duration || 0}
+                />
+              </Box>
+            )}
+          </Card>
+        </>
+      )}
     </Container>
   );
 };

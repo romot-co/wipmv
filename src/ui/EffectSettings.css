@@ -1,24 +1,30 @@
 .effect-settings {
   padding: 1rem;
-  background: #f8f9fa;
-  border-radius: 8px;
+  background: var(--gray-2);
+  border-radius: var(--radius-3);
   margin-bottom: 1rem;
 }
 
 .effect-settings h3 {
   margin: 0 0 1rem;
   font-size: 1.2rem;
-  color: #495057;
+  color: var(--gray-12);
+  font-weight: 600;
 }
 
 .effect-settings h4 {
   margin: 0 0 0.5rem;
   font-size: 1rem;
-  color: #6c757d;
+  color: var(--gray-11);
+  font-weight: 500;
 }
 
 .settings-section {
   margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--gray-3);
+  border-radius: var(--radius-2);
+  border: 1px solid var(--gray-6);
 }
 
 .settings-section:last-child {
@@ -29,32 +35,97 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: #495057;
+  color: var(--gray-12);
   cursor: pointer;
+  padding: 0.5rem;
+  border-radius: var(--radius-2);
+  transition: background-color 0.2s ease;
+}
+
+.visibility-toggle:hover {
+  background-color: var(--gray-4);
 }
 
 .visibility-toggle input[type="checkbox"] {
   width: 1.2rem;
   height: 1.2rem;
   margin: 0;
+  accent-color: var(--accent-9);
 }
 
 .settings-section label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #495057;
-}
-
-.settings-section input[type="number"] {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ced4da;
-  border-radius: 4px;
+  color: var(--gray-11);
   font-size: 0.9rem;
 }
 
-.settings-section input[type="number"]:focus {
+.settings-section input[type="number"],
+.settings-section input[type="text"],
+.settings-section select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--gray-7);
+  border-radius: var(--radius-2);
+  font-size: 0.9rem;
+  background-color: var(--gray-1);
+  color: var(--gray-12);
+  transition: all 0.2s ease;
+}
+
+.settings-section input[type="number"]:hover,
+.settings-section input[type="text"]:hover,
+.settings-section select:hover {
+  border-color: var(--gray-8);
+}
+
+.settings-section input[type="number"]:focus,
+.settings-section input[type="text"]:focus,
+.settings-section select:focus {
   outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+  border-color: var(--accent-9);
+  box-shadow: 0 0 0 2px var(--accent-a4);
+}
+
+.settings-section input[type="range"] {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  background: var(--gray-6);
+  border-radius: var(--radius-pill);
+  outline: none;
+  margin: 1rem 0;
+}
+
+.settings-section input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--accent-9);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.settings-section input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.settings-section .color-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings-section .color-picker input[type="color"] {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+}
+
+.settings-section .color-picker input[type="text"] {
+  flex: 1;
 } 

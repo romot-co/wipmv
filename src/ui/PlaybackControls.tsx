@@ -1,5 +1,5 @@
 // src/components/PlaybackControls.tsx
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Flex, Button, Slider, Text, Box } from '@radix-ui/themes';
 import { PlayIcon, PauseIcon, TimerIcon } from '@radix-ui/react-icons';
 import './PlaybackControls.css';
@@ -28,6 +28,13 @@ export const PlaybackControls: React.FC<Props> = ({
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // シーク処理のハンドラー
+  const handleSeek = useCallback((value: number[]) => {
+    if (value.length > 0) {
+      onSeek(value[0]);
+    }
+  }, [onSeek]);
+
   return (
     <Box className="playback-controls fade-in">
       <Flex gap="4" align="center">
@@ -51,11 +58,12 @@ export const PlaybackControls: React.FC<Props> = ({
 
         <Flex direction="column" gap="1" style={{ flex: 1 }} className="seek-container">
           <Slider
+            defaultValue={[0]}
             value={[currentTime]}
             min={0}
             max={duration}
-            step={0.01}
-            onValueChange={(value) => onSeek(value[0])}
+            step={0.1}
+            onValueChange={handleSeek}
             size="2"
             variant="surface"
             radius="full"
