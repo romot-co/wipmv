@@ -97,19 +97,14 @@ export const App: React.FC = () => {
 
   // オーディオ制御フックを先に定義
   const {
-    currentTime,
-    isPlaying,
-    duration,
+    state: { currentTime, duration, isPlaying },
     play,
     pause,
     seek,
-    getAnalyser,
     getWaveformData,
-    getFrequencyData
-  } = useAudioControl({ 
-    manager,
-    audioService
-  });
+    getFrequencyData,
+    getAnalyser
+  } = useAudioControl(audioService);
 
   const handleEffectAdd = useCallback((type: EffectType) => {
     if (!manager) return;
@@ -349,7 +344,7 @@ export const App: React.FC = () => {
     currentTime,
     duration,
     onPlay: async () => await play(),
-    onPause: async () => await pause(),
+    onPause: async () => pause(),
     onSeek: seek
   }), [isPlaying, currentTime, duration, play, pause, seek]);
 

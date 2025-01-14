@@ -1,139 +1,169 @@
-import { useEffect, useState, useCallback } from 'react';
-import { EffectManager } from '../core/EffectManager';
-import { AudioPlaybackService, AudioPlaybackState } from '../core/AudioPlaybackService';
+/**
+ * useAudioControl
+ *
+ * AudioPlaybackServiceの再生状態をReactのstateに同期し、
+ * 再生や一時停止、シークなどの操作を提供する。
+ * 波形/周波数データもラップして返すことで、コンポーネント側は
+ * 「useAudioControl から取得した関数を呼ぶだけで完結」する。
+ */
 
-interface UseAudioControlProps {
-  manager: EffectManager | null;
-  audioService: AudioPlaybackService;
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AudioPlaybackService } from '../core/AudioPlaybackService';
+
+interface UseAudioControlState {
+  currentTime: number;
+  duration: number;
+  isPlaying: boolean;
+  error: Error | null;
 }
 
 interface UseAudioControlReturn {
-  currentTime: number;
-  isPlaying: boolean;
-  duration: number;
-  error: Error | null;
+  state: UseAudioControlState;
   play: () => Promise<void>;
-  pause: () => Promise<void>;
+  pause: () => void;
+  stop: () => void;
   seek: (time: number) => Promise<void>;
   getAnalyser: () => AnalyserNode | null;
   getWaveformData: () => Float32Array;
   getFrequencyData: () => Uint8Array;
 }
 
-export function useAudioControl({ manager, audioService }: UseAudioControlProps): UseAudioControlReturn {
-  const [currentTime, setCurrentTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [error, setError] = useState<Error | null>(null);
-  const [waveformData, setWaveformData] = useState<Float32Array>(new Float32Array());
-  const [frequencyData, setFrequencyData] = useState<Uint8Array>(new Uint8Array());
+export function useAudioControl(
+  audioService: AudioPlaybackService
+): UseAudioControlReturn {
+  const [state, setState] = useState<UseAudioControlState>({
+    currentTime: 0,
+    duration: 0,
+    isPlaying: false,
+    error: null,
+  });
 
-  // 状態変更の購読
-  useEffect(() => {
-    // 状態変更の購読
-    const unsubscribe = audioService.subscribe((state: AudioPlaybackState) => {
-      setIsPlaying(state.isPlaying);
-      setCurrentTime(state.currentTime);
-      setDuration(state.duration);
+  const rafIdRef = useRef<number | null>(null);
 
-      // EffectManagerの更新
-      if (manager) {
-        manager.updateParams({
-          currentTime: state.currentTime,
-          duration: state.duration,
-          isPlaying: state.isPlaying
-        });
-      }
-    });
+  /**
+   * 再生状況をフレームごとに更新
+   */
+  const updateFrame = useCallback(() => {
+    if (!audioService) return;
 
-    // EffectManagerとの接続
-    let managerCleanup: (() => void) | undefined;
-    if (manager) {
-      manager.connectAudioService(audioService);
-      managerCleanup = () => {
-        manager.disconnectAudioService();
-      };
-    }
+    const currentTime = audioService.getCurrentTime();
+    const duration = audioService.getDuration();
+    const isPlaying = audioService.isPlaying();
 
-    return () => {
-      unsubscribe();
-      managerCleanup?.();
-      setError(null);
-    };
-  }, [manager, audioService]);
+    setState((prev) => ({
+      ...prev,
+      currentTime,
+      duration,
+      isPlaying,
+    }));
 
-  // アナライザーデータの更新を最適化
-  useEffect(() => {
-    let rafId: number;
-    const updateAnalyserData = () => {
-      const analyser = audioService.getAnalyserNode();
-      if (analyser && isPlaying) {
-        const waveform = new Float32Array(analyser.frequencyBinCount);
-        const frequency = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getFloatTimeDomainData(waveform);
-        analyser.getByteFrequencyData(frequency);
-        setWaveformData(waveform);
-        setFrequencyData(frequency);
-        rafId = requestAnimationFrame(updateAnalyserData);
-      }
-    };
-    
     if (isPlaying) {
-      rafId = requestAnimationFrame(updateAnalyserData);
+      rafIdRef.current = requestAnimationFrame(updateFrame);
+    } else {
+      rafIdRef.current = null;
     }
-    
+  }, [audioService]);
+
+  useEffect(() => {
+    if (rafIdRef.current == null) {
+      rafIdRef.current = requestAnimationFrame(updateFrame);
+    }
     return () => {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
+      if (rafIdRef.current != null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
       }
     };
-  }, [isPlaying, audioService]);
+  }, [updateFrame]);
 
-  // 再生制御
+  /**
+   * play
+   */
   const play = useCallback(async () => {
     try {
-      setError(null);
-      await audioService.resumeContext();
+      setState((prev) => ({ ...prev, error: null }));
       await audioService.play();
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error('Failed to play audio');
-      setError(err);
-      throw err;
+      if (rafIdRef.current == null) {
+        rafIdRef.current = requestAnimationFrame(updateFrame);
+      }
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error('再生に失敗しました');
+      setState((prev) => ({ ...prev, error: e }));
+      throw e;
     }
-  }, [audioService]);
+  }, [audioService, updateFrame]);
 
-  const pause = useCallback(async () => {
+  /**
+   * pause
+   */
+  const pause = useCallback(() => {
     try {
-      setError(null);
-      await audioService.pause();
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error('Failed to pause audio');
-      setError(err);
-      throw err;
+      setState((prev) => ({ ...prev, error: null }));
+      audioService.pause();
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error('一時停止に失敗しました');
+      setState((prev) => ({ ...prev, error: e }));
+      throw e;
     }
   }, [audioService]);
 
+  /**
+   * stop
+   */
+  const stop = useCallback(() => {
+    try {
+      setState((prev) => ({ ...prev, error: null }));
+      audioService.stop();
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error('停止に失敗しました');
+      setState((prev) => ({ ...prev, error: e }));
+      throw e;
+    }
+  }, [audioService]);
+
+  /**
+   * seek
+   */
   const seek = useCallback(async (time: number) => {
     try {
-      setError(null);
+      setState((prev) => ({ ...prev, error: null }));
       await audioService.seek(time);
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error('Failed to seek audio');
-      setError(err);
-      throw err;
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error('シークに失敗しました');
+      setState((prev) => ({ ...prev, error: e }));
+      throw e;
     }
+  }, [audioService]);
+
+  /**
+   * AnalyserNodeを取得
+   */
+  const getAnalyser = useCallback(() => {
+    return audioService.getAnalyserNode();
+  }, [audioService]);
+
+  /**
+   * 波形データを取得
+   */
+  const getWaveformData = useCallback(() => {
+    return audioService.getWaveformData();
+  }, [audioService]);
+
+  /**
+   * 周波数データを取得
+   */
+  const getFrequencyData = useCallback(() => {
+    return audioService.getFrequencyData();
   }, [audioService]);
 
   return {
-    currentTime,
-    isPlaying,
-    duration,
-    error,
+    state,
     play,
     pause,
+    stop,
     seek,
-    getAnalyser: () => audioService.getAnalyserNode(),
-    getWaveformData: () => waveformData,
-    getFrequencyData: () => frequencyData
+    getAnalyser,
+    getWaveformData,
+    getFrequencyData,
   };
-} 
+}

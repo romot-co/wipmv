@@ -326,6 +326,23 @@ export abstract class EffectBase {
 }
 
 /**
+ * AudioPlaybackServiceが提供する音声再生の状態をまとめたインターフェイス
+ */
+export interface AudioPlaybackState {
+  /** 再生中かどうか */
+  isPlaying: boolean;
+
+  /** 現在の再生位置(秒) */
+  currentTime: number;
+
+  /** トータルの再生時間(秒) */
+  duration: number;
+
+  /** エラー情報(エラーがない場合はnull) */
+  error: Error | null;
+}
+
+/**
  * InspectorProps
  * - UIでのエフェクト編集用
  */

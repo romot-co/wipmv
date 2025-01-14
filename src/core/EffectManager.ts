@@ -3,7 +3,7 @@
 import { EffectBase } from './EffectBase';
 import { AudioVisualParameters, EffectConfig, Disposable, BaseEffectState } from './types';
 import { Renderer } from './Renderer';
-import { AudioPlaybackService, AudioPlaybackState } from './AudioPlaybackService';
+import { AudioPlaybackService } from './AudioPlaybackService';
 
 interface EffectManagerState {
   effects: Map<string, EffectBase>;
@@ -24,12 +24,6 @@ export class EffectManager {
     currentTime: 0,
     duration: 0,
     isPlaying: false
-  };
-  private audioState: AudioPlaybackState = {
-    isPlaying: false,
-    currentTime: 0,
-    duration: 0,
-    isSuspended: false
   };
   private lastRenderTime: number = 0;
   private readonly FRAME_INTERVAL: number = 1000 / 60; // 60fps
