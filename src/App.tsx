@@ -93,14 +93,32 @@ export const App: React.FC = () => {
   const handleManagerInit = useCallback((newManager: EffectManager) => {
     console.log('EffectManager初期化:', newManager);
     setManager(newManager);
-    transition('ready');
-  }, [transition]);
+  }, []);
+
+  // オーディオ制御フックを先に定義
+  const {
+    currentTime,
+    isPlaying,
+    duration,
+    play,
+    pause,
+    seek,
+    getAnalyser,
+    getWaveformData,
+    getFrequencyData
+  } = useAudioControl({ 
+    manager,
+    audioService
+  });
 
   const handleEffectAdd = useCallback((type: EffectType) => {
     if (!manager) return;
     try {
       const zIndex = manager.getEffects().length;
       let effect: EffectBase;
+
+      // 現在のdurationを使用
+      const currentDuration = duration || 0;
 
       switch (type) {
         case EffectType.Background:
@@ -112,7 +130,7 @@ export const App: React.FC = () => {
             zIndex,
             visible: true,
             startTime: 0,
-            endTime: duration || 0
+            endTime: currentDuration
           });
           break;
         case EffectType.Text:
@@ -129,7 +147,7 @@ export const App: React.FC = () => {
             zIndex,
             visible: true,
             startTime: 0,
-            endTime: duration || 0
+            endTime: currentDuration
           });
           break;
         case EffectType.Waveform:
@@ -151,7 +169,7 @@ export const App: React.FC = () => {
             zIndex,
             visible: true,
             startTime: 0,
-            endTime: duration || 0
+            endTime: currentDuration
           });
           break;
         case EffectType.Watermark:
@@ -167,7 +185,7 @@ export const App: React.FC = () => {
             zIndex,
             visible: true,
             startTime: 0,
-            endTime: duration || 0
+            endTime: currentDuration
           });
           break;
       }
@@ -177,7 +195,7 @@ export const App: React.FC = () => {
     } catch (error) {
       handleError('effect', error instanceof Error ? error : new Error('エフェクトの追加に失敗しました'));
     }
-  }, [manager, handleError]);
+  }, [manager, handleError, duration]);
 
   const handleEffectRemove = useCallback((id: string) => {
     if (!manager) return;
@@ -201,23 +219,8 @@ export const App: React.FC = () => {
   const handleEffectUpdate = useCallback((config: Partial<EffectConfig>) => {
     if (!manager || !selectedEffectId) return;
     manager.updateEffect(selectedEffectId, config);
-    manager.render();
+    setEffects(manager.getEffects());
   }, [manager, selectedEffectId]);
-
-  const {
-    currentTime,
-    isPlaying,
-    duration,
-    play,
-    pause,
-    seek,
-    getAnalyser,
-    getWaveformData,
-    getFrequencyData
-  } = useAudioControl({ 
-    manager,
-    audioService
-  });
 
   // 選択中のエフェクトを取得（メモ化）
   const selectedEffect = useMemo(() => {
@@ -225,105 +228,110 @@ export const App: React.FC = () => {
     return manager.getEffects().find(e => e.getConfig().id === selectedEffectId);
   }, [selectedEffectId, manager]);
 
-  // エフェクトの状態を監視（最適化）
-  useEffect(() => {
+  // デフォルトエフェクトの作成
+  const handleDefaultEffects = useCallback((duration: number) => {
     if (!manager) return;
-    
-    // 初期状態を設定
-    setEffects(manager.getEffects());
 
-    let timeoutId: number;
-    const updateEffects = () => {
-      const currentEffects = manager.getEffects();
-      setEffects(prev => {
-        // 変更がない場合は更新しない
-        if (prev.length === currentEffects.length && 
-            prev.every((e, i) => e.getConfig().id === currentEffects[i].getConfig().id)) {
-          return prev;
-        }
-        return currentEffects;
-      });
-
-      // 次の更新をスケジュール
-      timeoutId = window.setTimeout(updateEffects, 200);
-    };
-
-    // 初回更新を開始
-    timeoutId = window.setTimeout(updateEffects, 200);
-
-    return () => {
-      if (timeoutId) {
-        window.clearTimeout(timeoutId);
+    const defaultConfigs = createDefaultEffects(duration);
+    defaultConfigs.forEach((config: BaseEffectConfig & { type: EffectType }) => {
+      let effect: EffectBase;
+      switch (config.type) {
+        case EffectType.Background:
+          effect = new BackgroundEffect(config as BackgroundEffectConfig);
+          break;
+        case EffectType.Text:
+          effect = new TextEffect(config as TextEffectConfig);
+          break;
+        case EffectType.Waveform:
+          effect = new WaveformEffect(config as WaveformEffectConfig);
+          break;
+        case EffectType.Watermark:
+          effect = new WatermarkEffect(config as WatermarkEffectConfig);
+          break;
+        default:
+          throw new Error(`Unknown effect type: ${config.type}`);
       }
-    };
-  }, [manager]);
-
-  // オーディオデータの更新時の処理を最適化
-  useEffect(() => {
-    if (!manager || !isAudioLoaded) return;
-    
-    const audioBuffer = audioService.getAudioBuffer();
-    if (!audioBuffer) return;
-
-    // 初期状態の設定
-    manager.updateParams({
-      currentTime: 0,
-      waveformData: new Float32Array(),  // 空の配列で初期化
-      frequencyData: new Uint8Array()    // 空の配列で初期化
+      manager.addEffect(effect);
     });
 
-    // 初期レンダリング（一度だけ）
-    manager.render();
+    setEffects(manager.getEffects());
+  }, [manager]);
 
-    return () => {
-      manager.stopRenderLoop();
-    };
-  }, [manager, isAudioLoaded, audioService]);
+  // オーディオロード時の処理を最適化
+  const handleAudioLoad = useCallback(() => {
+    setIsAudioLoaded(true);
+    clearError('audio');
+    transition('ready');
 
-  // 再生中のオーディオデータ更新
+    // プロジェクトデータの読み込みと初期化
+    const projectData = ProjectService.loadProject();
+    if (projectData && manager) {
+      // 設定の復元
+      setVideoSettings(projectData.videoSettings);
+
+      // エフェクトの復元
+      manager.getEffects().forEach(effect => {
+        manager.removeEffect(effect.getConfig().id);
+      });
+
+      projectData.effects.forEach((effectConfig: BaseEffectConfig & { type: EffectType }) => {
+        let effect: EffectBase;
+        switch (effectConfig.type) {
+          case EffectType.Background:
+            effect = new BackgroundEffect(effectConfig as BackgroundEffectConfig);
+            break;
+          case EffectType.Text:
+            effect = new TextEffect(effectConfig as TextEffectConfig);
+            break;
+          case EffectType.Waveform:
+            effect = new WaveformEffect(effectConfig as WaveformEffectConfig);
+            break;
+          case EffectType.Watermark:
+            effect = new WatermarkEffect(effectConfig as WatermarkEffectConfig);
+            break;
+        }
+        manager.addEffect(effect);
+      });
+    } else if (manager) {
+      // プロジェクトデータがない場合はデフォルトエフェクトを作成
+      const audioBuffer = audioService.getAudioBuffer();
+      if (audioBuffer) {
+        handleDefaultEffects(audioBuffer.duration);
+      }
+    }
+
+    // エフェクトリストを更新
+    if (manager) {
+      setEffects(manager.getEffects());
+    }
+  }, [clearError, transition, manager, audioService, handleDefaultEffects, setVideoSettings]);
+
+  // オーディオとレンダリングの制御を一元化
   useEffect(() => {
-    if (!manager || !isAudioLoaded || !isPlaying) return;
+    if (!manager || !isAudioLoaded) return;
 
+    // オーディオデータの更新
     const updateAudioData = () => {
       manager.updateParams({
         currentTime,
-        waveformData: getWaveformData(),
-        frequencyData: getFrequencyData()
+        waveformData: isPlaying ? getWaveformData() : new Float32Array(),
+        frequencyData: isPlaying ? getFrequencyData() : new Uint8Array()
       });
     };
 
-    // 再生中のみアニメーションフレームで更新
-    let animationFrameId: number;
-    const animate = () => {
-      updateAudioData();
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animate();
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
-  }, [manager, isAudioLoaded, isPlaying, currentTime, getWaveformData, getFrequencyData]);
-
-  // レンダリングループの制御（最適化）
-  useEffect(() => {
-    if (!manager) return;
-    
+    // 再生状態に応じて制御
     if (isPlaying) {
+      updateAudioData();
       manager.startRenderLoop();
     } else {
+      updateAudioData();
       manager.stopRenderLoop();
-      // 停止時に1回だけ描画
-      manager.render();
     }
 
     return () => {
       manager.stopRenderLoop();
     };
-  }, [manager, isPlaying]);
+  }, [manager, isAudioLoaded, isPlaying, currentTime, getWaveformData, getFrequencyData]);
 
   // プレビューキャンバスのプロパティをメモ化（最適化）
   const previewProps = useMemo(() => ({
@@ -384,107 +392,6 @@ export const App: React.FC = () => {
     }
   }, [manager, videoSettings, audioService, handleError]);
 
-  // プロジェクトの復元
-  const loadProject = useCallback(async () => {
-    try {
-      const projectData = ProjectService.loadProject();
-      if (!projectData || !manager) return;
-
-      // 設定の復元
-      setVideoSettings(projectData.videoSettings);
-
-      // エフェクトの復元
-      manager.getEffects().forEach(effect => {
-        manager.removeEffect(effect.getConfig().id);
-      });
-
-      projectData.effects.forEach((effectConfig: BaseEffectConfig & { type: EffectType }) => {
-        let effect: EffectBase;
-        switch (effectConfig.type) {
-          case EffectType.Background:
-            effect = new BackgroundEffect(effectConfig as BackgroundEffectConfig);
-            break;
-          case EffectType.Text:
-            effect = new TextEffect(effectConfig as TextEffectConfig);
-            break;
-          case EffectType.Waveform:
-            effect = new WaveformEffect(effectConfig as WaveformEffectConfig);
-            break;
-          case EffectType.Watermark:
-            effect = new WatermarkEffect(effectConfig as WatermarkEffectConfig);
-            break;
-          default:
-            throw new Error(`Unknown effect type: ${effectConfig.type}`);
-        }
-        manager.addEffect(effect);
-      });
-
-      setEffects(manager.getEffects());
-    } catch (error) {
-      handleError('effect', error instanceof Error ? error : new Error('プロジェクトの読み込みに失敗しました'));
-    }
-  }, [manager, handleError]);
-
-  // デフォルトエフェクトの作成
-  const handleDefaultEffects = useCallback((duration: number) => {
-    if (!manager) return;
-
-    const defaultConfigs = createDefaultEffects(duration);
-    defaultConfigs.forEach((config: BaseEffectConfig & { type: EffectType }) => {
-      let effect: EffectBase;
-      switch (config.type) {
-        case EffectType.Background:
-          effect = new BackgroundEffect(config as BackgroundEffectConfig);
-          break;
-        case EffectType.Text:
-          effect = new TextEffect(config as TextEffectConfig);
-          break;
-        case EffectType.Waveform:
-          effect = new WaveformEffect(config as WaveformEffectConfig);
-          break;
-        case EffectType.Watermark:
-          effect = new WatermarkEffect(config as WatermarkEffectConfig);
-          break;
-        default:
-          throw new Error(`Unknown effect type: ${config.type}`);
-      }
-      manager.addEffect(effect);
-    });
-
-    setEffects(manager.getEffects());
-  }, [manager]);
-
-  // オーディオロード時の処理を修正
-  const handleAudioLoad = useCallback(() => {
-    setIsAudioLoaded(true);
-    clearError('audio');
-    transition('ready');
-
-    // プロジェクトデータがない場合はデフォルトエフェクトを作成
-    const projectData = ProjectService.loadProject();
-    if (!projectData && manager) {
-      const audioBuffer = audioService.getAudioBuffer();
-      if (audioBuffer) {
-        handleDefaultEffects(audioBuffer.duration);
-      }
-    }
-  }, [audioService, manager, clearError, transition, handleDefaultEffects]);
-
-  // 初回マウント時にプロジェクトを読み込み
-  useEffect(() => {
-    if (appState === 'ready') {
-      loadProject();
-    }
-  }, [appState, loadProject]);
-
-  // 定期的な自動保存
-  useEffect(() => {
-    if (appState !== 'ready') return;
-
-    const saveInterval = setInterval(saveProject, 60000); // 1分ごと
-    return () => clearInterval(saveInterval);
-  }, [appState, saveProject]);
-
   return (
     <Container className="app">
       {appState === 'initial' || !isAudioLoaded || !duration || !analyser ? (
@@ -523,10 +430,11 @@ export const App: React.FC = () => {
         </Flex>
       ) : (
         <>
-          <Section className="preview-section" size="3">
-            <PreviewCanvas {...previewProps} />
-            {isAudioLoaded && (
-              <Flex direction="column" gap="2">
+          <Flex className="main-content">
+            <Section className="preview-section" size="3">
+              <PreviewCanvas {...previewProps} />
+              <Card className="controls-section">
+                <PlaybackControls {...playbackProps} />
                 <Flex gap="2">
                   <ExportButton
                     audioBuffer={audioService.getAudioBuffer()!}
@@ -549,37 +457,37 @@ export const App: React.FC = () => {
                     エクスポート進捗: {Math.round(exportProgress)}%
                   </Text>
                 )}
-              </Flex>
-            )}
-          </Section>
+              </Card>
+            </Section>
 
-          <Card className="controls-section">
-            <Flex gap="4" align="center">
-              <PlaybackControls {...playbackProps} />
-              <AddEffectButton onAdd={handleEffectAdd} />
-            </Flex>
-          </Card>
-
-          <Card className="effects-section">
-            <Box className="effect-list">
-              <EffectList
-                effects={effects}
-                selectedEffectId={selectedEffectId}
-                onEffectSelect={setSelectedEffectId}
-                onEffectRemove={handleEffectRemove}
-                onEffectMove={handleEffectMove}
-              />
+            <Box className="effects-panel">
+              <Card className="effects-section">
+                <Flex gap="2" align="center">
+                  <Text size="2" weight="medium">エフェクト</Text>
+                  <AddEffectButton onAdd={handleEffectAdd} />
+                </Flex>
+                <Box className="effect-list">
+                  <EffectList
+                    effects={effects}
+                    selectedEffectId={selectedEffectId}
+                    onEffectSelect={setSelectedEffectId}
+                    onEffectRemove={handleEffectRemove}
+                    onEffectMove={handleEffectMove}
+                    onEffectAdd={handleEffectAdd}
+                  />
+                </Box>
+                {selectedEffect && (
+                  <Box className="effect-settings">
+                    <EffectSettings
+                      effect={selectedEffect}
+                      onUpdate={handleEffectUpdate}
+                      duration={duration || 0}
+                    />
+                  </Box>
+                )}
+              </Card>
             </Box>
-            {selectedEffect && (
-              <Box className="effect-settings">
-                <EffectSettings
-                  effect={selectedEffect}
-                  onUpdate={handleEffectUpdate}
-                  duration={duration || 0}
-                />
-              </Box>
-            )}
-          </Card>
+          </Flex>
         </>
       )}
     </Container>

@@ -159,21 +159,29 @@ export class AudioPlaybackService {
   }
 
   public pause() {
-    // 再生状態を先に更新
-    this.isPlaying = false;
+    try {
+      if (!this.sourceNode || !this.isPlaying) return;
 
-    // 定期的な状態更新を停止
-    this.stopStateUpdates();
-
-    // 現在の再生位置を保存して停止
-    if (this.sourceNode) {
+      // 現在の再生位置を保存
       this.startOffset = this.getCurrentTime();
+
+      // ソースノードを停止
       this.sourceNode.stop();
       this.sourceNode.disconnect();
       this.sourceNode = null;
-    }
 
-    this.notifyStateChange();
+      // 再生状態を更新
+      this.isPlaying = false;
+
+      // 定期的な状態更新を停止
+      this.stopStateUpdates();
+
+      // 状態変更を通知
+      this.notifyStateChange();
+    } catch (error) {
+      console.error('一時停止中にエラーが発生しました:', error);
+      this.handlePlaybackError(error);
+    }
   }
 
   public stop() {
@@ -223,8 +231,10 @@ export class AudioPlaybackService {
       // 再生終了時の処理
       const duration = this.getDuration();
       if (currentTime >= duration) {
-        this.handlePlaybackEnd();
-        return duration;
+        // 即座に停止して終端に移動
+        this.stop();
+        this.startOffset = 0;
+        return 0;
       }
       
       return currentTime;
@@ -294,21 +304,29 @@ export class AudioPlaybackService {
    * 再生終了時の処理
    */
   private handlePlaybackEnd(): void {
-    console.log('再生終了');
-    
-    // 一時停止状態の場合は再生を開始しない
-    if (!this.isPlaying) {
-      this.startOffset = 0;
-      this.notifyStateChange();
-      return;
-    }
-    
-    // ループ再生のために最初から再生を開始
+    // 再生状態をリセット
+    this.isPlaying = false;
     this.startOffset = 0;
-    this.play().catch(error => {
-      console.error('ループ再生中にエラーが発生しました:', error);
-      this.handlePlaybackError(error);
-    });
+    this.startTime = 0;
+
+    // ソースノードをクリーンアップ
+    if (this.sourceNode) {
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
+    }
+
+    // 定期的な状態更新を停止
+    this.stopStateUpdates();
+
+    // 状態変更を通知
+    this.notifyStateChange();
+
+    // 自動的に再生を再開
+    if (this.audioBuffer) {
+      this.play().catch(error => {
+        console.error('再生の再開に失敗しました:', error);
+      });
+    }
   }
 
   // 追加: 定期的な状態更新を開始
