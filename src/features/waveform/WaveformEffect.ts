@@ -1,11 +1,15 @@
 import { EffectBase } from '../../core/EffectBase';
-import { WaveformEffectConfig, AudioVisualParameters, AudioSource } from '../../core/types';
+import { WaveformEffectConfig, AudioSource, AudioVisualParameters, BaseEffectConfig } from '../../core/types';
 
 export class WaveformEffect extends EffectBase {
   private audioSource: AudioSource | null = null;
+  private config: WaveformEffectConfig;
+  private lastRenderTime: number = 0;
+  private segmentDuration: number = 0;
 
   constructor(config: WaveformEffectConfig) {
-    const defaultConfig: WaveformEffectConfig = {
+    super(config);
+    this.config = {
       ...config,
       options: {
         smoothing: 0.5,
@@ -13,189 +17,98 @@ export class WaveformEffect extends EffectBase {
         barSpacing: 1,
         style: 'bar',
         analysisMode: 'offline',
-        segmentCount: 1024,
+        segmentCount: 128,
         ...config.options
       }
     };
-    super(defaultConfig);
   }
 
   public setAudioSource(source: AudioSource): void {
     this.audioSource = source;
+    if (source.buffer) {
+      this.segmentDuration = source.buffer.duration / (this.config.options.segmentCount || 128);
+    }
   }
 
-  public render(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    params: AudioVisualParameters
-  ): void {
+  public render(ctx: CanvasRenderingContext2D, params: AudioVisualParameters): void {
     if (!this.isVisible(params.currentTime) || !this.audioSource) return;
+    this.draw(ctx, params.currentTime);
+  }
 
-    const config = this.getConfig<WaveformEffectConfig>();
-    const { options, position, colors } = config;
+  private draw(ctx: CanvasRenderingContext2D, currentTime: number): void {
+    if (!this.audioSource || !this.config.options) return;
 
-    // 波形データを取得
-    const waveformData = this.getWaveformData();
+    const { position, colors, options } = this.config;
+    const { height } = position;
+    const { style, barWidth = 2, barSpacing = 1, segmentCount = 128 } = options;
+
+    // 現在の再生位置に基づいてセグメントのインデックスを計算
+    const currentSegment = Math.floor(currentTime / this.segmentDuration);
+    
+    // 波形データの取得
+    const waveformData = this.getWaveformDataForSegment(currentSegment, segmentCount);
     if (!waveformData) return;
 
-    // 波形を描画
-    this.drawWaveform(ctx, waveformData, {
-      style: options.style || 'bar',
-      barWidth: options.barWidth || 2,
-      barSpacing: options.barSpacing || 1,
-      smoothing: options.smoothing || 0.5,
-      position,
-      colors
-    });
-  }
-
-  private getWaveformData(): Float32Array | null {
-    if (!this.audioSource) return null;
-
-    const config = this.getConfig<WaveformEffectConfig>();
-    const { options } = config;
-    const segmentCount = options.segmentCount || 1024;
-
-    // オフライン解析データから波形データを取得
-    const waveformData = this.audioSource.waveformData[0]; // 左チャンネルを使用
-    if (!waveformData) return null;
-
-    // 指定されたセグメント数に合わせてデータを補間
-    const samplesPerSegment = Math.floor(waveformData.length / segmentCount);
-    const result = new Float32Array(segmentCount);
-
-    for (let i = 0; i < segmentCount; i++) {
-      const startIndex = i * samplesPerSegment;
-      const endIndex = Math.min(startIndex + samplesPerSegment, waveformData.length);
-      let sum = 0;
-      for (let j = startIndex; j < endIndex; j++) {
-        sum += Math.abs(waveformData[j]);
-      }
-      result[i] = sum / (endIndex - startIndex);
-    }
-
-    return result;
-  }
-
-  private drawWaveform(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    data: Float32Array,
-    options: {
-      style: string;
-      barWidth: number;
-      barSpacing: number;
-      smoothing: number;
-      position: { x: number; y: number; width: number; height: number };
-      colors: { primary: string; secondary?: string };
-    }
-  ): void {
-    const { style, barWidth, barSpacing, position, colors } = options;
-    const { x, y, width, height } = position;
-
+    // 描画スタイルの設定
     ctx.save();
-    try {
-      // クリッピング領域を設定
-      ctx.beginPath();
-      ctx.rect(x, y, width, height);
-      ctx.clip();
-
-      // スタイルに応じて描画
-      switch (style) {
-        case 'line':
-          this.drawLineStyle(ctx, data, position, colors);
-          break;
-        case 'mirror':
-          this.drawMirrorStyle(ctx, data, position, colors, barWidth, barSpacing);
-          break;
-        case 'bar':
-        default:
-          this.drawBarStyle(ctx, data, position, colors, barWidth, barSpacing);
-          break;
-      }
-    } finally {
-      ctx.restore();
-    }
-  }
-
-  private drawLineStyle(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    data: Float32Array,
-    position: { x: number; y: number; width: number; height: number },
-    colors: { primary: string; secondary?: string }
-  ): void {
-    const { x, y, width, height } = position;
-    const centerY = y + height / 2;
-
-    ctx.beginPath();
-    ctx.strokeStyle = colors.primary;
-    ctx.lineWidth = 2;
-
-    const step = width / (data.length - 1);
-    data.forEach((value, i) => {
-      const pointX = x + i * step;
-      const pointY = centerY + (value * height) / 2;
-      if (i === 0) {
-        ctx.moveTo(pointX, pointY);
-      } else {
-        ctx.lineTo(pointX, pointY);
-      }
-    });
-
-    ctx.stroke();
-  }
-
-  private drawBarStyle(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    data: Float32Array,
-    position: { x: number; y: number; width: number; height: number },
-    colors: { primary: string; secondary?: string },
-    barWidth: number,
-    barSpacing: number
-  ): void {
-    const { x, y, width, height } = position;
-    const totalBarWidth = barWidth + barSpacing;
-    const numBars = Math.floor(width / totalBarWidth);
-    const step = data.length / numBars;
-
+    ctx.translate(position.x, position.y);
     ctx.fillStyle = colors.primary;
 
-    for (let i = 0; i < numBars; i++) {
-      const dataIndex = Math.floor(i * step);
-      const value = data[dataIndex];
-      const barHeight = value * height;
-      const barX = x + i * totalBarWidth;
-      const barY = y + (height - barHeight) / 2;
-      ctx.fillRect(barX, barY, barWidth, barHeight);
+    // バーの幅と間隔の計算
+    const totalBarWidth = barWidth + barSpacing;
+    const scale = height / 2;
+
+    // 波形の描画
+    waveformData.forEach((amplitude, i) => {
+      const x = i * totalBarWidth;
+      const barHeight = Math.abs(amplitude) * scale;
+
+      if (style === 'bar') {
+        // バースタイルの描画
+        ctx.fillRect(x, height / 2 - barHeight / 2, barWidth, barHeight);
+      } else {
+        // ラインスタイルの描画
+        if (i === 0) {
+          ctx.beginPath();
+          ctx.moveTo(x, height / 2 + amplitude * scale);
+        } else {
+          ctx.lineTo(x, height / 2 + amplitude * scale);
+        }
+      }
+    });
+
+    if (style !== 'bar') {
+      ctx.stroke();
     }
+
+    ctx.restore();
+    this.lastRenderTime = currentTime;
   }
 
-  private drawMirrorStyle(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    data: Float32Array,
-    position: { x: number; y: number; width: number; height: number },
-    colors: { primary: string; secondary?: string },
-    barWidth: number,
-    barSpacing: number
-  ): void {
-    const { x, y, width, height } = position;
-    const totalBarWidth = barWidth + barSpacing;
-    const numBars = Math.floor(width / totalBarWidth);
-    const step = data.length / numBars;
-    const halfHeight = height / 2;
-    const centerY = y + halfHeight;
+  private getWaveformDataForSegment(currentSegment: number, segmentCount: number): number[] | null {
+    if (!this.audioSource?.waveformData?.[0]) return null;
 
-    for (let i = 0; i < numBars; i++) {
-      const dataIndex = Math.floor(i * step);
-      const value = data[dataIndex];
-      const barHeight = value * halfHeight;
-      const barX = x + i * totalBarWidth;
-      
-      // 上部
-      ctx.fillStyle = colors.primary;
-      ctx.fillRect(barX, centerY - barHeight, barWidth, barHeight);
-      
-      // 下部
-      ctx.fillStyle = colors.secondary || colors.primary;
-      ctx.fillRect(barX, centerY, barWidth, barHeight);
-    }
+    const waveformData = this.audioSource.waveformData[0];
+    const samplesPerSegment = Math.floor(waveformData.length / segmentCount);
+    const startIndex = currentSegment * samplesPerSegment;
+    const endIndex = Math.min(startIndex + samplesPerSegment, waveformData.length);
+
+    // Float32Arrayをnumber[]に変換して返す
+    return Array.from(waveformData.slice(startIndex, endIndex));
+  }
+
+  public getConfig<T extends BaseEffectConfig = WaveformEffectConfig>(): T {
+    return this.config as T;
+  }
+
+  public updateConfig(newConfig: Partial<WaveformEffectConfig>): void {
+    this.config = {
+      ...this.config,
+      ...newConfig,
+      options: {
+        ...this.config.options,
+        ...newConfig.options
+      }
+    };
   }
 } 

@@ -77,6 +77,7 @@ export class AudioPlaybackService {
 
     this.sourceNode?.stop();
     this.sourceNode?.disconnect();
+    this.sourceNode = null;
     this._startOffset = this.getCurrentTime();
     this._isPlaying = false;
   }
@@ -92,6 +93,7 @@ export class AudioPlaybackService {
     }
     this._startOffset = 0;
     this._isPlaying = false;
+    this._startTime = 0;
   }
 
   /**
