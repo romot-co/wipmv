@@ -18,6 +18,7 @@ export class AudioPlaybackService {
   private _isPlaying = false;
   private _startTime = 0;
   private _startOffset = 0;
+  private _pauseTime = 0;  // 一時停止時の時刻を保存
   private _loop = false;
   private _onEnded: (() => void) | null = null;
 
@@ -58,13 +59,18 @@ export class AudioPlaybackService {
 
     // onendedイベントを設定
     this.sourceNode.onended = () => {
-      this._isPlaying = false;
-      this._onEnded?.();
+      if (!this._loop) {  // ループ再生でない場合のみ
+        this._isPlaying = false;
+        this._startOffset = 0;
+        this._startTime = 0;
+        this._onEnded?.();
+      }
     };
 
     // 再生開始
     const offset = this._startOffset % this.audioBuffer.duration;
     this._startTime = this.audioContext.currentTime - offset;
+    this._pauseTime = 0;  // 再生開始時にリセット
     this.sourceNode.start(0, offset);
     this._isPlaying = true;
   }
@@ -73,12 +79,19 @@ export class AudioPlaybackService {
    * 一時停止
    */
   public pause(): void {
-    if (!this._isPlaying) return;
+    if (!this._isPlaying || !this.audioContext) return;
 
-    this.sourceNode?.stop();
-    this.sourceNode?.disconnect();
-    this.sourceNode = null;
+    // 現在の再生位置を保存
+    this._pauseTime = this.audioContext.currentTime;
     this._startOffset = this.getCurrentTime();
+
+    // ソースノードを停止
+    if (this.sourceNode) {
+      this.sourceNode.stop();
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
+    }
+
     this._isPlaying = false;
   }
 
@@ -92,8 +105,9 @@ export class AudioPlaybackService {
       this.sourceNode = null;
     }
     this._startOffset = 0;
-    this._isPlaying = false;
     this._startTime = 0;
+    this._pauseTime = 0;
+    this._isPlaying = false;
   }
 
   /**
@@ -104,7 +118,7 @@ export class AudioPlaybackService {
     if (wasPlaying) {
       this.pause();
     }
-    this._startOffset = time;
+    this._startOffset = Math.max(0, Math.min(time, this.getDuration()));
     if (wasPlaying) {
       await this.play();
     }
@@ -114,11 +128,18 @@ export class AudioPlaybackService {
    * 現在の再生時間を取得
    */
   public getCurrentTime(): number {
-    if (!this.audioContext || !this._isPlaying) {
+    if (!this.audioContext) return this._startOffset;
+
+    if (this._isPlaying) {
+      // 再生中は現在時刻から計算
+      const elapsed = this.audioContext.currentTime - this._startTime;
+      return this._startOffset + elapsed;
+    } else if (this._pauseTime > 0) {
+      // 一時停止中は保存した位置を返す
       return this._startOffset;
     }
-    const elapsed = this.audioContext.currentTime - this._startTime;
-    return this._startOffset + elapsed;
+    
+    return this._startOffset;
   }
 
   /**
@@ -159,8 +180,10 @@ export class AudioPlaybackService {
     return this.audioSource;
   }
 
-  // オーディオバッファを取得
-  getAudioBuffer(): AudioBuffer | null {
+  /**
+   * オーディオバッファを取得
+   */
+  public getAudioBuffer(): AudioBuffer | null {
     return this.audioBuffer;
   }
 }

@@ -5,6 +5,7 @@ import { ImageLoader } from '../../core/ImageLoader';
 export class BackgroundEffect extends EffectBase {
   private image: HTMLImageElement | null = null;
   private imageLoader: ImageLoader;
+  private onImageLoadCallback: (() => void) | null = null;
 
   constructor(config: BackgroundEffectConfig) {
     // デフォルト設定
@@ -23,19 +24,35 @@ export class BackgroundEffect extends EffectBase {
     this.loadImage();
   }
 
+  public setOnImageLoadCallback(callback: () => void): void {
+    this.onImageLoadCallback = callback;
+  }
+
   private async loadImage(): Promise<void> {
     const config = this.getConfig<BackgroundEffectConfig>();
     if (config.backgroundType !== 'image' || !config.imageUrl) {
       this.image = null;
+      // 画像なしの場合もコールバックを呼び出し（表示更新のため）
+      if (this.onImageLoadCallback) {
+        this.onImageLoadCallback();
+      }
       return;
     }
 
     try {
       const result = await this.imageLoader.loadImage(config.imageUrl);
       this.image = result?.image || null;
+      // 画像ロード完了時にコールバックを呼び出し
+      if (this.onImageLoadCallback) {
+        this.onImageLoadCallback();
+      }
     } catch (error) {
       console.error('Failed to load background image:', error);
       this.image = null;
+      // エラー時にもコールバックを呼び出し（エラー状態を反映するため）
+      if (this.onImageLoadCallback) {
+        this.onImageLoadCallback();
+      }
     }
   }
 

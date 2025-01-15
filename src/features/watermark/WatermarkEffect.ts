@@ -5,11 +5,16 @@ import { ImageLoader } from '../../core/ImageLoader';
 export class WatermarkEffect extends EffectBase {
   private image: HTMLImageElement | null = null;
   private imageLoader: ImageLoader;
+  private onImageLoadCallback: (() => void) | null = null;
 
   constructor(config: WatermarkEffectConfig) {
     super(config);
     this.imageLoader = ImageLoader.getInstance();
     this.loadImage();
+  }
+
+  public setOnImageLoadCallback(callback: () => void): void {
+    this.onImageLoadCallback = callback;
   }
 
   private async loadImage(): Promise<void> {
@@ -31,9 +36,18 @@ export class WatermarkEffect extends EffectBase {
         const result = await this.imageLoader.loadImage(config.imageUrl);
         this.image = result?.image || null;
       }
+
+      // 画像ロード完了時にコールバックを呼び出し
+      if (this.image && this.onImageLoadCallback) {
+        this.onImageLoadCallback();
+      }
     } catch (error) {
       console.error('Failed to load watermark image:', error);
       this.image = null;
+      // エラー時にもコールバックを呼び出し（エラー状態を反映するため）
+      if (this.onImageLoadCallback) {
+        this.onImageLoadCallback();
+      }
     }
   }
 

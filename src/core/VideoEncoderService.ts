@@ -21,8 +21,15 @@ export class VideoEncoderService {
   private muxer: MP4Muxer | null = null;
   private lastVideoTimestamp = 0;
   private lastAudioTimestamp = 0;
+  private frameInterval: number;  // フレーム間隔（マイクロ秒）
+  private samplesPerFrame: number; // 1フレームあたりのサンプル数
 
-  constructor(private config: EncoderConfig) {}
+  constructor(private config: EncoderConfig) {
+    // フレーム間隔を計算（マイクロ秒単位）
+    this.frameInterval = Math.floor(1_000_000 / config.frameRate);
+    // 1フレームあたりのサンプル数を計算
+    this.samplesPerFrame = Math.floor(config.sampleRate / config.frameRate);
+  }
 
   public async initialize(): Promise<void> {
     // MP4Muxer
@@ -82,19 +89,22 @@ export class VideoEncoderService {
   /**
    * Canvas => VideoFrame => VideoEncoder
    */
-  public async encodeVideoFrame(canvas: HTMLCanvasElement, timestampUs: number) {
+  public async encodeVideoFrame(canvas: HTMLCanvasElement, frameIndex: number) {
     if (!this.videoEncoder) return;
+
+    // フレームインデックスからタイムスタンプを計算
+    const timestampUs = frameIndex * this.frameInterval;
 
     // タイムスタンプの整合性チェック
     if (timestampUs < this.lastVideoTimestamp) {
       console.warn('Video timestamp is not monotonic:', timestampUs, this.lastVideoTimestamp);
-      timestampUs = this.lastVideoTimestamp + 1;
+      return; // 過去のフレームは無視
     }
 
     const bitmap = await createImageBitmap(canvas);
     const frame = new VideoFrame(bitmap, { 
       timestamp: timestampUs,
-      duration: Math.floor(1_000_000 / this.config.frameRate)
+      duration: this.frameInterval
     });
     this.videoEncoder.encode(frame);
     frame.close();
@@ -106,16 +116,26 @@ export class VideoEncoderService {
    */
   public async encodeAudioBuffer(
     audioBuffer: AudioBuffer,
-    startSample: number,
-    sampleCount: number,
-    timestampUs: number
+    frameIndex: number
   ) {
     if (!this.audioEncoder) return;
+
+    // フレームインデックスからサンプル位置を計算
+    const startSample = frameIndex * this.samplesPerFrame;
+    const sampleCount = Math.min(
+      this.samplesPerFrame,
+      audioBuffer.length - startSample
+    );
+
+    if (sampleCount <= 0) return;
+
+    // タイムスタンプを計算（フレーム位置から）
+    const timestampUs = frameIndex * this.frameInterval;
 
     // タイムスタンプの整合性チェック
     if (timestampUs < this.lastAudioTimestamp) {
       console.warn('Audio timestamp is not monotonic:', timestampUs, this.lastAudioTimestamp);
-      timestampUs = this.lastAudioTimestamp + 1;
+      return; // 過去のサンプルは無視
     }
 
     // チャンネルごとのデータを取得
@@ -128,6 +148,7 @@ export class VideoEncoderService {
       for (let i = 0; i < sampleCount; i++) {
         const srcIdx = startSample + i;
         if (srcIdx < sourceData.length) {
+          // クリッピングを適用（-1.0 から 1.0 の範囲に制限）
           channelData[i * numberOfChannels + ch] = Math.max(-1, Math.min(1, sourceData[srcIdx]));
         }
       }
@@ -167,5 +188,7 @@ export class VideoEncoderService {
     this.videoEncoder = null;
     this.audioEncoder = null;
     this.muxer = null;
+    this.lastVideoTimestamp = 0;
+    this.lastAudioTimestamp = 0;
   }
 }

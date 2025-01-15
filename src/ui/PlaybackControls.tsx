@@ -21,19 +21,26 @@ export const PlaybackControls: React.FC<Props> = ({
   onPause,
   onSeek
 }) => {
-  // 時間を「分:秒」形式にフォーマット
+  // 時間を「分:秒.ミリ秒」形式にフォーマット
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    const milliseconds = Math.floor((time % 1) * 100);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
   };
 
   // シーク処理のハンドラー
   const handleSeek = useCallback((value: number[]) => {
     if (value.length > 0) {
-      onSeek(value[0]);
+      // 小数点以下3桁までの精度で丸める
+      const seekTime = Math.round(value[0] * 1000) / 1000;
+      onSeek(seekTime);
     }
   }, [onSeek]);
+
+  // 現在時刻と長さを正規化（小数点以下3桁まで）
+  const normalizedCurrentTime = Math.round(currentTime * 1000) / 1000;
+  const normalizedDuration = Math.round(duration * 1000) / 1000;
 
   return (
     <Box className="playback-controls fade-in">
@@ -49,20 +56,20 @@ export const PlaybackControls: React.FC<Props> = ({
           {isPlaying ? <PauseIcon width="20" height="20" /> : <PlayIcon width="20" height="20" />}
         </Button>
         
-        <Flex align="center" gap="2" style={{ minWidth: '80px' }}>
+        <Flex align="center" gap="2" style={{ minWidth: '120px' }}>
           <TimerIcon />
           <Text size="2" color="gray" weight="medium">
-            {formatTime(currentTime)}
+            {formatTime(normalizedCurrentTime)}
           </Text>
         </Flex>
 
         <Flex direction="column" gap="1" style={{ flex: 1 }} className="seek-container">
           <Slider
             defaultValue={[0]}
-            value={[currentTime]}
+            value={[normalizedCurrentTime]}
             min={0}
-            max={duration}
-            step={0.1}
+            max={normalizedDuration}
+            step={0.001}  // より細かい精度でシーク可能に
             onValueChange={handleSeek}
             size="2"
             variant="surface"
@@ -71,9 +78,9 @@ export const PlaybackControls: React.FC<Props> = ({
           />
         </Flex>
 
-        <Flex align="center" gap="2" style={{ minWidth: '80px', justifyContent: 'flex-end' }}>
+        <Flex align="center" gap="2" style={{ minWidth: '120px', justifyContent: 'flex-end' }}>
           <Text size="2" color="gray" weight="medium">
-            {formatTime(duration)}
+            {formatTime(normalizedDuration)}
           </Text>
         </Flex>
       </Flex>

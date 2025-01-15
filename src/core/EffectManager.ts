@@ -9,7 +9,15 @@
 
 import { EffectBase } from './EffectBase';
 import { Renderer } from './Renderer';
-import { AudioVisualParameters, EffectConfig, Disposable, BaseEffectState, AudioSource } from './types';
+import { 
+  AudioVisualParameters, 
+  EffectConfig, 
+  Disposable, 
+  BaseEffectState, 
+  AudioSource, 
+  EffectType,
+  BackgroundEffectConfig 
+} from './types';
 import { AudioPlaybackService } from './AudioPlaybackService';
 
 interface EffectManagerState {
@@ -19,6 +27,10 @@ interface EffectManagerState {
 
 interface WithAudioSource {
   setAudioSource: (source: AudioSource) => void;
+}
+
+interface WithImageLoadCallback {
+  setOnImageLoadCallback: (callback: () => void) => void;
 }
 
 export class EffectManager {
@@ -96,6 +108,18 @@ export class EffectManager {
       if (audioSource && this.hasSetAudioSource(effect)) {
         effect.setAudioSource(audioSource);
       }
+    }
+
+    // 画像を使用するエフェクトの場合、画像ロード完了時のコールバックを設定
+    if (
+      (config.type === EffectType.Watermark || 
+       (config.type === EffectType.Background && 
+        (config as BackgroundEffectConfig).backgroundType === 'image')) && 
+      this.hasImageLoadCallback(effect)
+    ) {
+      effect.setOnImageLoadCallback(() => {
+        this.render(); // 画像ロード完了時に再描画
+      });
     }
 
     this.sortEffectsByZIndex();
@@ -299,6 +323,18 @@ export class EffectManager {
       effect !== null &&
       'setAudioSource' in effect &&
       typeof (effect as WithAudioSource).setAudioSource === 'function'
+    );
+  }
+
+  /**
+   * エフェクトがsetOnImageLoadCallbackメソッドを持っているか判定
+   */
+  private hasImageLoadCallback(effect: unknown): effect is WithImageLoadCallback {
+    return (
+      typeof effect === 'object' &&
+      effect !== null &&
+      'setOnImageLoadCallback' in effect &&
+      typeof (effect as WithImageLoadCallback).setOnImageLoadCallback === 'function'
     );
   }
 }

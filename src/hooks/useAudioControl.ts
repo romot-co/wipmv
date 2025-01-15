@@ -2,11 +2,9 @@
  * useAudioControl
  * - React Hooks でUI操作を簡単にする
  * - AudioPlaybackService のメソッドをラップし、再生/停止/シーク/エラー管理などを提供
- * - 進捗バーなどのために "currentTime" "duration" などをstate管理しても良いが
- *   毎フレーム更新する必要はなく、onPlay/onPause/onSeekのタイミング等適度でOK
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { AudioPlaybackService } from '../core/AudioPlaybackService';
 
 interface AudioControlState {
@@ -24,6 +22,31 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     error: null,
   });
 
+  // RAF用のref
+  const rafIdRef = useRef<number | null>(null);
+  const lastUpdateTimeRef = useRef<number>(0);
+
+  /**
+   * 時間更新処理
+   */
+  const updateTime = useCallback(() => {
+    const now = performance.now();
+    // 16.67ms (約60fps) 以上経過していない場合はスキップ
+    if (now - lastUpdateTimeRef.current < 16.67) {
+      rafIdRef.current = requestAnimationFrame(updateTime);
+      return;
+    }
+
+    lastUpdateTimeRef.current = now;
+    const currentTime = audioService.getCurrentTime();
+    setState(prev => ({
+      ...prev,
+      currentTime: Math.round(currentTime * 1000) / 1000 // 小数点以下3桁に正規化
+    }));
+    
+    rafIdRef.current = requestAnimationFrame(updateTime);
+  }, [audioService]);
+
   /**
    * play
    */
@@ -34,14 +57,20 @@ export function useAudioControl(audioService: AudioPlaybackService) {
       setState((prev) => ({
         ...prev,
         isPlaying: true,
-        duration,
+        duration: Math.round(duration * 1000) / 1000, // 小数点以下3桁に正規化
         error: null,
       }));
+
+      // 再生開始時にRAFを開始
+      if (rafIdRef.current === null) {
+        lastUpdateTimeRef.current = performance.now();
+        rafIdRef.current = requestAnimationFrame(updateTime);
+      }
     } catch (err) {
       const error = err instanceof Error ? err : new Error("再生に失敗しました");
       setState((prev) => ({ ...prev, error }));
     }
-  }, [audioService]);
+  }, [audioService, updateTime]);
 
   /**
    * pause
@@ -50,6 +79,12 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     try {
       audioService.pause();
       setState((prev) => ({ ...prev, isPlaying: false, error: null }));
+
+      // 一時停止時にRAFを停止
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     } catch (err) {
       const error = err instanceof Error ? err : new Error("一時停止に失敗しました");
       setState((prev) => ({ ...prev, error }));
@@ -62,7 +97,18 @@ export function useAudioControl(audioService: AudioPlaybackService) {
   const stop = useCallback(() => {
     try {
       audioService.stop();
-      setState((prev) => ({ ...prev, isPlaying: false, error: null, currentTime: 0 }));
+      setState((prev) => ({ 
+        ...prev, 
+        isPlaying: false, 
+        error: null, 
+        currentTime: 0 
+      }));
+
+      // 停止時にRAFを停止
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     } catch (err) {
       const error = err instanceof Error ? err : new Error("停止に失敗しました");
       setState((prev) => ({ ...prev, error }));
@@ -76,11 +122,11 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     async (time: number) => {
       try {
         await audioService.seek(time);
+        const currentTime = audioService.getCurrentTime();
         setState((prev) => ({
           ...prev,
           error: null,
-          // シーク直後にcurrentTimeを同期
-          currentTime: audioService.getCurrentTime(),
+          currentTime: Math.round(currentTime * 1000) / 1000 // 小数点以下3桁に正規化
         }));
       } catch (err) {
         const error = err instanceof Error ? err : new Error("シークに失敗しました");
@@ -90,23 +136,15 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     [audioService]
   );
 
-  /**
-   * 進捗バーや現在時刻の表示に使いたい場合、
-   * 例えば1秒に数回だけポーリングするなど
-   */
+  // クリーンアップ
   useEffect(() => {
-    let timerId: number | null = null;
-    if (state.isPlaying) {
-      // 例えば500msごとにcurrentTimeを同期
-      timerId = window.setInterval(() => {
-        const currentTime = audioService.getCurrentTime();
-        setState((prev) => ({ ...prev, currentTime }));
-      }, 500);
-    }
     return () => {
-      if (timerId) clearInterval(timerId);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     };
-  }, [state.isPlaying, audioService]);
+  }, []);
 
   return {
     state,

@@ -28,7 +28,7 @@ interface ExportButtonProps {
     videoBitrate: number;
     audioBitrate: number;
   }) => void;
-  audioSource?: AudioSource; // 既存の解析データを受け取る
+  audioSource?: AudioSource;
 }
 
 export const ExportButton: React.FC<ExportButtonProps> = ({
@@ -48,26 +48,36 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
   const handleExport = async () => {
     if (!manager || !audioBuffer) return;
 
+    // WaveformEffectの元設定を保存
+    let originalWaveformConfig: WaveformEffectConfig | null = null;
+    let waveformEffect: WaveformEffect | undefined;
+
     try {
       setIsExporting(true);
       setIsCanceled(false);
       setExportProgress(0);
 
-      // 2. WaveformEffectを取得し、オフライン解析データを設定
+      // リアルタイム描画を停止
+      manager.stopRenderLoop();
+
+      // WaveformEffectを取得し、オフライン解析データを設定
       const effects = manager.getEffects();
-      const waveformEffect = effects.find(
+      waveformEffect = effects.find(
         effect => effect.getConfig().type === EffectType.Waveform
       ) as WaveformEffect | undefined;
 
       if (waveformEffect) {
-        // 波形エフェクトの設定を更新
-        const config = waveformEffect.getConfig() as WaveformEffectConfig;
+        // 元の設定を保存
+        originalWaveformConfig = { ...waveformEffect.getConfig() } as WaveformEffectConfig;
+
+        // オフライン用に一時的に設定を変更
         waveformEffect.updateConfig({
-          ...config,
+          ...originalWaveformConfig,
           options: {
-            ...config.options,
+            ...originalWaveformConfig.options,
             analysisMode: 'offline',
-            segmentCount: Math.max(config.options.segmentCount || 1024, 2048)
+            // プレビューと同じセグメント数を使用して位置ずれを防ぐ
+            segmentCount: originalWaveformConfig.options.segmentCount || 1024
           }
         } as WaveformEffectConfig);
 
@@ -93,88 +103,69 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       });
       await encoder.initialize();
 
-      // フレーム数を計算
+      // フレーム数を計算（正確なフレーム数を算出）
       const totalFrames = Math.ceil(audioBuffer.duration * videoSettings.frameRate);
-      let frameCount = 0;
 
-      // リアルタイム描画を停止
-      manager.stopRenderLoop();
-
-      try {
-        // フレームごとの処理
-        for (let time = 0; time < audioBuffer.duration; time += 1 / videoSettings.frameRate) {
-          if (isCanceled) {
-            throw new Error('エクスポートがキャンセルされました');
-          }
-
-          // オフラインモードでの描画
-          manager.updateParams({
-            currentTime: time,
-            duration: audioBuffer.duration,
-            isPlaying: false
-          });
-          
-          // 描画を実行
-          manager.render();
-
-          const canvas = manager.getCanvas();
-          await encoder.encodeVideoFrame(canvas, time * 1_000_000); // μs単位
-
-          frameCount++;
-          const progress = (frameCount / totalFrames) * 100;
-          setExportProgress(progress);
-          onProgress?.(progress);
+      // フレームごとの処理
+      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+        if (isCanceled) {
+          throw new Error('エクスポートがキャンセルされました');
         }
 
-        // 音声データのエンコード
-        const samplesPerFrame = Math.floor(audioBuffer.sampleRate / videoSettings.frameRate);
-        let startSample = 0;
+        // 現在の時間を計算（秒単位）
+        const currentTime = frameIndex / videoSettings.frameRate;
 
-        while (startSample < audioBuffer.length) {
-          if (isCanceled) {
-            throw new Error('エクスポートがキャンセルされました');
-          }
+        // オフラインモードでの描画
+        manager.updateParams({
+          currentTime,
+          duration: audioBuffer.duration,
+          isPlaying: false
+        });
+        
+        // 描画を実行
+        manager.render();
 
-          const sampleCount = Math.min(samplesPerFrame, audioBuffer.length - startSample);
-          const timeUs = (startSample / audioBuffer.sampleRate) * 1_000_000;
+        // ビデオフレームのエンコード
+        const canvas = manager.getCanvas();
+        await encoder.encodeVideoFrame(canvas, frameIndex);
 
-          await encoder.encodeAudioBuffer(
-            audioBuffer,
-            startSample,
-            sampleCount,
-            timeUs
-          );
+        // 音声データのエンコード（同じフレームインデックスを使用）
+        await encoder.encodeAudioBuffer(audioBuffer, frameIndex);
 
-          startSample += samplesPerFrame;
-        }
-
-        // 完了処理
-        const result = await encoder.finalize();
-        encoder.dispose();
-
-        // ダウンロード
-        const blob = new Blob([result], { type: 'video/mp4' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'output.mp4';
-        a.click();
-        URL.revokeObjectURL(url);
-
-      } catch (error) {
-        onError(error instanceof Error ? error : new Error('エクスポートに失敗しました'));
-      } finally {
-        setIsExporting(false);
-        setIsCanceled(false);
-        setExportProgress(0);
-        onProgress?.(0);
-
-        // エクスポート終わったら, 再びmanager.startRenderLoop()しておく
-        manager.startRenderLoop();
+        // 進捗更新
+        const progress = (frameIndex / totalFrames) * 100;
+        setExportProgress(progress);
+        onProgress?.(progress);
       }
+
+      // 完了処理
+      const result = await encoder.finalize();
+      encoder.dispose();
+
+      // ダウンロード
+      const blob = new Blob([result], { type: 'video/mp4' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'output.mp4';
+      a.click();
+      URL.revokeObjectURL(url);
 
     } catch (error) {
       onError(error instanceof Error ? error : new Error('エクスポートに失敗しました'));
+    } finally {
+      // WaveformEffectを元の設定に戻す
+      if (originalWaveformConfig && waveformEffect) {
+        waveformEffect.updateConfig(originalWaveformConfig);
+      }
+
+      // 必ずプレビュー用のレンダリングループを再開
+      manager.startRenderLoop();
+
+      setIsExporting(false);
+      setIsCanceled(false);
+      setExportProgress(0);
+      onProgress?.(0);
     }
   };
 
