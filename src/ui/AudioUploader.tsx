@@ -1,45 +1,34 @@
 import React from 'react';
-import { AudioPlaybackService } from '../core/AudioPlaybackService';
-import './AudioUploader.css';
+import { Button } from '@radix-ui/themes';
 
-interface AudioUploaderProps {
-  audioService: AudioPlaybackService;
-  onAudioLoad: () => void;
-  onError?: (error: Error) => void;
+export interface AudioUploaderProps {
+  onFileSelect: (file: File) => Promise<void>;
+  onError: (error: Error) => void;
 }
 
-/**
- * オーディオファイルアップローダーコンポーネント
- * - ファイル選択
- * - デコード処理
- * - エラーハンドリング
- */
-export const AudioUploader: React.FC<AudioUploaderProps> = ({ 
-  audioService, 
-  onAudioLoad,
-  onError 
-}) => {
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+export const AudioUploader: React.FC<AudioUploaderProps> = ({ onFileSelect, onError }) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     try {
-      await audioService.decodeFile(file);
-      onAudioLoad();
+      await onFileSelect(file);
     } catch (error) {
-      console.error('Failed to decode audio file:', error);
-      onError?.(error instanceof Error ? error : new Error('オーディオファイルの読み込みに失敗しました'));
+      onError(error instanceof Error ? error : new Error('ファイルの読み込みに失敗しました'));
     }
   };
 
   return (
-    <div className="audio-uploader">
-      <input
-        type="file"
-        accept="audio/*"
-        onChange={handleFileUpload}
-        className="file-input"
-      />
-    </div>
+    <Button asChild>
+      <label>
+        オーディオファイルを選択
+        <input
+          type="file"
+          accept="audio/*"
+          onChange={handleFileChange}
+          style={{ display: 'none' }}
+        />
+      </label>
+    </Button>
   );
 }; 

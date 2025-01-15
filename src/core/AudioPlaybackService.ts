@@ -4,92 +4,68 @@
  * - 音声ファイルのデコード
  * - 再生/一時停止/停止/シーク
  * - onendedイベントで自然終了を検知
- * - AnalyserNodeにより波形データや周波数データを取得
  * - ループ設定
- *
- * ※ 描画用のrequestAnimationFrameは持ちません。
- *    EffectManagerが描画ループを担当します。
  */
+
+import { AudioSource } from './types';
+import { AudioAnalyzer } from './AudioAnalyzerService';
 
 export class AudioPlaybackService {
   private audioContext: AudioContext | null = null;
   private audioBuffer: AudioBuffer | null = null;
-
-  private analyser: AnalyserNode | null = null;
   private sourceNode: AudioBufferSourceNode | null = null;
-
+  private audioSource: AudioSource | null = null;
   private _isPlaying = false;
   private _startTime = 0;
   private _startOffset = 0;
   private _loop = false;
+  private _onEnded: (() => void) | null = null;
 
   constructor() {
-    // AudioContextを初期化
     this.audioContext = new AudioContext();
-
-    // AnalyserNodeの生成
-    if (this.audioContext) {
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
-      // 出力先はAudioContext.destination
-      this.analyser.connect(this.audioContext.destination);
-    }
   }
 
   /**
-   * FileをデコードしてAudioBufferをセットする
+   * ファイルをデコードし、オフライン解析を実行
    */
   public async decodeFile(file: File): Promise<void> {
     if (!this.audioContext) {
-      throw new Error("AudioContextが初期化されていません");
+      throw new Error('AudioContext is not initialized');
     }
-    const arrayBuffer = await file.arrayBuffer();
-    const decoded = await this.audioContext.decodeAudioData(arrayBuffer);
-    this.setAudioBuffer(decoded);
+
+    const analyzer = new AudioAnalyzer();
+    this.audioSource = await analyzer.processAudio(file);
+    this.audioBuffer = this.audioSource.buffer;
   }
 
   /**
-   * 任意のAudioBufferをセット
-   */
-  public setAudioBuffer(buffer: AudioBuffer): void {
-    this.audioBuffer = buffer;
-    // 再生位置を0にリセット
-    this._startOffset = 0;
-  }
-
-  /**
-   * 再生
+   * 再生開始
    */
   public async play(): Promise<void> {
-    if (!this.audioContext || !this.audioBuffer || !this.analyser) return;
+    if (!this.audioContext || !this.audioBuffer) return;
 
-    // すでにsourceNodeがあれば止める
+    // 既存のソースノードを停止
     if (this.sourceNode) {
       this.sourceNode.stop();
       this.sourceNode.disconnect();
-      this.sourceNode = null;
     }
 
-    const source = this.audioContext.createBufferSource();
-    source.buffer = this.audioBuffer;
-    source.loop = this._loop;
+    // 新しいソースノードを作成
+    this.sourceNode = this.audioContext.createBufferSource();
+    this.sourceNode.buffer = this.audioBuffer;
+    this.sourceNode.loop = this._loop;
+    this.sourceNode.connect(this.audioContext.destination);
 
-    // 終了イベント
-    source.onended = () => {
-      if (this._isPlaying) {
-        // 自然終了 or stop()時
-        this._isPlaying = false;
-        this._startOffset = 0; // 曲の頭に戻す
-        this.sourceNode = null;
-      }
+    // onendedイベントを設定
+    this.sourceNode.onended = () => {
+      this._isPlaying = false;
+      this._onEnded?.();
     };
 
-    source.connect(this.analyser);
-
-    this._startTime = this.audioContext.currentTime;
-    source.start(0, this._startOffset);
-
-    this.sourceNode = source;
+    // 再生開始
+    const offset = this._startOffset % this.audioBuffer.duration;
+    this._startTime = this.audioContext.currentTime - offset;
+    this.sourceNode.start(0, offset);
     this._isPlaying = true;
   }
 
@@ -97,19 +73,16 @@ export class AudioPlaybackService {
    * 一時停止
    */
   public pause(): void {
-    if (!this._isPlaying || !this.sourceNode || !this.audioContext) return;
+    if (!this._isPlaying) return;
 
-    const elapsed = this.audioContext.currentTime - this._startTime;
-    this._startOffset += elapsed;
-
-    this.sourceNode.stop();
-    this.sourceNode.disconnect();
-    this.sourceNode = null;
+    this.sourceNode?.stop();
+    this.sourceNode?.disconnect();
+    this._startOffset = this.getCurrentTime();
     this._isPlaying = false;
   }
 
   /**
-   * 停止（再生位置を0に戻す）
+   * 停止（最初に戻る）
    */
   public stop(): void {
     if (this.sourceNode) {
@@ -122,47 +95,46 @@ export class AudioPlaybackService {
   }
 
   /**
-   * シーク
+   * 指定時間にシーク
    */
   public async seek(time: number): Promise<void> {
     const wasPlaying = this._isPlaying;
-    this.stop(); // stop()で_offset=0にする
-    this._startOffset = Math.max(0, time);
-
+    if (wasPlaying) {
+      this.pause();
+    }
+    this._startOffset = time;
     if (wasPlaying) {
       await this.play();
     }
   }
 
   /**
-   * 現在の再生位置(秒)
+   * 現在の再生時間を取得
    */
   public getCurrentTime(): number {
-    if (!this.audioContext) return 0;
-    if (this._isPlaying) {
-      // 今のcurrentTime - startTime + これまでのオフセット
-      const elapsed = this.audioContext.currentTime - this._startTime;
-      return this._startOffset + elapsed;
+    if (!this.audioContext || !this._isPlaying) {
+      return this._startOffset;
     }
-    return this._startOffset;
+    const elapsed = this.audioContext.currentTime - this._startTime;
+    return this._startOffset + elapsed;
   }
 
   /**
-   * トータルの長さ(秒)
+   * 総再生時間を取得
    */
   public getDuration(): number {
-    return this.audioBuffer ? this.audioBuffer.duration : 0;
+    return this.audioBuffer?.duration || 0;
   }
 
   /**
-   * 再生中かどうか
+   * 再生中かどうかを取得
    */
   public isPlaying(): boolean {
     return this._isPlaying;
   }
 
   /**
-   * ループ設定
+   * ループ設定を変更
    */
   public setLoop(loop: boolean): void {
     this._loop = loop;
@@ -172,40 +144,21 @@ export class AudioPlaybackService {
   }
 
   /**
-   * AnalyserNodeの取得
+   * 再生終了時のコールバックを設定
    */
-  public getAnalyserNode(): AnalyserNode | null {
-    return this.analyser;
+  public onEnded(callback: () => void): void {
+    this._onEnded = callback;
   }
 
   /**
-   * AudioBufferの取得
+   * AudioSourceを取得
    */
-  public getAudioBuffer(): AudioBuffer | null {
+  public getAudioSource(): AudioSource | null {
+    return this.audioSource;
+  }
+
+  // オーディオバッファを取得
+  getAudioBuffer(): AudioBuffer | null {
     return this.audioBuffer;
-  }
-
-  /**
-   * 波形データ(time-domain)を -1.0〜+1.0 のFloat32Arrayで返す
-   */
-  public getWaveformData(): Float32Array {
-    if (!this.analyser) return new Float32Array();
-    const data = new Uint8Array(this.analyser.fftSize);
-    this.analyser.getByteTimeDomainData(data);
-    const floatData = new Float32Array(data.length);
-    for (let i = 0; i < data.length; i++) {
-      floatData[i] = (data[i] - 128) / 128;
-    }
-    return floatData;
-  }
-
-  /**
-   * 周波数データ(0~255)を返す
-   */
-  public getFrequencyData(): Uint8Array {
-    if (!this.analyser) return new Uint8Array();
-    const freqData = new Uint8Array(this.analyser.frequencyBinCount);
-    this.analyser.getByteFrequencyData(freqData);
-    return freqData;
   }
 }

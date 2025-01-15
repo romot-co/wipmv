@@ -27,6 +27,22 @@ export interface AudioSource {
   duration: number;
   /** ファイル名など補足情報 */
   fileName?: string;
+  /** 波形データ */
+  waveformData: Float32Array[];
+  /** 周波数データ */
+  frequencyData: Float32Array[][];
+  /** 振幅データ */
+  amplitudeData: Float32Array[];
+  /** 位相データ */
+  phaseData: Float32Array[];
+  /** ステレオデータ */
+  stereoData: Float32Array[];
+  /** ダイナミックレンジデータ */
+  dynamicRangeData: Float32Array[];
+  /** スペクトル重心データ */
+  spectralCentroidData: Float32Array[];
+  /** スペクトラルフラックスデータ */
+  spectralFluxData: Float32Array[];
 }
 
 /**

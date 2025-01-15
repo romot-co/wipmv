@@ -15,11 +15,13 @@ import {
   BackgroundEffectConfig,
   TextEffectConfig,
   WaveformEffectConfig,
-  WatermarkEffectConfig
+  WatermarkEffectConfig,
+  AudioSource
 } from './core/types';
 
 import { EffectManager } from './core/EffectManager';
 import { AudioPlaybackService } from './core/AudioPlaybackService';
+import { AudioAnalyzer } from './core/AudioAnalyzerService';
 import { EffectBase } from './core/EffectBase';
 import { ProjectService } from './core/ProjectService';
 import { BackgroundEffect } from './features/background/BackgroundEffect';
@@ -28,6 +30,17 @@ import { WaveformEffect } from './features/waveform/WaveformEffect';
 import { WatermarkEffect } from './features/watermark/WatermarkEffect';
 import { createDefaultEffects } from './core/DefaultEffectService';
 import './App.css';
+
+// WithAudioSourceインターフェースの追加
+interface WithAudioSource {
+  setAudioSource: (source: AudioSource) => void;
+}
+
+// エフェクト追加時の型チェック関数
+function hasSetAudioSource(effect: unknown): effect is WithAudioSource {
+  return effect !== null && typeof effect === 'object' && 'setAudioSource' in effect && 
+    typeof (effect as WithAudioSource).setAudioSource === 'function';
+}
 
 export const App: React.FC = () => {
   // アプリケーション状態
@@ -58,8 +71,11 @@ export const App: React.FC = () => {
 
   const [selectedEffectId, setSelectedEffectId] = useState<string>();
 
-  // **AudioPlaybackService**をシングルトン的に保持
+  // AudioPlaybackServiceをシングルトン的に保持
   const [audioService] = useState(() => new AudioPlaybackService());
+
+  // 事前解析データを保持
+  const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
 
   const [manager, setManager] = useState<EffectManager | null>(null);
   const [effects, setEffects] = useState<EffectBase[]>([]);
@@ -158,7 +174,7 @@ export const App: React.FC = () => {
             },
             options: {
               style: 'bar',
-              analysisMode: 'realtime',
+              analysisMode: 'offline',
               barWidth: 2,
               barSpacing: 1,
               smoothing: 0.5,
@@ -188,12 +204,116 @@ export const App: React.FC = () => {
           break;
       }
 
+      // エフェクト追加時に事前解析データを設定
+      if (audioSource && hasSetAudioSource(effect)) {
+        effect.setAudioSource(audioSource);
+      }
+
       manager.addEffect(effect);
       setEffects(manager.getEffects());
     } catch (error) {
       handleError('effect', error instanceof Error ? error : new Error('エフェクトの追加に失敗しました'));
     }
-  }, [manager, handleError, duration]);
+  }, [manager, handleError, duration, audioSource]);
+
+  // デフォルトエフェクトの作成
+  const handleDefaultEffects = useCallback((duration: number) => {
+    if (!manager) return;
+
+    const defaultConfigs = createDefaultEffects(duration);
+    defaultConfigs.forEach((config: BaseEffectConfig & { type: EffectType }) => {
+      let effect: EffectBase;
+      switch (config.type) {
+        case EffectType.Background:
+          effect = new BackgroundEffect(config as BackgroundEffectConfig);
+          break;
+        case EffectType.Text:
+          effect = new TextEffect(config as TextEffectConfig);
+          break;
+        case EffectType.Waveform:
+          effect = new WaveformEffect(config as WaveformEffectConfig);
+          break;
+        case EffectType.Watermark:
+          effect = new WatermarkEffect(config as WatermarkEffectConfig);
+          break;
+        default:
+          throw new Error(`Unknown effect type: ${config.type}`);
+      }
+      if (audioSource && hasSetAudioSource(effect)) {
+        effect.setAudioSource(audioSource);
+      }
+      manager.addEffect(effect);
+    });
+
+    setEffects(manager.getEffects());
+  }, [manager, audioSource]);
+
+  // オーディオファイルのロード処理
+  const handleAudioLoad = useCallback(async (file: File) => {
+    try {
+      // 1. 事前解析の実行
+      console.log('オーディオ解析を開始...');
+      const analyzer = new AudioAnalyzer(videoSettings.frameRate);
+      const analysisResult = await analyzer.processAudio(file);
+      setAudioSource(analysisResult);
+
+      // 2. 再生用のデコード
+      await audioService.decodeFile(file);
+
+      // 3. エラークリアと状態遷移
+      clearError('audio');
+      transition('ready');
+
+      // 4. プロジェクトデータの読み込みと適用
+      const projectData = ProjectService.loadProject();
+      if (projectData && manager) {
+        // 設定復元
+        setVideoSettings(projectData.videoSettings);
+
+        // 既存エフェクトをクリア
+        manager.getEffects().forEach(effect => {
+          manager.removeEffect(effect.getConfig().id);
+        });
+
+        // プロジェクトデータから復元
+        projectData.effects.forEach((effectConfig: BaseEffectConfig & { type: EffectType }) => {
+          let effect: EffectBase;
+          switch (effectConfig.type) {
+            case EffectType.Background:
+              effect = new BackgroundEffect(effectConfig as BackgroundEffectConfig);
+              break;
+            case EffectType.Text:
+              effect = new TextEffect(effectConfig as TextEffectConfig);
+              break;
+            case EffectType.Waveform:
+              effect = new WaveformEffect(effectConfig as WaveformEffectConfig);
+              break;
+            case EffectType.Watermark:
+              effect = new WatermarkEffect(effectConfig as WatermarkEffectConfig);
+              break;
+          }
+          // 事前解析データを設定
+          if (audioSource && hasSetAudioSource(effect)) {
+            effect.setAudioSource(audioSource);
+          }
+          manager.addEffect(effect);
+        });
+      } else if (manager) {
+        // プロジェクトデータがない場合はデフォルトエフェクトを作成
+        const buffer = await audioService.getAudioBuffer();
+        if (buffer) {
+          handleDefaultEffects(buffer.duration);
+        }
+      }
+
+      // エフェクトリスト更新
+      if (manager) {
+        setEffects(manager.getEffects());
+      }
+    } catch (error) {
+      handleError('audio', error instanceof Error ? error : new Error('オーディオ読み込みに失敗しました'));
+    }
+  }, [audioService, manager, clearError, transition, handleDefaultEffects, videoSettings.frameRate, audioSource]);
 
   // エフェクト削除
   const handleEffectRemove = useCallback((id: string) => {
@@ -229,116 +349,20 @@ export const App: React.FC = () => {
     return manager.getEffects().find(e => e.getConfig().id === selectedEffectId);
   }, [selectedEffectId, manager]);
 
-  // デフォルトエフェクトの作成
-  const handleDefaultEffects = useCallback((duration: number) => {
-    if (!manager) return;
-
-    const defaultConfigs = createDefaultEffects(duration);
-    defaultConfigs.forEach((config: BaseEffectConfig & { type: EffectType }) => {
-      let effect: EffectBase;
-      switch (config.type) {
-        case EffectType.Background:
-          effect = new BackgroundEffect(config as BackgroundEffectConfig);
-          break;
-        case EffectType.Text:
-          effect = new TextEffect(config as TextEffectConfig);
-          break;
-        case EffectType.Waveform:
-          effect = new WaveformEffect(config as WaveformEffectConfig);
-          break;
-        case EffectType.Watermark:
-          effect = new WatermarkEffect(config as WatermarkEffectConfig);
-          break;
-        default:
-          throw new Error(`Unknown effect type: ${config.type}`);
-      }
-      manager.addEffect(effect);
-    });
-
-    setEffects(manager.getEffects());
-  }, [manager]);
-
-  // オーディオロード時
-  const handleAudioLoad = useCallback(() => {
-    clearError('audio');
-    transition('ready');
-
-    // プロジェクトデータの読み込み
-    const projectData = ProjectService.loadProject();
-    if (projectData && manager) {
-      // 設定復元
-      setVideoSettings(projectData.videoSettings);
-
-      // 既存エフェクトをクリア
-      manager.getEffects().forEach(effect => {
-        manager.removeEffect(effect.getConfig().id);
-      });
-
-      // プロジェクトデータから復元
-      projectData.effects.forEach((effectConfig: BaseEffectConfig & { type: EffectType }) => {
-        let effect: EffectBase;
-        switch (effectConfig.type) {
-          case EffectType.Background:
-            effect = new BackgroundEffect(effectConfig as BackgroundEffectConfig);
-            break;
-          case EffectType.Text:
-            effect = new TextEffect(effectConfig as TextEffectConfig);
-            break;
-          case EffectType.Waveform:
-            effect = new WaveformEffect(effectConfig as WaveformEffectConfig);
-            break;
-          case EffectType.Watermark:
-            effect = new WatermarkEffect(effectConfig as WatermarkEffectConfig);
-            break;
-        }
-        manager.addEffect(effect);
-      });
-    } else if (manager) {
-      // プロジェクトデータがない場合はデフォルトエフェクトを作成
-      const audioBuffer = audioService.getAudioBuffer();
-      if (audioBuffer) {
-        handleDefaultEffects(audioBuffer.duration);
-      }
-    }
-
-    // エフェクトリスト更新
-    if (manager) {
-      setEffects(manager.getEffects());
-    }
-  }, [clearError, transition, manager, audioService, handleDefaultEffects, setVideoSettings]);
-
-  // エラー表示コンポーネント
-  const ErrorMessage: React.FC<{
-    type: keyof typeof errors;
-    error: Error;
-  }> = ({ type, error }) => (
-    <Card className="error-section">
-      <Flex direction="column" gap="3" p="3">
-        <Text color="red" size="2" weight="medium">{error.message}</Text>
-        <Button onClick={() => clearError(type)} variant="soft" color="gray">
-          再試行
-        </Button>
-      </Flex>
-    </Card>
-  );
-
-  // AudioSourceの取得 (analyser)
-  const analyser = audioService.getAnalyserNode();
-
   // プロジェクト保存
   const saveProject = useCallback(() => {
     if (!manager) return;
     try {
-      const audioBuffer = audioService.getAudioBuffer();
+      const buffer = audioService.getAudioBuffer();
       ProjectService.saveProject({
         videoSettings,
         effects: manager.getEffects().map(effect => effect.getConfig()),
-        audioInfo: audioBuffer
+        audioInfo: buffer
           ? {
-              fileName: 'audio.mp3', // TODO: 実際のファイル名を保持
-              duration: audioBuffer.duration,
-              sampleRate: audioBuffer.sampleRate,
-              numberOfChannels: audioBuffer.numberOfChannels
+              fileName: 'audio.mp3',
+              duration: buffer.duration,
+              sampleRate: buffer.sampleRate,
+              numberOfChannels: buffer.numberOfChannels
             }
           : undefined
       });
@@ -365,6 +389,21 @@ export const App: React.FC = () => {
     videoSettings
   }), [isPlaying, handleManagerInit, handleError, videoSettings]);
 
+  // エラー表示コンポーネント
+  const ErrorMessage: React.FC<{
+    type: keyof typeof errors;
+    error: Error;
+  }> = ({ type, error }) => (
+    <Card className="error-section">
+      <Flex direction="column" gap="3" p="3">
+        <Text color="red" size="2" weight="medium">{error.message}</Text>
+        <Button onClick={() => clearError(type)} variant="soft" color="gray">
+          再試行
+        </Button>
+      </Flex>
+    </Card>
+  );
+
   return (
     <Container className="app">
       {appState === 'initial' ? (
@@ -373,17 +412,11 @@ export const App: React.FC = () => {
             <Flex direction="column" gap="4" align="center">
               <Section size="2">
                 <AudioUploader
-                  audioService={audioService}
-                  onAudioLoad={handleAudioLoad}
+                  onFileSelect={handleAudioLoad}
                   onError={(error) => handleError('audio', error)}
                 />
               </Section>
               {errors.audio && <ErrorMessage type="audio" error={errors.audio} />}
-              {!analyser && (
-                <Text size="2" color="gray">
-                  オーディオ解析を準備中...
-                </Text>
-              )}
             </Flex>
           </Container>
         </Flex>

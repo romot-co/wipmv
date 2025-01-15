@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { EffectManager } from '../core/EffectManager';
 import { VideoEncoderService } from '../core/VideoEncoderService';
+import { AudioAnalyzer } from '../core/AudioAnalyzerService';
 import { EncodeSettings } from './EncodeSettings';
 import { Flex, Button, Dialog, Text } from '@radix-ui/themes';
 import { GearIcon, DownloadIcon, Cross2Icon } from '@radix-ui/react-icons';
@@ -50,37 +51,47 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       setIsCanceled(false);
       setExportProgress(0);
 
-      // 1. WaveformEffectを取得
+      // 1. オフライン解析の実行
+      console.log('オフライン波形解析を開始...');
+      const analyzer = new AudioAnalyzer(videoSettings.frameRate);
+      
+      // AudioBufferからArrayBufferを作成
+      const numberOfChannels = audioBuffer.numberOfChannels;
+      const length = audioBuffer.length;
+      const audioData = new Float32Array(length * numberOfChannels);
+      
+      // チャンネルデータをコピー
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const channelData = audioBuffer.getChannelData(channel);
+        for (let i = 0; i < length; i++) {
+          audioData[i * numberOfChannels + channel] = channelData[i];
+        }
+      }
+      
+      // ArrayBufferからBlobを作成
+      const wavBlob = new Blob([audioData.buffer], { type: 'audio/wav' });
+      const audioSource = await analyzer.processAudio(new File([wavBlob], 'temp.wav', { type: 'audio/wav' }));
+
+      // 2. WaveformEffectを取得し、オフライン解析データを設定
       const effects = manager.getEffects();
       const waveformEffect = effects.find(
         effect => effect.getConfig().type === EffectType.Waveform
       ) as WaveformEffect | undefined;
 
-      // 2. オフライン解析の実行
       if (waveformEffect) {
-        try {
-          // analysisMode を offline に設定
-          const config = waveformEffect.getConfig() as WaveformEffectConfig;
-          waveformEffect.updateConfig({
-            ...config,
-            options: {
-              ...config.options,
-              analysisMode: 'offline',
-              // セグメント数を調整して高品質な波形を実現
-              segmentCount: Math.max(config.options.segmentCount || 1024, 2048)
-            }
-          } as WaveformEffectConfig);
+        // 波形エフェクトの設定を更新
+        const config = waveformEffect.getConfig() as WaveformEffectConfig;
+        waveformEffect.updateConfig({
+          ...config,
+          options: {
+            ...config.options,
+            analysisMode: 'offline',
+            segmentCount: Math.max(config.options.segmentCount || 1024, 2048)
+          }
+        } as WaveformEffectConfig);
 
-          // オーディオデータの解析を開始
-          const channelData = audioBuffer.getChannelData(0);
-          console.log('オフライン波形解析を開始...');
-          await waveformEffect.startOfflineAnalysis(channelData);
-          await waveformEffect.waitForAnalysisComplete();
-          console.log('オフライン波形解析が完了しました');
-        } catch (error) {
-          console.error('波形解析中にエラーが発生しました:', error);
-          throw error;
-        }
+        // オフライン解析データを設定
+        waveformEffect.setAudioSource(audioSource);
       }
 
       // エンコーダを初期化
@@ -111,8 +122,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
           manager.updateParams({
             currentTime: time,
             duration: audioBuffer.duration,
-            isPlaying: false,
-            // waveformDataは不要（オフラインモードで自動的に処理される）
+            isPlaying: false
           });
           
           // 描画を実行
@@ -161,7 +171,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         setExportProgress(0);
         onProgress?.(0);
 
-        // エクスポート終わったら, 再びmanager.startRenderLoop()しておくなど
+        // エクスポート終わったら, 再びmanager.startRenderLoop()しておく
         manager.startRenderLoop();
       }
 

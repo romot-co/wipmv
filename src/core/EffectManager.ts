@@ -4,20 +4,21 @@
  * - 複数のエフェクトを管理し、z-index順にソートして描画する
  * - エフェクトの追加/削除/更新/moveUp/moveDownなど既存の機能を保持
  * - 自前の requestAnimationFrame ループを持ち、AudioPlaybackServiceから
- *   再生中かどうか・currentTime・waveformData等を取得し、render()を呼ぶ
- *
- * なお: "Renderer.ts" などに描画用ロジックを分ける場合もありますが、
- * ここでは 1つのCanvasに対して contextを取得する簡易例で示しています。
+ *   再生中かどうか・currentTime等を取得し、render()を呼ぶ
  */
 
 import { EffectBase } from './EffectBase';
 import { Renderer } from './Renderer';
-import { AudioVisualParameters, EffectConfig, Disposable, BaseEffectState } from './types';
+import { AudioVisualParameters, EffectConfig, Disposable, BaseEffectState, AudioSource } from './types';
 import { AudioPlaybackService } from './AudioPlaybackService';
 
 interface EffectManagerState {
   effects: Map<string, EffectBase>;
   effectStates: Map<string, BaseEffectState>;
+}
+
+interface WithAudioSource {
+  setAudioSource: (source: AudioSource) => void;
 }
 
 export class EffectManager {
@@ -37,9 +38,8 @@ export class EffectManager {
     duration: 0,
     isPlaying: false
   };
-  // 波形や周波数データは params.waveformData / frequencyData に入れてもOK
   
-  // FPS制御やログ用
+  // FPS制御用
   private lastRenderTime = 0;
   private readonly FRAME_INTERVAL = 1000 / 60; // 60fps
 
@@ -71,6 +71,15 @@ export class EffectManager {
    */
   public connectAudioService(service: AudioPlaybackService): void {
     this.audioService = service;
+    // 接続時に各エフェクトにAudioSourceを設定
+    const audioSource = service.getAudioSource();
+    if (audioSource) {
+      this.state.effects.forEach(effect => {
+        if (this.hasSetAudioSource(effect)) {
+          effect.setAudioSource(audioSource);
+        }
+      });
+    }
   }
 
   /**
@@ -80,6 +89,15 @@ export class EffectManager {
     const config = effect.getConfig();
     this.state.effects.set(config.id, effect);
     this.state.effectStates.set(config.id, effect.getState());
+
+    // AudioSourceが存在する場合は設定
+    if (this.audioService) {
+      const audioSource = this.audioService.getAudioSource();
+      if (audioSource && this.hasSetAudioSource(effect)) {
+        effect.setAudioSource(audioSource);
+      }
+    }
+
     this.sortEffectsByZIndex();
     this.render(); // 追加直後に一度描画
   }
@@ -195,7 +213,6 @@ export class EffectManager {
 
   /**
    * レンダリングループ開始
-   * - requestAnimationFrameを使って描画し続ける
    */
   public startRenderLoop(): void {
     if (this.animationFrameId != null) return; // 重複開始防止
@@ -219,26 +236,20 @@ export class EffectManager {
         const t = this.audioService.getCurrentTime();
         const dur = this.audioService.getDuration();
 
-        // 必要に応じて wave/freqデータを取得
-        const waveform = this.audioService.getWaveformData();
-        // const freq = this.audioService.getFrequencyData(); // 使いたければ
-
         // manager内部パラメータを更新
         this.updateParams({
           currentTime: t,
           duration: dur,
-          isPlaying: true,
-          waveformData: waveform
+          isPlaying: true
         });
 
         // render
         this.render();
       } else {
-        // 再生中でないなら "isPlaying: false" をセット、必要なら1回だけ描画して止めてもOK
+        // 再生中でない場合は isPlaying: false をセット
         this.updateParams({
           isPlaying: false
         });
-        // 要件に応じて、停止中も描画したい場合は this.render() を呼んでも可
       }
 
       this.animationFrameId = requestAnimationFrame(loop);
@@ -256,12 +267,13 @@ export class EffectManager {
       this.animationFrameId = null;
     }
   }
+
   /**
    * メインのrender処理
    */
   public render(): void {
     const ctx = this.ctx;
-    const { currentTime, duration, isPlaying, waveformData } = this.currentParams;
+    const { currentTime, duration, isPlaying } = this.currentParams;
 
     // キャンバスクリア
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -273,9 +285,20 @@ export class EffectManager {
       effect.render(ctx, {
         currentTime,
         duration,
-        isPlaying,
-        waveformData
+        isPlaying
       });
     }
+  }
+
+  /**
+   * エフェクトがsetAudioSourceメソッドを持っているか判定
+   */
+  private hasSetAudioSource(effect: unknown): effect is WithAudioSource {
+    return (
+      typeof effect === 'object' &&
+      effect !== null &&
+      'setAudioSource' in effect &&
+      typeof (effect as WithAudioSource).setAudioSource === 'function'
+    );
   }
 }
