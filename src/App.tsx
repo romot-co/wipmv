@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Container, Flex, Box, Card, Button, Text, Section } from '@radix-ui/themes';
 import { PlaybackControls } from './ui/PlaybackControls';
 import { EffectList } from './ui/EffectList';
@@ -11,11 +11,6 @@ import { useAudioControl } from './hooks/useAudioControl';
 import { 
   EffectConfig, 
   EffectType,
-  BaseEffectConfig,
-  BackgroundEffectConfig,
-  TextEffectConfig,
-  WaveformEffectConfig,
-  WatermarkEffectConfig,
   AudioSource,
   ProjectData
 } from './core/types';
@@ -53,38 +48,12 @@ export const App: React.FC = () => {
   type AppState = 'initial' | 'ready' | 'error';
   const [appState, setAppState] = useState<AppState>('initial');
 
-  // 動画設定
-  const [videoSettings, setVideoSettings] = useState({
-    width: 1280,
-    height: 720,
-    frameRate: 30,
-    videoBitrate: 5000000,  // 5Mbps
-    audioBitrate: 128000    // 128kbps
-  });
-
-  // エクスポート進捗
-  const [exportProgress, setExportProgress] = useState(0);
-  const handleExportProgress = useCallback((progress: number) => {
-    setExportProgress(progress);
-  }, []);
-
   // エラー集約
   const [errors, setErrors] = useState<{
     audio?: Error;
     effect?: Error;
     export?: Error;
   }>({});
-
-  const [selectedEffectId, setSelectedEffectId] = useState<string>();
-
-  // AudioPlaybackServiceをシングルトン的に保持
-  const [audioService] = useState(() => AudioPlaybackService.getInstance());
-
-  // 事前解析データを保持
-  const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
-
-  const [manager, setManager] = useState<EffectManager | null>(null);
-  const [effects, setEffects] = useState<EffectBase[]>([]);
 
   // エラーハンドリング
   const handleError = useCallback((type: keyof typeof errors, error: Error) => {
@@ -113,6 +82,44 @@ export const App: React.FC = () => {
       transition('ready');
     }
   }, [errors, transition]);
+
+  // 動画設定
+  const [videoSettings, setVideoSettings] = useState({
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    videoBitrate: 5000000,  // 5Mbps
+    audioBitrate: 128000    // 128kbps
+  });
+
+  // エクスポート進捗
+  const [exportProgress, setExportProgress] = useState(0);
+  const handleExportProgress = useCallback((progress: number) => {
+    setExportProgress(progress);
+  }, []);
+
+  const [selectedEffectId, setSelectedEffectId] = useState<string>();
+
+  // AudioPlaybackServiceをシングルトン的に保持
+  const [audioService] = useState(() => AudioPlaybackService.getInstance());
+
+  // 事前解析データを保持
+  const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
+
+  const [manager, setManager] = useState<EffectManager | null>(null);
+  const [effects, setEffects] = useState<EffectBase[]>([]);
+
+  // ProjectServiceの初期化
+  useEffect(() => {
+    const initializeProjectService = async () => {
+      try {
+        await ProjectService.getInstance().initialize();
+      } catch (error) {
+        handleError('effect', error instanceof Error ? error : new Error('プロジェクトサービスの初期化に失敗しました'));
+      }
+    };
+    initializeProjectService();
+  }, [handleError]);
 
   // EffectManager初期化時に呼ばれる
   const handleManagerInit = useCallback((newManager: EffectManager) => {
@@ -196,6 +203,8 @@ export const App: React.FC = () => {
       const audioContext = new AudioContext();
       const arrayBuffer = await file.arrayBuffer();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      audioContext.close(); // デコード後にクローズ
+      
       const analysisResult = await analyzer.analyzeAudio(audioBuffer);
       setAudioSource(analysisResult);
 
@@ -206,61 +215,47 @@ export const App: React.FC = () => {
       clearError('audio');
       transition('ready');
 
-      // 3. プロジェクトデータの読み込みと適用
-      const projectData = await ProjectService.getInstance().loadProject(crypto.randomUUID());
-      if (projectData && manager) {
-        // 設定復元
-        const newSettings = {
-          width: projectData.videoSettings.width,
-          height: projectData.videoSettings.height,
-          frameRate: projectData.videoSettings.fps,
-          videoBitrate: projectData.videoSettings.bitrate,
-          audioBitrate: 128000 // デフォルト値
-        };
-        setVideoSettings(newSettings);
+      // 3. 新規プロジェクトの作成
+      try {
+        const projectService = ProjectService.getInstance();
+        const projectData = await projectService.createProject('New Project');
+        
+        if (manager) {
+          // 設定復元
+          const newSettings = {
+            width: projectData.videoSettings.width,
+            height: projectData.videoSettings.height,
+            frameRate: projectData.videoSettings.fps,
+            videoBitrate: projectData.videoSettings.bitrate,
+            audioBitrate: 128000 // デフォルト値
+          };
+          setVideoSettings(newSettings);
 
-        // 既存エフェクトをクリア
-        manager.getEffects().forEach(effect => {
-          manager.removeEffect(effect.getConfig().id);
-        });
+          // 既存エフェクトをクリア
+          manager.getEffects().forEach(effect => {
+            manager.removeEffect(effect.getConfig().id);
+          });
 
-        // プロジェクトデータから復元
-        projectData.effects.forEach((effectConfig: BaseEffectConfig & { type: EffectType }) => {
-          let effect: EffectBase;
-          switch (effectConfig.type) {
-            case EffectType.Background:
-              effect = new BackgroundEffect(effectConfig as BackgroundEffectConfig);
-              break;
-            case EffectType.Text:
-              effect = new TextEffect(effectConfig as TextEffectConfig);
-              break;
-            case EffectType.Waveform:
-              effect = new WaveformEffect(effectConfig as WaveformEffectConfig);
-              break;
-            case EffectType.Watermark:
-              effect = new WatermarkEffect(effectConfig as WatermarkEffectConfig);
-              break;
-          }
-          // 事前解析データを設定
-          if (audioSource && hasSetAudioSource(effect)) {
-            effect.setAudioSource(audioSource);
-          }
-          manager.addEffect(effect);
-        });
-      } else if (manager) {
-        // プロジェクトデータがない場合はデフォルトエフェクトを作成
-        handleEffectAdd(EffectType.Background);
-        handleEffectAdd(EffectType.Waveform);
-      }
+          // デフォルトエフェクトを作成
+          handleEffectAdd(EffectType.Background);
+          handleEffectAdd(EffectType.Waveform);
 
-      // エフェクトリスト更新
-      if (manager) {
-        setEffects(manager.getEffects());
+          // エフェクトリスト更新
+          setEffects(manager.getEffects());
+        }
+      } catch (error) {
+        console.warn('Failed to create new project:', error);
+        // プロジェクト作成に失敗してもアプリケーションは継続可能
+        if (manager) {
+          handleEffectAdd(EffectType.Background);
+          handleEffectAdd(EffectType.Waveform);
+          setEffects(manager.getEffects());
+        }
       }
     } catch (error) {
       handleError('audio', error instanceof Error ? error : new Error('オーディオ読み込みに失敗しました'));
     }
-  }, [audioService, manager, clearError, transition, handleEffectAdd, audioSource]);
+  }, [audioService, manager, handleEffectAdd, handleError, clearError, transition, setVideoSettings]);
 
   // エフェクト削除
   const handleEffectRemove = useCallback((id: string) => {

@@ -124,20 +124,31 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
     params: AudioVisualParameters
   ): void {
-    if (!this.isVisible(params.currentTime)) return;
+    if (!this.isVisible(params.currentTime)) {
+      console.log('波形エフェクト: 非表示状態');
+      return;
+    }
 
     const config = this.getConfig();
+    console.log('波形エフェクト設定:', config);
+    
     const { width, height } = ctx.canvas;
+    console.log('キャンバスサイズ:', { width, height });
 
     // サイズが未設定の場合はキャンバスサイズを使用
     const size: Size2D = {
       width: config.size?.width ?? width,
       height: config.size?.height ?? height / 3
     };
+    console.log('描画サイズ:', size);
 
     // 描画データの取得
     const data = this.getVisualizationData(params);
-    if (!data || data.length === 0) return;
+    if (!data || data.length === 0) {
+      console.log('波形データなし');
+      return;
+    }
+    console.log('波形データ長:', data.length, '最大値:', Math.max(...Array.from(data)));
 
     ctx.save();
     try {
@@ -159,20 +170,25 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
         previousData: this.previousData ?? undefined,
         interpolationFactor: config.smoothingFactor
       };
+      console.log('描画オプション:', drawOptions);
 
       switch (config.waveformType) {
         case 'line':
+          console.log('ライン波形を描画');
           this.drawLineWaveform(ctx, drawOptions);
           break;
         case 'circle':
+          console.log('サークル波形を描画');
           this.drawCircleWaveform(ctx, drawOptions);
           break;
         case 'bar':
         default:
+          console.log('バー波形を描画');
           this.drawBarWaveform(ctx, drawOptions);
           break;
       }
     } catch (error) {
+      console.error('波形描画エラー:', error);
       throw new AppError(
         ErrorType.EffectUpdateFailed,
         'Failed to render waveform effect',
@@ -188,23 +204,54 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
    */
   private getVisualizationData(params: AudioVisualParameters): Float32Array | Uint8Array | null {
     const config = this.getConfig();
+    console.log('オーディオパラメータ:', {
+      hasFrequencyData: !!params.frequencyData,
+      hasWaveformData: !!params.waveformData,
+      currentTime: params.currentTime,
+      frequencyDataLength: params.frequencyData?.length,
+      waveformDataLength: params.waveformData?.length
+    });
+    
+    // 波形データまたは周波数データを取得（配列の場合は最初のチャンネルを使用）
     const currentData = params.frequencyData || params.waveformData;
-    if (!currentData) return null;
+    if (!currentData) {
+      console.warn('オーディオデータなし - パラメータ:', params);
+      return null;
+    }
+
+    // データを正規化（0-1の範囲に）
+    const normalizedData = new Float32Array(currentData.length);
+    const maxValue = Math.max(...Array.from(currentData).map(Math.abs));
+    console.log('データ正規化:', {
+      dataLength: currentData.length,
+      maxValue,
+      firstValue: currentData[0],
+      lastValue: currentData[currentData.length - 1]
+    });
+    
+    for (let i = 0; i < currentData.length; i++) {
+      normalizedData[i] = maxValue > 0 ? Math.abs(currentData[i]) / maxValue : 0;
+    }
 
     // 前回のデータがない場合は現在のデータを使用
-    if (!this.previousData || this.previousData.length !== currentData.length) {
-      this.previousData = new Float32Array(currentData);
-      return currentData;
+    if (!this.previousData || this.previousData.length !== normalizedData.length) {
+      console.log('前回データなし - 新規データを使用:', {
+        length: normalizedData.length,
+        firstValue: normalizedData[0],
+        lastValue: normalizedData[normalizedData.length - 1]
+      });
+      this.previousData = new Float32Array(normalizedData);
+      return normalizedData;
     }
 
     // データの補間処理
-    const interpolatedData = new Float32Array(currentData.length);
+    const interpolatedData = new Float32Array(normalizedData.length);
     const smoothingFactor = config.smoothingFactor ?? 0.5;
 
     // 補間アルゴリズムの改善
-    for (let i = 0; i < currentData.length; i++) {
+    for (let i = 0; i < normalizedData.length; i++) {
       // 現在のデータと前回のデータの差分を計算
-      const diff = currentData[i] - this.previousData[i];
+      const diff = normalizedData[i] - this.previousData[i];
       
       // 急激な変化を検出し、補間を調整
       const absDiff = Math.abs(diff);
@@ -218,7 +265,7 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     }
 
     // 前回のデータを更新
-    this.previousData = new Float32Array(currentData);
+    this.previousData = new Float32Array(normalizedData);
 
     return interpolatedData;
   }

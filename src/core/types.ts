@@ -193,8 +193,8 @@ export interface AudioVisualParameters {
   currentTime: number;
   duration: number;
   isPlaying: boolean;
-  waveformData?: Float32Array;
-  frequencyData?: Float32Array;
+  waveformData?: Float32Array | null;
+  frequencyData?: Uint8Array | null;
 }
 
 /**

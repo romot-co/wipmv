@@ -1,237 +1,119 @@
+import { WatermarkEffectConfig, AppError, ErrorType, AudioVisualParameters } from '../../core/types';
 import { EffectBase } from '../../core/EffectBase';
-import {
-  WatermarkEffectConfig,
-  AudioVisualParameters,
-  AppError,
-  ErrorType,
-  EffectType,
-  Size2D
-} from '../../core/types';
 
-/**
- * ウォーターマークエフェクト
- * - 画像の読み込みと描画
- * - 位置、サイズ、回転の制御
- * - タイル表示オプション
- */
 export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
   private image: HTMLImageElement | null = null;
-  private imageLoader: Promise<void> | null = null;
-  private onImageLoadCallback: (() => void) | null = null;
+  private isLoading: boolean = false;
 
   constructor(config: WatermarkEffectConfig) {
-    if (!config.imageUrl) {
+    const defaultConfig: WatermarkEffectConfig = {
+      ...config,
+      opacity: config.opacity ?? 1,
+      blendMode: config.blendMode ?? 'source-over',
+      position: config.position ?? { x: 0, y: 0 },
+      size: config.size ?? { width: 100, height: 100 },
+      rotation: config.rotation ?? 0,
+      tiled: config.tiled ?? false,
+      type: config.type,
+      id: config.id,
+      startTime: config.startTime ?? 0,
+      endTime: config.endTime ?? 0,
+      zIndex: config.zIndex ?? 0,
+      visible: config.visible ?? true
+    };
+    super(defaultConfig);
+    this.loadImage(config.imageUrl);
+  }
+
+  private async loadImage(url: string): Promise<void> {
+    if (!url) {
       throw new AppError(
         ErrorType.EffectInitFailed,
         'Image URL is required for watermark effect'
       );
     }
 
-    super({
-      ...config,
-      type: EffectType.Watermark,
-      opacity: config.opacity ?? 1,
-      blendMode: config.blendMode ?? 'source-over',
-      position: config.position ?? { x: 0, y: 0 },
-      size: config.size,
-      rotation: config.rotation ?? 0,
-      tiled: config.tiled ?? false,
-      tileSpacing: config.tileSpacing ?? 0
-    });
+    if (this.isLoading) return;
+    this.isLoading = true;
 
-    this.loadImage(config.imageUrl);
+    try {
+      const image = new Image();
+      image.crossOrigin = 'anonymous';  // CORS対応
+
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => {
+          this.image = image;
+          this.isLoading = false;
+          resolve();
+        };
+        image.onerror = () => {
+          this.isLoading = false;
+          reject(new AppError(
+            ErrorType.EffectInitFailed,
+            `Failed to load image: ${url}`
+          ));
+        };
+        image.src = url;
+      });
+    } catch (error) {
+      this.isLoading = false;
+      throw new AppError(
+        ErrorType.EffectInitFailed,
+        'Failed to load watermark image',
+        error
+      );
+    }
   }
 
   protected override onConfigUpdate(oldConfig: WatermarkEffectConfig, newConfig: WatermarkEffectConfig): void {
     if (newConfig.imageUrl && newConfig.imageUrl !== oldConfig.imageUrl) {
-      this.loadImage(newConfig.imageUrl);
+      this.loadImage(newConfig.imageUrl).catch(error => {
+        console.error('Failed to load new watermark image:', error);
+      });
     }
   }
 
-  /**
-   * 画像の読み込み
-   */
-  private loadImage(url: string): void {
-    // 既存の読み込みをキャンセル
-    if (this.onImageLoadCallback) {
-      this.onImageLoadCallback = null;
-    }
-
-    this.image = new Image();
-    this.imageLoader = new Promise((resolve, reject) => {
-      if (!this.image) return reject(new Error('Image is null'));
-
-      this.onImageLoadCallback = () => resolve();
-      this.image.onload = this.onImageLoadCallback;
-      this.image.onerror = () => {
-        reject(new AppError(
-          ErrorType.EffectInitFailed,
-          `Failed to load watermark image: ${url}`
-        ));
-      };
-      this.image.src = url;
-    });
-  }
-
-  public render(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    params: AudioVisualParameters
-  ): void {
-    if (!this.isVisible(params.currentTime) || !this.image) return;
+  public render(ctx: CanvasRenderingContext2D, params: AudioVisualParameters): void {
+    if (!this.image || !this.isVisible(params.currentTime)) return;
 
     const config = this.getConfig();
-    const { width: canvasWidth, height: canvasHeight } = ctx.canvas;
+    const { position, size, rotation, opacity, blendMode, tiled } = config;
+
+    // すべてのプロパティが存在することを確認
+    if (!position || !size || rotation === undefined || opacity === undefined || !blendMode) {
+      console.warn('Missing required properties for watermark effect');
+      return;
+    }
 
     ctx.save();
-    try {
-      // 共通の描画設定
-      ctx.globalAlpha = config.opacity ?? 1;
-      ctx.globalCompositeOperation = config.blendMode ?? 'source-over';
+    ctx.globalAlpha = opacity;
+    ctx.globalCompositeOperation = blendMode;
 
-      if (config.tiled) {
-        // タイル表示
-        this.renderTiled(ctx, config, canvasWidth, canvasHeight);
-      } else {
-        // 単一表示
-        this.renderSingle(ctx, config, canvasWidth, canvasHeight);
+    if (tiled) {
+      // タイル表示の場合
+      const pattern = ctx.createPattern(this.image, 'repeat');
+      if (pattern) {
+        ctx.fillStyle = pattern;
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       }
-    } catch (error) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        'Failed to render watermark effect',
-        error
-      );
-    } finally {
-      ctx.restore();
-    }
-  }
-
-  /**
-   * 単一のウォーターマークを描画
-   */
-  private renderSingle(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    config: WatermarkEffectConfig,
-    canvasWidth: number,
-    canvasHeight: number
-  ): void {
-    if (!this.image) return;
-
-    // サイズの計算
-    const size = this.calculateSize(config.size, this.image, canvasWidth, canvasHeight);
-
-    // 回転の適用
-    if (config.rotation) {
-      ctx.translate(config.position.x + size.width / 2, config.position.y + size.height / 2);
-      ctx.rotate(config.rotation * Math.PI / 180);
-      ctx.translate(-(config.position.x + size.width / 2), -(config.position.y + size.height / 2));
-    }
-
-    // 描画
-    ctx.drawImage(
-      this.image,
-      config.position.x,
-      config.position.y,
-      size.width,
-      size.height
-    );
-  }
-
-  /**
-   * タイル状にウォーターマークを描画
-   */
-  private renderTiled(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    config: WatermarkEffectConfig,
-    canvasWidth: number,
-    canvasHeight: number
-  ): void {
-    if (!this.image) return;
-
-    // サイズの計算
-    const size = this.calculateSize(config.size, this.image, canvasWidth, canvasHeight);
-    const spacing = config.tileSpacing ?? 0;
-    const totalWidth = size.width + spacing;
-    const totalHeight = size.height + spacing;
-
-    // タイルの範囲を計算
-    const startX = config.position.x;
-    const startY = config.position.y;
-    const cols = Math.ceil(canvasWidth / totalWidth) + 1;
-    const rows = Math.ceil(canvasHeight / totalHeight) + 1;
-
-    // タイル状に描画
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const x = startX + col * totalWidth;
-        const y = startY + row * totalHeight;
-
-        // 回転の適用
-        if (config.rotation) {
-          ctx.save();
-          ctx.translate(x + size.width / 2, y + size.height / 2);
-          ctx.rotate(config.rotation * Math.PI / 180);
-          ctx.translate(-(x + size.width / 2), -(y + size.height / 2));
-        }
-
-        // 描画
-        ctx.drawImage(this.image, x, y, size.width, size.height);
-
-        if (config.rotation) {
-          ctx.restore();
-        }
-      }
-    }
-  }
-
-  /**
-   * 描画サイズを計算
-   */
-  private calculateSize(
-    configSize: Size2D | undefined,
-    image: HTMLImageElement,
-    canvasWidth: number,
-    canvasHeight: number
-  ): Size2D {
-    if (configSize) {
-      return configSize;
-    }
-
-    // デフォルトサイズ：キャンバスの1/4
-    const maxWidth = canvasWidth / 4;
-    const maxHeight = canvasHeight / 4;
-    const imageAspect = image.width / image.height;
-
-    if (maxWidth / maxHeight > imageAspect) {
-      return {
-        width: maxHeight * imageAspect,
-        height: maxHeight
-      };
     } else {
-      return {
-        width: maxWidth,
-        height: maxWidth / imageAspect
-      };
+      // 単一表示の場合
+      ctx.translate(position.x + size.width / 2, position.y + size.height / 2);
+      ctx.rotate(rotation * Math.PI / 180);
+      ctx.drawImage(
+        this.image,
+        -size.width / 2,
+        -size.height / 2,
+        size.width,
+        size.height
+      );
     }
+
+    ctx.restore();
   }
 
-  /**
-   * 画像の読み込み完了を待機
-   */
-  public async waitForLoad(): Promise<void> {
-    if (this.imageLoader) {
-      await this.imageLoader;
-    }
-  }
-
-  public override dispose(): void {
-    if (this.image) {
-      this.image.onload = null;
-      this.image.onerror = null;
-      this.image = null;
-    }
-    this.imageLoader = null;
-    this.onImageLoadCallback = null;
+  public dispose(): void {
+    this.image = null;
     super.dispose();
   }
 } 

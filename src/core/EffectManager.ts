@@ -18,6 +18,7 @@ import {
   ErrorType
 } from './types';
 import { AudioPlaybackService } from './AudioPlaybackService';
+import { AudioAnalyzerService } from './AudioAnalyzerService';
 
 interface WithAudioSource {
   setAudioSource: (source: AudioSource) => void;
@@ -74,11 +75,22 @@ export class EffectManager implements Disposable {
     // AudioSourceを持つエフェクトに対して、音声データを設定
     const audioSource = service.getAudioSource();
     if (audioSource) {
+      console.log('オーディオソースを設定:', {
+        duration: audioSource.duration,
+        sampleRate: audioSource.sampleRate,
+        numberOfChannels: audioSource.numberOfChannels,
+        hasWaveformData: !!audioSource.waveformData,
+        hasFrequencyData: !!audioSource.frequencyData
+      });
+
       for (const effect of this.effects.values()) {
         if (this.hasSetAudioSource(effect)) {
+          console.log(`エフェクトにオーディオソースを設定: ${effect.getConfig().id}`);
           effect.setAudioSource(audioSource);
         }
       }
+    } else {
+      console.warn('オーディオソースが未設定');
     }
   }
 
@@ -216,26 +228,32 @@ export class EffectManager implements Disposable {
   public startRenderLoop(): void {
     if (this.isDisposed || this.animationFrameId !== null) return;
 
-    const loop = (timestamp: number) => {
-      if (this.audioService) {
-        // 前回のレンダリングからの経過時間をチェック
-        const elapsed = timestamp - this.lastRenderTime;
-        
-        // フレームレート制御 (60fps)
-        if (elapsed >= this.FRAME_INTERVAL) {
-          const playbackState = this.audioService.getPlaybackState();
-          this.currentParams = {
-            currentTime: playbackState.currentTime,
-            duration: playbackState.duration,
-            isPlaying: playbackState.isPlaying,
-            // 波形データなどは必要に応じて追加
-          };
-          
-          this.render();
-          this.lastRenderTime = timestamp;
-        }
+    const loop = (): void => {
+      if (this.isDisposed || !this.audioService) return;
+
+      const now = performance.now();
+      const elapsed = now - this.lastRenderTime;
+
+      // フレームレート制御
+      if (elapsed >= this.FRAME_INTERVAL) {
+        // オーディオパラメータの更新
+        const playbackState = this.audioService.getPlaybackState();
+        const analyzer = AudioAnalyzerService.getInstance();
+
+        this.currentParams = {
+          currentTime: playbackState.currentTime,
+          duration: playbackState.duration,
+          isPlaying: playbackState.isPlaying,
+          waveformData: analyzer?.getWaveformData() ?? null,
+          frequencyData: analyzer?.getFrequencyData() ?? null
+        };
+
+        // 描画の実行
+        this.render();
+        this.lastRenderTime = now;
       }
-      
+
+      // 次のフレームをリクエスト
       this.animationFrameId = requestAnimationFrame(loop);
     };
 
