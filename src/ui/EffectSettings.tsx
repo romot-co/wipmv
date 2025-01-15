@@ -6,13 +6,15 @@ import {
   BackgroundEffectConfig,
   TextEffectConfig,
   WaveformEffectConfig,
-  WatermarkEffectConfig
+  WatermarkEffectConfig,
+  EffectConfig
 } from '../core/types';
 import { EffectTimeSettings } from './EffectTimeSettings';
 import { BackgroundSettings } from './features/background/BackgroundSettings';
 import { TextSettings } from './features/text/TextSettings';
 import { WaveformSettings } from './features/waveform/WaveformSettings';
 import { WatermarkSettings } from './features/watermark/WatermarkSettings';
+import { Card, Flex, Text, Heading, Switch } from '@radix-ui/themes';
 import './EffectSettings.css';
 
 interface EffectSettingsProps {
@@ -26,27 +28,24 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
   onUpdate,
   duration,
 }) => {
-  const [config, setConfig] = useState(effect.getConfig());
+  const [config, setConfig] = useState<EffectConfig>(effect.getConfig());
 
-  // エフェクトが変更された場合に設定を更新
   useEffect(() => {
     setConfig(effect.getConfig());
   }, [effect]);
 
   const handleTimeChange = (startTime: number, endTime: number) => {
-    onUpdate({
+    const newConfig = {
       startTime,
       endTime,
-    });
+    };
+    onUpdate(newConfig);
+    setConfig(prev => ({ ...prev, ...newConfig }));
   };
 
   const handleConfigChange = (newConfig: Partial<BaseEffectConfig>) => {
     onUpdate(newConfig);
-    // 設定を即座に更新
-    setConfig({
-      ...config,
-      ...newConfig
-    });
+    setConfig(prev => ({ ...prev, ...newConfig } as EffectConfig));
   };
 
   const renderEffectSpecificSettings = () => {
@@ -85,50 +84,59 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
   };
 
   return (
-    <div className="effect-settings">
-      <h3>エフェクト設定</h3>
+    <Card className="effect-settings">
+      <Flex direction="column" gap="4">
+        <Heading as="h3" size="4">エフェクト設定</Heading>
 
-      {/* 時間設定 */}
-      <div className="settings-section">
-        <h4>表示時間</h4>
-        <EffectTimeSettings
-          startTime={config.startTime ?? 0}
-          endTime={config.endTime ?? duration}
-          duration={duration}
-          onTimeChange={handleTimeChange}
-        />
-      </div>
+        {/* 時間設定 */}
+        <Card>
+          <Flex direction="column" gap="2">
+            <Heading as="h4" size="3">表示時間</Heading>
+            <EffectTimeSettings
+              startTime={config.startTime ?? 0}
+              endTime={config.endTime ?? duration}
+              duration={duration}
+              onTimeChange={handleTimeChange}
+            />
+          </Flex>
+        </Card>
 
-      {/* エフェクト固有の設定 */}
-      <div className="settings-section">
-        <h4>エフェクト設定</h4>
-        {renderEffectSpecificSettings()}
-      </div>
+        {/* エフェクト固有の設定 */}
+        <Card>
+          <Flex direction="column" gap="2">
+            <Heading as="h4" size="3">エフェクト設定</Heading>
+            {renderEffectSpecificSettings()}
+          </Flex>
+        </Card>
 
-      {/* 表示/非表示切り替え */}
-      <div className="settings-section">
-        <label className="visibility-toggle">
-          <input
-            type="checkbox"
-            checked={config.visible}
-            onChange={(e) => handleConfigChange({ visible: e.target.checked })}
-          />
-          表示
-        </label>
-      </div>
+        {/* 表示/非表示切り替え */}
+        <Card>
+          <Flex align="center" justify="between" gap="2">
+            <Text as="label" size="2">表示</Text>
+            <Switch
+              checked={config.visible}
+              onCheckedChange={(checked) => handleConfigChange({ visible: checked })}
+            />
+          </Flex>
+        </Card>
 
-      {/* zIndex設定 */}
-      <div className="settings-section">
-        <label>
-          レイヤー順序
-          <input
-            type="number"
-            value={config.zIndex}
-            onChange={(e) => handleConfigChange({ zIndex: parseInt(e.target.value, 10) })}
-            min={0}
-          />
-        </label>
-      </div>
-    </div>
+        {/* zIndex設定 */}
+        <Card>
+          <Flex direction="column" gap="2">
+            <Text as="label" size="2" htmlFor="zIndex">レイヤー順序</Text>
+            <input
+              id="zIndex"
+              type="number"
+              value={config.zIndex}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                handleConfigChange({ zIndex: parseInt(e.target.value, 10) })
+              }
+              min={0}
+              className="rt-TextFieldInput"
+            />
+          </Flex>
+        </Card>
+      </Flex>
+    </Card>
   );
 }; 

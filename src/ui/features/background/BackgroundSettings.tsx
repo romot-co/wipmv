@@ -11,7 +11,6 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
   onChange
 }) => {
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    console.log('BackgroundSettings: handleTypeChange', e.target.value);
     const newType = e.target.value as BackgroundEffectConfig['backgroundType'];
     const newConfig: Partial<BackgroundEffectConfig> = {
       backgroundType: newType
@@ -26,19 +25,15 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
         newConfig.imageUrl = '';
         break;
       case 'gradient':
-        newConfig.gradient = {
-          colors: ['#000000', '#ffffff'],
-          angle: 0
-        };
+        newConfig.gradientColors = ['#000000', '#ffffff'];
+        newConfig.gradientDirection = 'horizontal';
         break;
     }
 
-    console.log('BackgroundSettings: handleTypeChange - newConfig', newConfig);
     onChange(newConfig);
   };
 
   const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('BackgroundSettings: handleColorChange', e.target.value);
     onChange({ color: e.target.value });
   };
 
@@ -63,24 +58,17 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
     index: number,
     color: string
   ) => {
-    if (!config.gradient) return;
-    const newColors = [...config.gradient.colors];
+    if (!config.gradientColors) return;
+    const newColors = [...config.gradientColors];
     newColors[index] = color;
     onChange({
-      gradient: {
-        ...config.gradient,
-        colors: newColors
-      }
+      gradientColors: newColors
     });
   };
 
-  const handleGradientAngleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!config.gradient) return;
+  const handleGradientDirectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     onChange({
-      gradient: {
-        ...config.gradient,
-        angle: Number(e.target.value)
-      }
+      gradientDirection: e.target.value as 'horizontal' | 'vertical' | 'radial'
     });
   };
 
@@ -131,19 +119,19 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
         </div>
       )}
 
-      {config.backgroundType === 'gradient' && config.gradient && (
+      {config.backgroundType === 'gradient' && config.gradientColors && (
         <>
           <div className="setting-group">
             <label>グラデーション開始色</label>
             <div className="color-picker">
               <input
                 type="color"
-                value={config.gradient.colors[0]}
+                value={config.gradientColors[0]}
                 onChange={(e) => handleGradientChange(0, e.target.value)}
               />
               <input
                 type="text"
-                value={config.gradient.colors[0]}
+                value={config.gradientColors[0]}
                 onChange={(e) => handleGradientChange(0, e.target.value)}
                 pattern="^#[0-9A-Fa-f]{6}$"
               />
@@ -154,32 +142,58 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
             <div className="color-picker">
               <input
                 type="color"
-                value={config.gradient.colors[1]}
+                value={config.gradientColors[1]}
                 onChange={(e) => handleGradientChange(1, e.target.value)}
               />
               <input
                 type="text"
-                value={config.gradient.colors[1]}
+                value={config.gradientColors[1]}
                 onChange={(e) => handleGradientChange(1, e.target.value)}
                 pattern="^#[0-9A-Fa-f]{6}$"
               />
             </div>
           </div>
           <div className="setting-group">
-            <label>グラデーション角度</label>
-            <div className="range-input">
-              <input
-                type="range"
-                min="0"
-                max="360"
-                value={config.gradient.angle}
-                onChange={handleGradientAngleChange}
-              />
-              <span>{config.gradient.angle}°</span>
-            </div>
+            <label>グラデーション方向</label>
+            <select
+              value={config.gradientDirection}
+              onChange={handleGradientDirectionChange}
+            >
+              <option value="horizontal">水平</option>
+              <option value="vertical">垂直</option>
+              <option value="radial">放射状</option>
+            </select>
           </div>
         </>
       )}
+
+      <div className="setting-group">
+        <label>不透明度</label>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.1"
+          value={config.opacity ?? 1}
+          onChange={(e) => onChange({ opacity: Number(e.target.value) })}
+        />
+        <span>{config.opacity ?? 1}</span>
+      </div>
+
+      <div className="setting-group">
+        <label>ブレンドモード</label>
+        <select
+          value={config.blendMode ?? 'source-over'}
+          onChange={(e) => onChange({ blendMode: e.target.value as GlobalCompositeOperation })}
+        >
+          <option value="source-over">通常</option>
+          <option value="multiply">乗算</option>
+          <option value="screen">スクリーン</option>
+          <option value="overlay">オーバーレイ</option>
+          <option value="darken">暗く</option>
+          <option value="lighten">明るく</option>
+        </select>
+      </div>
     </div>
   );
 };

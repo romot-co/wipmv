@@ -13,17 +13,11 @@ import {
   AudioVisualParameters, 
   EffectConfig, 
   Disposable, 
-  BaseEffectState, 
-  AudioSource, 
-  EffectType,
-  BackgroundEffectConfig 
+  AudioSource,
+  AppError,
+  ErrorType
 } from './types';
 import { AudioPlaybackService } from './AudioPlaybackService';
-
-interface EffectManagerState {
-  effects: Map<string, EffectBase>;
-  effectStates: Map<string, BaseEffectState>;
-}
 
 interface WithAudioSource {
   setAudioSource: (source: AudioSource) => void;
@@ -33,25 +27,21 @@ interface WithImageLoadCallback {
   setOnImageLoadCallback: (callback: () => void) => void;
 }
 
-export class EffectManager {
-  private state: EffectManagerState;
+export class EffectManager implements Disposable {
+  private effects: Map<string, EffectBase> = new Map();
   private audioService: AudioPlaybackService | null = null;
-
-  // requestAnimationFrame制御用ID
   private animationFrameId: number | null = null;
-
-  // Canvas / Context
   private canvas: HTMLCanvasElement;
   private renderer: Renderer;
   private ctx: CanvasRenderingContext2D;
+  private isDisposed = false;
 
   private currentParams: AudioVisualParameters = {
     currentTime: 0,
     duration: 0,
     isPlaying: false
   };
-  
-  // FPS制御用
+
   private lastRenderTime = 0;
   private readonly FRAME_INTERVAL = 1000 / 60; // 60fps
 
@@ -60,14 +50,12 @@ export class EffectManager {
     this.canvas = renderer.getCanvas();
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
-      throw new Error("Failed to get 2D rendering context for EffectManager");
+      throw new AppError(
+        ErrorType.EffectInitFailed,
+        'Failed to get canvas context'
+      );
     }
     this.ctx = ctx;
-
-    this.state = {
-      effects: new Map(),
-      effectStates: new Map()
-    };
   }
 
   public getRenderer(): Renderer {
@@ -78,263 +66,208 @@ export class EffectManager {
     return this.canvas;
   }
 
-  /**
-   * AudioServiceを接続
-   */
   public connectAudioService(service: AudioPlaybackService): void {
+    if (this.isDisposed) return;
+    
     this.audioService = service;
-    // 接続時に各エフェクトにAudioSourceを設定
+    
+    // AudioSourceを持つエフェクトに対して、音声データを設定
     const audioSource = service.getAudioSource();
     if (audioSource) {
-      this.state.effects.forEach(effect => {
+      for (const effect of this.effects.values()) {
         if (this.hasSetAudioSource(effect)) {
           effect.setAudioSource(audioSource);
         }
-      });
-    }
-  }
-
-  /**
-   * エフェクトを追加
-   */
-  public addEffect(effect: EffectBase): void {
-    const config = effect.getConfig();
-    this.state.effects.set(config.id, effect);
-    this.state.effectStates.set(config.id, effect.getState());
-
-    // AudioSourceが存在する場合は設定
-    if (this.audioService) {
-      const audioSource = this.audioService.getAudioSource();
-      if (audioSource && this.hasSetAudioSource(effect)) {
-        effect.setAudioSource(audioSource);
       }
     }
-
-    // 画像を使用するエフェクトの場合、画像ロード完了時のコールバックを設定
-    if (
-      (config.type === EffectType.Watermark || 
-       (config.type === EffectType.Background && 
-        (config as BackgroundEffectConfig).backgroundType === 'image')) && 
-      this.hasImageLoadCallback(effect)
-    ) {
-      effect.setOnImageLoadCallback(() => {
-        this.render(); // 画像ロード完了時に再描画
-      });
-    }
-
-    this.sortEffectsByZIndex();
-    this.render(); // 追加直後に一度描画
   }
 
-  /**
-   * エフェクトを削除
-   */
+  public addEffect(effect: EffectBase): void {
+    if (this.isDisposed) return;
+
+    const config = effect.getConfig();
+    if (this.effects.has(config.id)) {
+      throw new AppError(
+        ErrorType.EffectAlreadyExists,
+        `Effect with id ${config.id} already exists`
+      );
+    }
+
+    // AudioSourceが必要なエフェクトの場合は設定
+    if (this.hasSetAudioSource(effect) && this.audioService?.getAudioSource()) {
+      effect.setAudioSource(this.audioService.getAudioSource()!);
+    }
+
+    // 画像ロードコールバックが必要なエフェクトの場合は設定
+    if (this.hasImageLoadCallback(effect)) {
+      effect.setOnImageLoadCallback(() => this.render());
+    }
+
+    this.effects.set(config.id, effect);
+    this.sortEffectsByZIndex();
+  }
+
   public removeEffect(effectOrId: EffectBase | string): void {
+    if (this.isDisposed) return;
+
     const id = typeof effectOrId === 'string' ? effectOrId : effectOrId.getConfig().id;
-    const effect = this.state.effects.get(id);
+    const effect = this.effects.get(id);
+    
     if (effect) {
-      // Disposableならdispose呼ぶ
       if (this.isDisposable(effect)) {
         effect.dispose();
       }
-      this.state.effects.delete(id);
-      this.state.effectStates.delete(id);
-      this.render();
+      this.effects.delete(id);
     }
   }
 
-  /**
-   * 全エフェクトを取得
-   */
   public getEffects(): EffectBase[] {
-    return Array.from(this.state.effects.values());
+    return Array.from(this.effects.values());
   }
 
-  /**
-   * zIndex順でソート
-   */
   private sortEffectsByZIndex(): void {
-    const sorted = [...this.state.effects.entries()].sort(
-      (a, b) => a[1].getZIndex() - b[1].getZIndex()
+    const sorted = Array.from(this.effects.entries()).sort(
+      ([, a], [, b]) => a.getZIndex() - b.getZIndex()
     );
-    this.state.effects = new Map(sorted);
+    this.effects = new Map(sorted);
   }
 
-  /**
-   * エフェクトを上に移動(zIndexを上げる)
-   */
   public moveEffectUp(id: string): void {
-    const effectsArray = Array.from(this.state.effects.values());
-    const index = effectsArray.findIndex(e => e.getConfig().id === id);
-    if (index <= 0) return;
+    if (this.isDisposed) return;
 
-    const current = effectsArray[index];
-    const upper = effectsArray[index - 1];
+    const effects = Array.from(this.effects.values());
+    const index = effects.findIndex(e => e.getConfig().id === id);
+    if (index === -1 || index === effects.length - 1) return;
 
-    const tempZ = current.getConfig().zIndex;
-    current.updateConfig({ zIndex: upper.getConfig().zIndex });
-    upper.updateConfig({ zIndex: tempZ });
+    const current = effects[index];
+    const next = effects[index + 1];
+    const currentZIndex = current.getZIndex();
+    const nextZIndex = next.getZIndex();
+
+    current.updateConfig({ zIndex: nextZIndex });
+    next.updateConfig({ zIndex: currentZIndex });
 
     this.sortEffectsByZIndex();
     this.render();
   }
 
-  /**
-   * エフェクトを下に移動(zIndexを下げる)
-   */
   public moveEffectDown(id: string): void {
-    const effectsArray = Array.from(this.state.effects.values());
-    const index = effectsArray.findIndex(e => e.getConfig().id === id);
-    if (index === -1 || index >= effectsArray.length - 1) return;
+    if (this.isDisposed) return;
 
-    const current = effectsArray[index];
-    const lower = effectsArray[index + 1];
+    const effects = Array.from(this.effects.values());
+    const index = effects.findIndex(e => e.getConfig().id === id);
+    if (index === -1 || index === 0) return;
 
-    const tempZ = current.getConfig().zIndex;
-    current.updateConfig({ zIndex: lower.getConfig().zIndex });
-    lower.updateConfig({ zIndex: tempZ });
+    const current = effects[index];
+    const prev = effects[index - 1];
+    const currentZIndex = current.getZIndex();
+    const prevZIndex = prev.getZIndex();
+
+    current.updateConfig({ zIndex: prevZIndex });
+    prev.updateConfig({ zIndex: currentZIndex });
 
     this.sortEffectsByZIndex();
     this.render();
   }
 
-  /**
-   * エフェクトの設定を更新
-   */
-  public updateEffect(id: string, newConfig: Partial<EffectConfig>): void {
-    const effect = this.state.effects.get(id);
-    if (effect) {
-      effect.updateConfig(newConfig);
-      this.sortEffectsByZIndex();
-      this.render();
+  public updateEffect<T extends EffectConfig>(id: string, newConfig: Partial<T>): void {
+    if (this.isDisposed) return;
+
+    const effect = this.effects.get(id);
+    if (!effect) {
+      throw new AppError(
+        ErrorType.EffectNotFound,
+        `Effect with id ${id} not found`
+      );
     }
+
+    effect.updateConfig(newConfig);
+    this.sortEffectsByZIndex();
+    this.render();
   }
 
   public dispose(): void {
+    if (this.isDisposed) return;
+    
     this.stopRenderLoop();
-    this.state.effects.clear();
-    this.state.effectStates.clear();
+    
+    for (const effect of this.effects.values()) {
+      if (this.isDisposable(effect)) {
+        effect.dispose();
+      }
+    }
+    
+    this.effects.clear();
+    this.audioService = null;
+    this.isDisposed = true;
   }
 
-  /**
-   * エフェクトがDisposableか判定
-   */
   private isDisposable(effect: unknown): effect is Disposable {
-    return (
-      typeof effect === 'object' &&
-      effect !== null &&
-      'dispose' in effect &&
-      typeof (effect as Disposable).dispose === 'function'
-    );
+    return typeof (effect as Disposable).dispose === 'function';
   }
 
-  /**
-   * managerの内部パラメータをupdate
-   */
   public updateParams(params: Partial<AudioVisualParameters>): void {
+    if (this.isDisposed) return;
+
     this.currentParams = { ...this.currentParams, ...params };
+    this.render();
   }
 
-  /**
-   * レンダリングループ開始
-   */
   public startRenderLoop(): void {
-    if (this.animationFrameId != null) return; // 重複開始防止
+    if (this.isDisposed || this.animationFrameId !== null) return;
 
     const loop = (timestamp: number) => {
-      if (!this.audioService) {
-        this.stopRenderLoop();
-        return;
+      if (this.audioService) {
+        // 前回のレンダリングからの経過時間をチェック
+        const elapsed = timestamp - this.lastRenderTime;
+        
+        // フレームレート制御 (60fps)
+        if (elapsed >= this.FRAME_INTERVAL) {
+          const playbackState = this.audioService.getPlaybackState();
+          this.currentParams = {
+            currentTime: playbackState.currentTime,
+            duration: playbackState.duration,
+            isPlaying: playbackState.isPlaying,
+            // 波形データなどは必要に応じて追加
+          };
+          
+          this.render();
+          this.lastRenderTime = timestamp;
+        }
       }
-
-      // フレームレート制御
-      const elapsed = timestamp - this.lastRenderTime;
-      if (elapsed < this.FRAME_INTERVAL) {
-        this.animationFrameId = requestAnimationFrame(loop);
-        return;
-      }
-      this.lastRenderTime = timestamp;
-
-      // 音声が再生中のみリアルタイム更新
-      if (this.audioService.isPlaying()) {
-        const t = this.audioService.getCurrentTime();
-        const dur = this.audioService.getDuration();
-
-        // manager内部パラメータを更新
-        this.updateParams({
-          currentTime: t,
-          duration: dur,
-          isPlaying: true
-        });
-
-        // render
-        this.render();
-      } else {
-        // 再生中でない場合は isPlaying: false をセット
-        this.updateParams({
-          isPlaying: false
-        });
-      }
-
+      
       this.animationFrameId = requestAnimationFrame(loop);
     };
 
     this.animationFrameId = requestAnimationFrame(loop);
   }
 
-  /**
-   * レンダリングループ停止
-   */
   public stopRenderLoop(): void {
-    if (this.animationFrameId != null) {
+    if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
   }
 
-  /**
-   * メインのrender処理
-   */
   public render(): void {
-    const ctx = this.ctx;
-    const { currentTime, duration, isPlaying } = this.currentParams;
+    if (this.isDisposed) return;
 
-    // キャンバスクリア
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    // キャンバスをクリア
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // zIndex順にエフェクト描画
-    const effectList = [...this.state.effects.values()];
-    for (const effect of effectList) {
-      // 表示中かどうか / 時間内かどうか など effect内で判断
-      effect.render(ctx, {
-        currentTime,
-        duration,
-        isPlaying
-      });
+    // 現在時刻に応じて表示すべきエフェクトのみを描画
+    for (const effect of this.effects.values()) {
+      if (effect.isVisible(this.currentParams.currentTime)) {
+        effect.render(this.ctx, this.currentParams);
+      }
     }
   }
 
-  /**
-   * エフェクトがsetAudioSourceメソッドを持っているか判定
-   */
   private hasSetAudioSource(effect: unknown): effect is WithAudioSource {
-    return (
-      typeof effect === 'object' &&
-      effect !== null &&
-      'setAudioSource' in effect &&
-      typeof (effect as WithAudioSource).setAudioSource === 'function'
-    );
+    return typeof (effect as WithAudioSource).setAudioSource === 'function';
   }
 
-  /**
-   * エフェクトがsetOnImageLoadCallbackメソッドを持っているか判定
-   */
   private hasImageLoadCallback(effect: unknown): effect is WithImageLoadCallback {
-    return (
-      typeof effect === 'object' &&
-      effect !== null &&
-      'setOnImageLoadCallback' in effect &&
-      typeof (effect as WithImageLoadCallback).setOnImageLoadCallback === 'function'
-    );
+    return typeof (effect as WithImageLoadCallback).setOnImageLoadCallback === 'function';
   }
 }

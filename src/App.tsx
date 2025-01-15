@@ -16,19 +16,25 @@ import {
   TextEffectConfig,
   WaveformEffectConfig,
   WatermarkEffectConfig,
-  AudioSource
+  AudioSource,
+  ProjectData
 } from './core/types';
 
 import { EffectManager } from './core/EffectManager';
 import { AudioPlaybackService } from './core/AudioPlaybackService';
-import { AudioAnalyzer } from './core/AudioAnalyzerService';
+import { AudioAnalyzerService } from './core/AudioAnalyzerService';
 import { EffectBase } from './core/EffectBase';
 import { ProjectService } from './core/ProjectService';
 import { BackgroundEffect } from './features/background/BackgroundEffect';
 import { TextEffect } from './features/text/TextEffect';
 import { WaveformEffect } from './features/waveform/WaveformEffect';
 import { WatermarkEffect } from './features/watermark/WatermarkEffect';
-import { createDefaultEffects } from './core/DefaultEffectService';
+import { 
+  createDefaultBackgroundEffect,
+  createDefaultTextEffect,
+  createDefaultWaveformEffect,
+  createDefaultWatermarkEffect
+} from './core/DefaultEffectService';
 import './App.css';
 
 // WithAudioSourceインターフェースの追加
@@ -72,7 +78,7 @@ export const App: React.FC = () => {
   const [selectedEffectId, setSelectedEffectId] = useState<string>();
 
   // AudioPlaybackServiceをシングルトン的に保持
-  const [audioService] = useState(() => new AudioPlaybackService());
+  const [audioService] = useState(() => AudioPlaybackService.getInstance());
 
   // 事前解析データを保持
   const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
@@ -137,67 +143,32 @@ export const App: React.FC = () => {
       switch (type) {
         case EffectType.Background:
           effect = new BackgroundEffect({
-            id: `background-${Date.now()}`,
-            type: EffectType.Background,
-            backgroundType: 'color',
-            color: '#000000',
+            ...createDefaultBackgroundEffect(),
             zIndex,
-            visible: true,
             startTime: 0,
             endTime: currentDuration
           });
           break;
         case EffectType.Text:
           effect = new TextEffect({
-            id: `text-${Date.now()}`,
-            type: EffectType.Text,
-            text: 'テキスト',
-            style: {
-              fontSize: 24,
-              fontFamily: 'sans-serif',
-              color: '#ffffff'
-            },
-            position: { x: 100, y: 100 },
+            ...createDefaultTextEffect(),
             zIndex,
-            visible: true,
             startTime: 0,
             endTime: currentDuration
           });
           break;
         case EffectType.Waveform:
           effect = new WaveformEffect({
-            id: `waveform-${Date.now()}`,
-            type: EffectType.Waveform,
-            position: { x: 0, y: 0, width: 800, height: 200 },
-            colors: {
-              primary: '#ffffff'
-            },
-            options: {
-              style: 'bar',
-              analysisMode: 'offline',
-              barWidth: 2,
-              barSpacing: 1,
-              smoothing: 0.5,
-              segmentCount: 128
-            },
+            ...createDefaultWaveformEffect(),
             zIndex,
-            visible: true,
             startTime: 0,
             endTime: currentDuration
           });
           break;
         case EffectType.Watermark:
           effect = new WatermarkEffect({
-            id: `watermark-${Date.now()}`,
-            type: EffectType.Watermark,
-            imageUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
-            position: { x: 50, y: 50, width: 100, height: 100 },
-            style: {
-              opacity: 0.5,
-              blendMode: 'source-over'
-            },
+            ...createDefaultWatermarkEffect(),
             zIndex,
-            visible: true,
             startTime: 0,
             endTime: currentDuration
           });
@@ -216,59 +187,37 @@ export const App: React.FC = () => {
     }
   }, [manager, handleError, duration, audioSource]);
 
-  // デフォルトエフェクトの作成
-  const handleDefaultEffects = useCallback((duration: number) => {
-    if (!manager) return;
-
-    const defaultConfigs = createDefaultEffects(duration);
-    defaultConfigs.forEach((config: BaseEffectConfig & { type: EffectType }) => {
-      let effect: EffectBase;
-      switch (config.type) {
-        case EffectType.Background:
-          effect = new BackgroundEffect(config as BackgroundEffectConfig);
-          break;
-        case EffectType.Text:
-          effect = new TextEffect(config as TextEffectConfig);
-          break;
-        case EffectType.Waveform:
-          effect = new WaveformEffect(config as WaveformEffectConfig);
-          break;
-        case EffectType.Watermark:
-          effect = new WatermarkEffect(config as WatermarkEffectConfig);
-          break;
-        default:
-          throw new Error(`Unknown effect type: ${config.type}`);
-      }
-      if (audioSource && hasSetAudioSource(effect)) {
-        effect.setAudioSource(audioSource);
-      }
-      manager.addEffect(effect);
-    });
-
-    setEffects(manager.getEffects());
-  }, [manager, audioSource]);
-
   // オーディオファイルのロード処理
   const handleAudioLoad = useCallback(async (file: File) => {
     try {
       // 1. 事前解析の実行
       console.log('オーディオ解析を開始...');
-      const analyzer = new AudioAnalyzer(videoSettings.frameRate);
-      const analysisResult = await analyzer.processAudio(file);
+      const analyzer = AudioAnalyzerService.getInstance();
+      const audioContext = new AudioContext();
+      const arrayBuffer = await file.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      const analysisResult = await analyzer.analyzeAudio(audioBuffer);
       setAudioSource(analysisResult);
 
-      // 2. 再生用のデコード
-      await audioService.decodeFile(file);
+      // AudioPlaybackServiceに音声ソースを設定
+      await audioService.setAudioSource(analysisResult);
 
-      // 3. エラークリアと状態遷移
+      // 2. エラークリアと状態遷移
       clearError('audio');
       transition('ready');
 
-      // 4. プロジェクトデータの読み込みと適用
-      const projectData = ProjectService.loadProject();
+      // 3. プロジェクトデータの読み込みと適用
+      const projectData = await ProjectService.getInstance().loadProject(crypto.randomUUID());
       if (projectData && manager) {
         // 設定復元
-        setVideoSettings(projectData.videoSettings);
+        const newSettings = {
+          width: projectData.videoSettings.width,
+          height: projectData.videoSettings.height,
+          frameRate: projectData.videoSettings.fps,
+          videoBitrate: projectData.videoSettings.bitrate,
+          audioBitrate: 128000 // デフォルト値
+        };
+        setVideoSettings(newSettings);
 
         // 既存エフェクトをクリア
         manager.getEffects().forEach(effect => {
@@ -300,10 +249,8 @@ export const App: React.FC = () => {
         });
       } else if (manager) {
         // プロジェクトデータがない場合はデフォルトエフェクトを作成
-        const buffer = await audioService.getAudioBuffer();
-        if (buffer) {
-          handleDefaultEffects(buffer.duration);
-        }
+        handleEffectAdd(EffectType.Background);
+        handleEffectAdd(EffectType.Waveform);
       }
 
       // エフェクトリスト更新
@@ -313,7 +260,7 @@ export const App: React.FC = () => {
     } catch (error) {
       handleError('audio', error instanceof Error ? error : new Error('オーディオ読み込みに失敗しました'));
     }
-  }, [audioService, manager, clearError, transition, handleDefaultEffects, videoSettings.frameRate, audioSource]);
+  }, [audioService, manager, clearError, transition, handleEffectAdd, audioSource]);
 
   // エフェクト削除
   const handleEffectRemove = useCallback((id: string) => {
@@ -353,19 +300,30 @@ export const App: React.FC = () => {
   const saveProject = useCallback(() => {
     if (!manager) return;
     try {
-      const buffer = audioService.getAudioBuffer();
-      ProjectService.saveProject({
-        videoSettings,
+      const audioSource = audioService.getAudioSource();
+      const projectData: ProjectData = {
+        version: '1.0.0',
+        id: crypto.randomUUID(),
+        name: 'Untitled Project',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        videoSettings: {
+          width: videoSettings.width,
+          height: videoSettings.height,
+          fps: videoSettings.frameRate,
+          bitrate: videoSettings.videoBitrate
+        },
         effects: manager.getEffects().map(effect => effect.getConfig()),
-        audioInfo: buffer
+        audioInfo: audioSource
           ? {
               fileName: 'audio.mp3',
-              duration: buffer.duration,
-              sampleRate: buffer.sampleRate,
-              numberOfChannels: buffer.numberOfChannels
+              duration: audioSource.duration,
+              sampleRate: audioSource.sampleRate,
+              numberOfChannels: audioSource.numberOfChannels
             }
           : undefined
-      });
+      };
+      ProjectService.getInstance().saveProject(projectData);
     } catch (error) {
       handleError('effect', error instanceof Error ? error : new Error('プロジェクトの保存に失敗しました'));
     }
@@ -444,14 +402,17 @@ export const App: React.FC = () => {
                 <PlaybackControls {...playbackProps} />
                 <Flex gap="2">
                   {/* Export処理 */}
-                  <ExportButton
-                    audioBuffer={audioService.getAudioBuffer()!}
-                    manager={manager}
-                    onError={(error) => handleError('export', error)}
-                    onProgress={handleExportProgress}
-                    videoSettings={videoSettings}
-                    onSettingsChange={setVideoSettings}
-                  />
+                  {audioService.getAudioSource() && (
+                    <ExportButton
+                      audioBuffer={audioService.getAudioSource()!.buffer}
+                      manager={manager}
+                      onError={(error) => handleError('export', error)}
+                      onProgress={handleExportProgress}
+                      videoSettings={videoSettings}
+                      onSettingsChange={setVideoSettings}
+                      audioSource={audioService.getAudioSource()!}
+                    />
+                  )}
                   {/* プロジェクト保存 */}
                   <Button
                     variant="surface"

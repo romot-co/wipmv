@@ -1,123 +1,39 @@
 .effect-settings {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  background-color: var(--gray-2);
-  border-radius: var(--radius-3);
+  height: 100%;
   overflow-y: auto;
 }
 
-.effect-settings h3 {
-  font-size: var(--font-size-3);
-  font-weight: 500;
-  color: var(--gray-12);
-  margin: 0;
-  padding-bottom: var(--space-3);
-  border-bottom: 1px solid var(--gray-4);
+/* カスタムスクロールバー */
+.effect-settings::-webkit-scrollbar {
+  width: 8px;
 }
 
-.effect-settings h4 {
-  font-size: var(--font-size-2);
-  font-weight: 500;
-  color: var(--gray-11);
-  margin: 0 0 var(--space-2) 0;
+.effect-settings::-webkit-scrollbar-track {
+  background: var(--gray-3);
+  border-radius: 4px;
 }
 
-.settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  background-color: var(--gray-3);
-  border-radius: var(--radius-2);
-  border: 1px solid var(--gray-4);
+.effect-settings::-webkit-scrollbar-thumb {
+  background: var(--gray-7);
+  border-radius: 4px;
 }
 
-/* Input fields */
-.settings-section input[type="number"],
-.settings-section input[type="text"],
-.settings-section select {
-  width: 100%;
-  padding: var(--space-1) var(--space-2);
-  background-color: var(--gray-2);
-  border: 1px solid var(--gray-6);
-  border-radius: var(--radius-2);
-  color: var(--gray-12);
-  font-size: var(--font-size-2);
+.effect-settings::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-8);
 }
 
-.settings-section input[type="number"]:focus,
-.settings-section input[type="text"]:focus,
-.settings-section select:focus {
-  outline: none;
-  border-color: var(--accent-8);
-  box-shadow: 0 0 0 1px var(--accent-8);
+/* アニメーション */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* Range input */
-.settings-section input[type="range"] {
-  width: 100%;
-  height: 6px;
-  background-color: var(--gray-6);
-  border-radius: 3px;
-  appearance: none;
-}
-
-.settings-section input[type="range"]::-webkit-slider-thumb {
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  background-color: var(--accent-9);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.settings-section input[type="range"]::-webkit-slider-thumb:hover {
-  background-color: var(--accent-10);
-  transform: scale(1.1);
-}
-
-/* Color picker section */
-.color-picker {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
-  gap: var(--space-1);
-  padding: var(--space-2);
-  background-color: var(--gray-2);
-  border-radius: var(--radius-2);
-  border: 1px solid var(--gray-4);
-}
-
-/* Labels */
-.settings-section label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  color: var(--gray-11);
-  font-size: var(--font-size-2);
-}
-
-/* Visibility toggle */
-.visibility-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  background-color: var(--gray-2);
-  border-radius: var(--radius-2);
-  border: 1px solid var(--gray-4);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.visibility-toggle:hover {
-  background-color: var(--gray-3);
-}
-
-.visibility-toggle input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0;
+.effect-settings > * {
+  animation: slideIn 0.2s ease-out;
 } 

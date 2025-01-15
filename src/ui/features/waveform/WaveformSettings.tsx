@@ -10,177 +10,145 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
   config,
   onChange
 }) => {
-  const handleOptionsChange = (
-    key: keyof WaveformEffectConfig['options'],
-    value: string | number
-  ) => {
-    onChange({
-      options: {
-        ...config.options,
-        [key]: value
-      }
-    });
-  };
-
-  const handlePositionChange = (
-    key: keyof WaveformEffectConfig['position'],
-    value: number
-  ) => {
-    onChange({
-      position: {
-        ...config.position,
-        [key]: value
-      }
-    });
-  };
-
-  const handleColorChange = (
-    key: keyof WaveformEffectConfig['colors'],
-    value: string
-  ) => {
-    onChange({
-      colors: {
-        ...config.colors,
-        [key]: value
-      }
-    });
-  };
-
   return (
     <div className="waveform-settings">
       <div className="setting-group">
-        <label>表示スタイル</label>
+        <label>波形タイプ</label>
         <select
-          value={config.options.style}
-          onChange={(e) => handleOptionsChange('style', e.target.value)}
+          value={config.waveformType}
+          onChange={(e) => onChange({ waveformType: e.target.value as WaveformEffectConfig['waveformType'] })}
         >
-          <option value="bar">バー</option>
           <option value="line">ライン</option>
-          <option value="mirror">ミラー</option>
+          <option value="bar">バー</option>
+          <option value="circle">サークル</option>
         </select>
       </div>
 
       <div className="setting-group">
-        <label>解析モード</label>
-        <select
-          value={config.options.analysisMode}
-          onChange={(e) => handleOptionsChange('analysisMode', e.target.value)}
-        >
-          <option value="realtime">リアルタイム</option>
-          <option value="offline">オフライン</option>
-        </select>
+        <label>色</label>
+        <div className="color-picker">
+          <input
+            type="color"
+            value={config.color}
+            onChange={(e) => onChange({ color: e.target.value })}
+          />
+          <input
+            type="text"
+            value={config.color}
+            onChange={(e) => onChange({ color: e.target.value })}
+            pattern="^#[0-9A-Fa-f]{6}$"
+          />
+        </div>
       </div>
 
-      <div className="setting-group">
-        <label>バーの幅</label>
-        <input
-          type="number"
-          value={config.options.barWidth}
-          onChange={(e) => handleOptionsChange('barWidth', Number(e.target.value))}
-          min={1}
-          max={20}
-        />
-      </div>
+      {config.waveformType === 'bar' && (
+        <>
+          <div className="setting-group">
+            <label>バーの幅</label>
+            <div className="range-input">
+              <input
+                type="range"
+                min="1"
+                max="20"
+                value={config.barWidth ?? 2}
+                onChange={(e) => onChange({ barWidth: Number(e.target.value) })}
+              />
+              <span>{config.barWidth ?? 2}px</span>
+            </div>
+          </div>
+
+          <div className="setting-group">
+            <label>バーの間隔</label>
+            <div className="range-input">
+              <input
+                type="range"
+                min="0"
+                max="10"
+                value={config.barSpacing ?? 1}
+                onChange={(e) => onChange({ barSpacing: Number(e.target.value) })}
+              />
+              <span>{config.barSpacing ?? 1}px</span>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="setting-group">
-        <label>バーの間隔</label>
-        <input
-          type="number"
-          value={config.options.barSpacing}
-          onChange={(e) => handleOptionsChange('barSpacing', Number(e.target.value))}
-          min={0}
-          max={10}
-        />
+        <label>感度</label>
+        <div className="range-input">
+          <input
+            type="range"
+            min="0"
+            max="2"
+            step="0.1"
+            value={config.sensitivity ?? 1}
+            onChange={(e) => onChange({ sensitivity: Number(e.target.value) })}
+          />
+          <span>{config.sensitivity ?? 1}</span>
+        </div>
       </div>
 
       <div className="setting-group">
         <label>スムージング</label>
-        <input
-          type="range"
-          value={config.options.smoothing}
-          onChange={(e) => handleOptionsChange('smoothing', Number(e.target.value))}
-          min={0}
-          max={1}
-          step={0.1}
-        />
-        <span>{config.options.smoothing}</span>
+        <div className="range-input">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={config.smoothingFactor ?? 0.5}
+            onChange={(e) => onChange({ smoothingFactor: Number(e.target.value) })}
+          />
+          <span>{config.smoothingFactor ?? 0.5}</span>
+        </div>
       </div>
 
       <div className="setting-group">
-        <label>セグメント数</label>
+        <label>ミラーモード</label>
         <input
-          type="number"
-          value={config.options.segmentCount}
-          onChange={(e) => handleOptionsChange('segmentCount', Number(e.target.value))}
-          min={64}
-          max={4096}
-          step={64}
-        />
-      </div>
-
-      <div className="setting-group">
-        <label>メインカラー</label>
-        <input
-          type="color"
-          value={config.colors.primary}
-          onChange={(e) => handleColorChange('primary', e.target.value)}
+          type="checkbox"
+          checked={config.mirror ?? false}
+          onChange={(e) => onChange({ mirror: e.target.checked })}
         />
       </div>
 
       <div className="setting-group">
-        <label>セカンダリカラー</label>
+        <label>カラーバンド</label>
         <input
-          type="color"
-          value={config.colors.secondary || '#000000'}
-          onChange={(e) => handleColorChange('secondary', e.target.value)}
+          type="checkbox"
+          checked={config.useColorBands ?? false}
+          onChange={(e) => onChange({ useColorBands: e.target.checked })}
         />
       </div>
 
       <div className="setting-group">
-        <label>背景色</label>
-        <input
-          type="color"
-          value={config.colors.background || '#ffffff'}
-          onChange={(e) => handleColorChange('background', e.target.value)}
-        />
+        <label>不透明度</label>
+        <div className="range-input">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={config.opacity ?? 1}
+            onChange={(e) => onChange({ opacity: Number(e.target.value) })}
+          />
+          <span>{config.opacity ?? 1}</span>
+        </div>
       </div>
 
       <div className="setting-group">
-        <label>位置 X</label>
-        <input
-          type="number"
-          value={config.position.x}
-          onChange={(e) => handlePositionChange('x', Number(e.target.value))}
-        />
-      </div>
-
-      <div className="setting-group">
-        <label>位置 Y</label>
-        <input
-          type="number"
-          value={config.position.y}
-          onChange={(e) => handlePositionChange('y', Number(e.target.value))}
-        />
-      </div>
-
-      <div className="setting-group">
-        <label>幅</label>
-        <input
-          type="number"
-          value={config.position.width}
-          onChange={(e) => handlePositionChange('width', Number(e.target.value))}
-          min={1}
-        />
-      </div>
-
-      <div className="setting-group">
-        <label>高さ</label>
-        <input
-          type="number"
-          value={config.position.height}
-          onChange={(e) => handlePositionChange('height', Number(e.target.value))}
-          min={1}
-        />
+        <label>ブレンドモード</label>
+        <select
+          value={config.blendMode ?? 'source-over'}
+          onChange={(e) => onChange({ blendMode: e.target.value as GlobalCompositeOperation })}
+        >
+          <option value="source-over">通常</option>
+          <option value="multiply">乗算</option>
+          <option value="screen">スクリーン</option>
+          <option value="overlay">オーバーレイ</option>
+          <option value="darken">暗く</option>
+          <option value="lighten">明るく</option>
+        </select>
       </div>
     </div>
   );
@@ -203,34 +171,55 @@ style.textContent = `
   font-weight: 500;
 }
 
-.setting-group select,
-.setting-group input[type="number"] {
+.setting-group select {
   width: 100%;
   padding: 0.5rem;
   border: 1px solid #ccc;
   border-radius: 4px;
 }
 
-.setting-group input[type="color"] {
-  width: 100%;
+.color-picker {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.color-picker input[type="color"] {
+  width: 50px;
   height: 40px;
   padding: 0;
   border: 1px solid #ccc;
   border-radius: 4px;
 }
 
-.setting-group input[type="range"] {
-  width: 100%;
-  margin-right: 1rem;
+.color-picker input[type="text"] {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
 }
 
-.setting-group input[type="number"] {
-  width: 100px;
+.range-input {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 
-.setting-group span {
+.range-input input[type="range"] {
+  flex: 1;
+}
+
+.range-input span {
+  min-width: 3em;
+  text-align: right;
   font-size: 0.9rem;
   color: #666;
+}
+
+input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin: 0;
 }
 `;
 document.head.appendChild(style); 

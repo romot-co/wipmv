@@ -1,121 +1,149 @@
-import { BaseEffectConfig, AudioVisualParameters } from './types';
+import { 
+  EffectConfig, 
+  AudioVisualParameters, 
+  AppError, 
+  ErrorType,
+  BaseAnimation,
+} from './types';
 
-export interface BaseEffectState {
-  isVisible: boolean;
-  isPlaying: boolean;
-  startTime: number;
-  endTime: number;
-}
+/**
+ * エフェクトの基底抽象クラス
+ * - 設定値の管理
+ * - 表示/非表示の制御
+ * - レイヤー順の管理
+ * - アニメーション制御
+ * を担当
+ */
+export abstract class EffectBase<T extends EffectConfig = EffectConfig> {
+  protected config: T;
+  private animationStartTime: number | null = null;
 
-export abstract class EffectBase {
-  private config: BaseEffectConfig;
-  private state: BaseEffectState;
+  constructor(config: T) {
+    // 必須項目のバリデーション
+    if (!config.type) {
+      throw new AppError(
+        ErrorType.EffectInitFailed,
+        'Effect type is required'
+      );
+    }
 
-  constructor(config: BaseEffectConfig) {
+    // デフォルト値の設定
     this.config = {
       ...config,
       startTime: config.startTime ?? 0,
       endTime: config.endTime ?? Infinity,
-      zIndex: config.zIndex ?? 0
-    };
-    this.state = {
-      isVisible: true,
-      isPlaying: false,
-      startTime: this.config.startTime,
-      endTime: this.config.endTime
+      zIndex: config.zIndex ?? 0,
+      visible: config.visible ?? true,
+      opacity: config.opacity ?? 1,
+      blendMode: config.blendMode ?? 'source-over'
     };
   }
 
-  public getConfig<T extends BaseEffectConfig = BaseEffectConfig>(): T {
-    return this.config as T;
+  /**
+   * 設定を取得
+   */
+  public getConfig(): T {
+    return this.config;
   }
 
-  public getState(): BaseEffectState {
-    return this.state;
-  }
-
-  protected setState(newState: Partial<BaseEffectState>): void {
-    this.state = { ...this.state, ...newState };
-  }
-
-  public isVisible(currentTime: number): boolean {
-    return (
-      this.state.isVisible &&
-      currentTime >= this.state.startTime &&
-      currentTime <= this.state.endTime
-    );
-  }
-
-  public setStartTime(time: number): void {
-    if (isNaN(time) || time < 0) {
-      time = 0;
+  /**
+   * 設定を更新
+   */
+  public updateConfig(newConfig: Partial<T>): void {
+    // 型の変更は禁止
+    if (newConfig.type && newConfig.type !== this.config.type) {
+      throw new AppError(
+        ErrorType.EffectUpdateFailed,
+        'Cannot change effect type'
+      );
     }
-    if (time > this.state.endTime) {
-      throw new Error('Start time cannot be greater than end time');
-    }
-    this.setState({ startTime: time });
-    this.config.startTime = time;
-  }
-
-  public setEndTime(time: number): void {
-    if (isNaN(time)) {
-      time = Infinity;
-    }
-    if (time < this.state.startTime) {
-      throw new Error('End time cannot be less than start time');
-    }
-    this.setState({ endTime: time });
-    this.config.endTime = time;
-  }
-
-  public setTimeRange(startTime: number, endTime: number): void {
-    if (isNaN(startTime) || startTime < 0) {
-      startTime = 0;
-    }
-    if (isNaN(endTime)) {
-      endTime = Infinity;
-    }
-    if (startTime > endTime) {
-      throw new Error('Start time cannot be greater than end time');
-    }
-    this.setState({ startTime, endTime });
-    this.config.startTime = startTime;
-    this.config.endTime = endTime;
-  }
-
-  public getStartTime(): number {
-    return this.state.startTime;
-  }
-
-  public getEndTime(): number {
-    return this.state.endTime;
-  }
-
-  public getZIndex(): number {
-    return this.config.zIndex;
-  }
-
-  public updateConfig(newConfig: Partial<BaseEffectConfig>): void {
+    
+    // 設定を更新
+    const oldConfig = this.config;
     this.config = {
       ...this.config,
       ...newConfig
     };
 
-    // 時間設定が更新された場合は状態も更新
-    if ('startTime' in newConfig || 'endTime' in newConfig) {
-      this.setTimeRange(
-        newConfig.startTime ?? this.state.startTime,
-        newConfig.endTime ?? this.state.endTime
-      );
+    // 派生クラスで必要な処理を実行
+    this.onConfigUpdate(oldConfig, this.config);
+  }
+
+  /**
+   * 設定更新時のフック
+   * - 派生クラスでオーバーライドして必要な処理を実装
+   */
+  protected onConfigUpdate(oldConfig: T, newConfig: T): void {
+    // デフォルトは何もしない
+    console.log('onConfigUpdate', oldConfig, newConfig);
+  }
+
+  /**
+   * 指定時刻で表示すべきかどうかを判定
+   */
+  public isVisible(currentTime: number): boolean {
+    return (
+      (this.config.visible ?? true) &&
+      currentTime >= (this.config.startTime ?? 0) &&
+      currentTime <= (this.config.endTime ?? Infinity)
+    );
+  }
+
+  /**
+   * レイヤー順を取得
+   */
+  public getZIndex(): number {
+    return this.config.zIndex ?? 0;
+  }
+
+  /**
+   * アニメーションの進行度を計算
+   */
+  protected getAnimationProgress(
+    currentTime: number,
+    animation: BaseAnimation
+  ): number {
+    if (this.animationStartTime === null) {
+      this.animationStartTime = currentTime;
+    }
+
+    const elapsed = currentTime - this.animationStartTime;
+    const delay = animation.delay ?? 0;
+    
+    if (elapsed < delay) return 0;
+    if (elapsed >= delay + animation.duration) return 1;
+
+    const progress = (elapsed - delay) / animation.duration;
+    
+    // イージング関数の適用
+    switch (animation.easing) {
+      case 'easeIn':
+        return progress * progress;
+      case 'easeOut':
+        return 1 - (1 - progress) * (1 - progress);
+      case 'easeInOut':
+        return progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      default:
+        return progress; // linear
     }
   }
 
+  /**
+   * エフェクトを描画
+   * - 派生クラスで実装必須
+   */
   public abstract render(
     ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
     params: AudioVisualParameters
   ): void;
 
+  /**
+   * リソースを解放
+   * - 派生クラスで必要に応じてオーバーライド
+   */
   public dispose(): void {
-    // サブクラスでオーバーライド可能
+    this.animationStartTime = null;
   }
 } 

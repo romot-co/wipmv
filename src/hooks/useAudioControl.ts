@@ -6,20 +6,15 @@
 
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { AudioPlaybackService } from '../core/AudioPlaybackService';
-
-interface AudioControlState {
-  isPlaying: boolean;
-  currentTime: number;
-  duration: number;
-  error: Error | null;
-}
+import { AudioPlaybackState } from '../core/types';
 
 export function useAudioControl(audioService: AudioPlaybackService) {
-  const [state, setState] = useState<AudioControlState>({
+  const [state, setState] = useState<AudioPlaybackState>({
     isPlaying: false,
     currentTime: 0,
     duration: 0,
-    error: null,
+    volume: 1,
+    loop: true,
   });
 
   // RAF用のref
@@ -38,10 +33,10 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     }
 
     lastUpdateTimeRef.current = now;
-    const currentTime = audioService.getCurrentTime();
+    const playbackState = audioService.getPlaybackState();
     setState(prev => ({
       ...prev,
-      currentTime: Math.round(currentTime * 1000) / 1000 // 小数点以下3桁に正規化
+      currentTime: Math.round(playbackState.currentTime * 1000) / 1000 // 小数点以下3桁に正規化
     }));
     
     rafIdRef.current = requestAnimationFrame(updateTime);
@@ -53,11 +48,11 @@ export function useAudioControl(audioService: AudioPlaybackService) {
   const play = useCallback(async () => {
     try {
       await audioService.play();
-      const duration = audioService.getDuration();
+      const playbackState = audioService.getPlaybackState();
       setState((prev) => ({
         ...prev,
         isPlaying: true,
-        duration: Math.round(duration * 1000) / 1000, // 小数点以下3桁に正規化
+        duration: Math.round(playbackState.duration * 1000) / 1000, // 小数点以下3桁に正規化
         error: null,
       }));
 
@@ -96,7 +91,8 @@ export function useAudioControl(audioService: AudioPlaybackService) {
    */
   const stop = useCallback(() => {
     try {
-      audioService.stop();
+      audioService.pause(); // 一時停止
+      audioService.seek(0); // 先頭にシーク
       setState((prev) => ({ 
         ...prev, 
         isPlaying: false, 
@@ -121,12 +117,12 @@ export function useAudioControl(audioService: AudioPlaybackService) {
   const seek = useCallback(
     async (time: number) => {
       try {
-        await audioService.seek(time);
-        const currentTime = audioService.getCurrentTime();
+        audioService.seek(time);
+        const playbackState = audioService.getPlaybackState();
         setState((prev) => ({
           ...prev,
           error: null,
-          currentTime: Math.round(currentTime * 1000) / 1000 // 小数点以下3桁に正規化
+          currentTime: Math.round(playbackState.currentTime * 1000) / 1000 // 小数点以下3桁に正規化
         }));
       } catch (err) {
         const error = err instanceof Error ? err : new Error("シークに失敗しました");

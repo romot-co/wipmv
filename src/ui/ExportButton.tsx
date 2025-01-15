@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import { EffectManager } from '../core/EffectManager';
 import { VideoEncoderService } from '../core/VideoEncoderService';
-import { AudioAnalyzer } from '../core/AudioAnalyzerService';
+import { AudioAnalyzerService } from '../core/AudioAnalyzerService';
 import { EncodeSettings } from './EncodeSettings';
 import { Flex, Button, Dialog, Text } from '@radix-ui/themes';
 import { GearIcon, DownloadIcon, Cross2Icon } from '@radix-ui/react-icons';
-import { EffectType, WaveformEffectConfig, AudioSource } from '../core/types';
+import { EffectType, AudioSource } from '../core/types';
 import { WaveformEffect } from '../features/waveform/WaveformEffect';
 import './ExportButton.css';
 
@@ -48,10 +48,6 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
   const handleExport = async () => {
     if (!manager || !audioBuffer) return;
 
-    // WaveformEffectの元設定を保存
-    let originalWaveformConfig: WaveformEffectConfig | null = null;
-    let waveformEffect: WaveformEffect | undefined;
-
     try {
       setIsExporting(true);
       setIsCanceled(false);
@@ -59,41 +55,6 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
 
       // リアルタイム描画を停止
       manager.stopRenderLoop();
-
-      // WaveformEffectを取得し、オフライン解析データを設定
-      const effects = manager.getEffects();
-      waveformEffect = effects.find(
-        effect => effect.getConfig().type === EffectType.Waveform
-      ) as WaveformEffect | undefined;
-
-      if (waveformEffect) {
-        // 元の設定を保存
-        originalWaveformConfig = { ...waveformEffect.getConfig() } as WaveformEffectConfig;
-
-        // オフライン用に一時的に設定を変更
-        waveformEffect.updateConfig({
-          ...originalWaveformConfig,
-          options: {
-            ...originalWaveformConfig.options,
-            analysisMode: 'offline',
-            // プレビューと同じセグメント数を使用して位置ずれを防ぐ
-            segmentCount: originalWaveformConfig.options.segmentCount || 1024
-          }
-        } as WaveformEffectConfig);
-
-        // 既存の解析データがあればそれを使用、なければ新規解析
-        if (audioSource) {
-          waveformEffect.setAudioSource(audioSource);
-        } else {
-          // 新規解析が必要な場合
-          const analyzer = new AudioAnalyzer(videoSettings.frameRate);
-          const wavBuffer = await createWavFromAudioBuffer(audioBuffer);
-          const newAudioSource = await analyzer.processAudio(
-            new File([wavBuffer], 'temp.wav', { type: 'audio/wav' })
-          );
-          waveformEffect.setAudioSource(newAudioSource);
-        }
-      }
 
       // エンコーダを初期化
       const encoder = new VideoEncoderService({
@@ -103,8 +64,25 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       });
       await encoder.initialize();
 
-      // フレーム数を計算（正確なフレーム数を算出）
+      // フレーム数を計算
       const totalFrames = Math.ceil(audioBuffer.duration * videoSettings.frameRate);
+
+      // WaveformEffectの設定を一時的に変更
+      const effects = manager.getEffects();
+      const waveformEffect = effects.find(
+        effect => effect.getConfig().type === EffectType.Waveform
+      ) as WaveformEffect | undefined;
+
+      if (waveformEffect) {
+        // オフライン解析が必要な場合
+        if (!audioSource) {
+          const analyzer = AudioAnalyzerService.getInstance();
+          const newAudioSource = await analyzer.analyzeAudio(audioBuffer);
+          waveformEffect.updateConfig({ audioSource: newAudioSource });
+        } else {
+          waveformEffect.updateConfig({ audioSource });
+        }
+      }
 
       // フレームごとの処理
       for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
@@ -112,7 +90,6 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
           throw new Error('エクスポートがキャンセルされました');
         }
 
-        // 現在の時間を計算（秒単位）
         const currentTime = frameIndex / videoSettings.frameRate;
 
         // オフラインモードでの描画
@@ -129,7 +106,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         const canvas = manager.getCanvas();
         await encoder.encodeVideoFrame(canvas, frameIndex);
 
-        // 音声データのエンコード（同じフレームインデックスを使用）
+        // 音声データのエンコード
         await encoder.encodeAudioBuffer(audioBuffer, frameIndex);
 
         // 進捗更新
@@ -138,7 +115,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         onProgress?.(progress);
       }
 
-      // 完了処理
+      // エンコード完了処理
       const result = await encoder.finalize();
       encoder.dispose();
 
@@ -154,11 +131,6 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
     } catch (error) {
       onError(error instanceof Error ? error : new Error('エクスポートに失敗しました'));
     } finally {
-      // WaveformEffectを元の設定に戻す
-      if (originalWaveformConfig && waveformEffect) {
-        waveformEffect.updateConfig(originalWaveformConfig);
-      }
-
       // 必ずプレビュー用のレンダリングループを再開
       manager.startRenderLoop();
 
@@ -216,55 +188,4 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       )}
     </Flex>
   );
-};
-
-// AudioBufferからWAVファイルを作成する関数
-const createWavFromAudioBuffer = async (audioBuffer: AudioBuffer): Promise<ArrayBuffer> => {
-  // WAVヘッダーの作成
-  const numOfChan = audioBuffer.numberOfChannels;
-  const length = audioBuffer.length * numOfChan * 2; // 16-bit samples
-  const buffer = new ArrayBuffer(44 + length);
-  const view = new DataView(buffer);
-
-  // WAVヘッダーを書き込む
-  const writeString = (offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  };
-
-  writeString(0, 'RIFF');                                // RIFFヘッダー
-  view.setUint32(4, 36 + length, true);                 // ファイルサイズ
-  writeString(8, 'WAVE');                               // WAVEヘッダー
-  writeString(12, 'fmt ');                              // fmtチャンク
-  view.setUint32(16, 16, true);                         // fmtチャンクサイズ
-  view.setUint16(20, 1, true);                          // フォーマットID (1: PCM)
-  view.setUint16(22, numOfChan, true);                  // チャンネル数
-  view.setUint32(24, audioBuffer.sampleRate, true);     // サンプリングレート
-  view.setUint32(28, audioBuffer.sampleRate * 2 * numOfChan, true); // バイトレート
-  view.setUint16(32, numOfChan * 2, true);              // ブロックサイズ
-  view.setUint16(34, 16, true);                         // ビット深度
-  writeString(36, 'data');                              // dataチャンク
-  view.setUint32(40, length, true);                     // データサイズ
-
-  // オーディオデータの書き込み
-  const offset = 44;
-  const samples = new Float32Array(audioBuffer.length * numOfChan);
-  let sampleIndex = 0;
-
-  // インターリーブ形式でサンプルを結合
-  for (let i = 0; i < audioBuffer.length; i++) {
-    for (let channel = 0; channel < numOfChan; channel++) {
-      const channelData = audioBuffer.getChannelData(channel);
-      samples[sampleIndex++] = channelData[i];
-    }
-  }
-
-  // Float32からInt16に変換して書き込み
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-  }
-
-  return buffer;
 };
