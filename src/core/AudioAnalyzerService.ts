@@ -61,27 +61,78 @@ export class AudioAnalyzerService {
             // 解析結果を適切なサイズに変換
             const waveformData = e.data.data.waveformData?.map((channel: Float32Array) => {
               // 60fps想定で1秒あたりのサンプル数を計算
-              const samplesPerSecond = Math.floor(audioBuffer.sampleRate / 60);
               const totalSamples = Math.floor(audioBuffer.duration * 60); // 60fps
               
+              console.log('[DEBUG] リサンプリングパラメータ:', {
+                originalLength: channel.length,
+                totalSamples,
+                sampleRate: audioBuffer.sampleRate,
+                duration: audioBuffer.duration,
+                samplesPerFrame: channel.length / totalSamples
+              });
+
               const resampledData = new Float32Array(totalSamples);
+              
+              // 元データの範囲を確認
+              const originalStats = {
+                min: Math.min(...channel),
+                max: Math.max(...channel),
+                hasNonZero: channel.some(v => Math.abs(v) > 0.001),
+                first10: Array.from(channel.slice(0, 10)),
+                last10: Array.from(channel.slice(-10))
+              };
+              
+              console.log('[DEBUG] 元波形データ:', originalStats);
+
+              // 線形補間を使用してリサンプリング
               for (let i = 0; i < totalSamples; i++) {
-                const originalIndex = Math.floor(i * samplesPerSecond / 60);
-                resampledData[i] = channel[originalIndex] || 0;
+                const position = (i / totalSamples) * channel.length;
+                const index1 = Math.floor(position);
+                const index2 = Math.min(index1 + 1, channel.length - 1);
+                const fraction = position - index1;
+
+                // 線形補間
+                const value1 = channel[index1] || 0;
+                const value2 = channel[index2] || 0;
+                resampledData[i] = value1 + (value2 - value1) * fraction;
               }
+
+              // リサンプリング後のデータを確認
+              const resampledStats = {
+                length: resampledData.length,
+                min: Math.min(...resampledData),
+                max: Math.max(...resampledData),
+                hasNonZero: resampledData.some(v => Math.abs(v) > 0.001),
+                first10: Array.from(resampledData.slice(0, 10)),
+                last10: Array.from(resampledData.slice(-10))
+              };
+              
+              console.log('[DEBUG] リサンプリング後の波形データ:', resampledStats);
+              
               return resampledData;
             });
 
             const frequencyData = e.data.data.frequencyData?.map((channel: Float32Array) => {
-              // 周波数データも同様に60fpsに合わせる
-              const samplesPerSecond = Math.floor(audioBuffer.sampleRate / 60);
-              const totalSamples = Math.floor(audioBuffer.duration * 60);
+              const totalSamples = Math.floor(audioBuffer.duration * 60); // 60fps
               
               const resampledData = new Uint8Array(totalSamples);
+              
+              // 線形補間を使用してリサンプリング
               for (let i = 0; i < totalSamples; i++) {
-                const originalIndex = Math.floor(i * samplesPerSecond / 60);
-                resampledData[i] = Math.min(255, Math.floor(channel[originalIndex] * 255)) || 0;
+                const position = (i / totalSamples) * channel.length;
+                const index1 = Math.floor(position);
+                const index2 = Math.min(index1 + 1, channel.length - 1);
+                const fraction = position - index1;
+
+                // 線形補間
+                const value1 = channel[index1] || 0;
+                const value2 = channel[index2] || 0;
+                const interpolatedValue = value1 + (value2 - value1) * fraction;
+                
+                // 0-255の範囲に正規化
+                resampledData[i] = Math.min(255, Math.floor(interpolatedValue * 255));
               }
+              
               return resampledData;
             });
 

@@ -87,6 +87,18 @@ export class AudioPlaybackService {
       );
     }
 
+    console.log('[DEBUG] 再生開始:', {
+      duration: this.audioBuffer.duration,
+      sampleRate: this.audioBuffer.sampleRate,
+      numberOfChannels: this.audioBuffer.numberOfChannels,
+      hasAudioSource: !!this.audioSource,
+      hasWaveformData: this.audioSource?.waveformData?.length,
+      hasFrequencyData: this.audioSource?.frequencyData?.length,
+      currentTime: this.getCurrentTime(),
+      volume: this.volume,
+      loop: this.loop
+    });
+
     this.initAudioSource();
     
     if (this.audioSource) {
@@ -227,7 +239,18 @@ export class AudioPlaybackService {
     if (!this.audioContext || !this.audioSource) return;
     
     if (this.isPlaying) {
+      const prevTime = this.currentTime;
       this.currentTime = this.audioContext.currentTime - this.startTime;
+      
+      // デバッグ情報: 再生状態の更新
+      console.log('[DEBUG] 再生状態更新:', {
+        currentTime: this.currentTime,
+        timeDelta: this.currentTime - prevTime,
+        isPlaying: this.isPlaying,
+        hasAudioSource: !!this.audioSource,
+        hasWaveformData: this.audioSource?.waveformData?.length,
+        hasFrequencyData: this.audioSource?.frequencyData?.length
+      });
       
       // ループが無効で終端に達した場合は停止
       if (!this.loop && this.currentTime >= this.getDuration()) {

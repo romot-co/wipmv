@@ -260,7 +260,6 @@ export class EffectManager {
       const elapsed = now - this.lastRenderTime;
 
       if (elapsed >= this.FRAME_INTERVAL) {
-        // パラメータの更新
         if (this.audioService) {
           const playbackState = this.audioService.getPlaybackState();
           const audioSource = this.audioService.getAudioSource();
@@ -272,69 +271,116 @@ export class EffectManager {
             playbackState.isPlaying;
 
           if (shouldUpdate && audioSource) {
-            console.log('オーディオ更新チェック:', {
-              currentTime: playbackState.currentTime,
-              isPlaying: playbackState.isPlaying,
-              hasAudioSource: !!audioSource,
-              sourceInfo: {
-                duration: audioSource.duration,
-                sampleRate: audioSource.sampleRate,
-                hasWaveformData: !!audioSource.waveformData,
-                waveformChannels: audioSource.waveformData?.length,
-                waveformLength: audioSource.waveformData?.[0]?.length,
-                hasFrequencyData: !!audioSource.frequencyData,
-                frequencyChannels: audioSource.frequencyData?.length,
-                frequencyLength: audioSource.frequencyData?.[0]?.length
-              }
-            });
-
-            // 波形データと周波数データの取得
-            const totalFrames = Math.floor(audioSource.duration * 60); // 全フレーム数
-            const currentFrameIndex = Math.floor((playbackState.currentTime / audioSource.duration) * totalFrames);
-            
-            // 表示用のウィンドウサイズ（フレーム数）
-            const windowSizeInFrames = 12; // 0.2秒分 = 12フレーム
-            
+            // 波形データと周波数データの取得を最適化
             let waveformData: Float32Array[] | null = null;
             let frequencyData: Uint8Array[] | null = null;
 
-            if (audioSource.waveformData?.[0] && currentFrameIndex < audioSource.waveformData[0].length) {
-              waveformData = audioSource.waveformData.map(channel => {
-                const startIndex = Math.max(0, currentFrameIndex);
-                const endIndex = Math.min(channel.length, startIndex + windowSizeInFrames);
-                return channel.slice(startIndex, endIndex);
-              });
+            // 波形データの取り出し
+            if (audioSource.waveformData?.length > 0 && audioSource.waveformData[0]?.length > 0) {
+              const totalFrames = audioSource.waveformData[0].length;
+              
+              // 再生位置の正規化（0.0 ~ 1.0）
+              const ratio = Math.max(0, Math.min(
+                playbackState.currentTime / playbackState.duration,
+                1.0
+              ));
 
-              console.log('波形データ取得:', {
+              // 現在のフレームインデックスを計算
+              const currentFrameIndex = Math.floor(ratio * (totalFrames - 1));
+              
+              // ウィンドウサイズを動的に計算
+              // 1秒あたり60フレームで、前後0.5秒分を表示
+              const SECONDS_TO_SHOW = 0.5;
+              const samplesPerSecond = 60; // 60fps
+              const windowSize = Math.floor(SECONDS_TO_SHOW * samplesPerSecond * 2);
+              
+              // スライス範囲を計算（現在位置を中心に）
+              const halfWindow = Math.floor(windowSize / 2);
+              const startIndex = Math.max(0, currentFrameIndex - halfWindow);
+              const endIndex = Math.min(
+                startIndex + windowSize,
+                totalFrames
+              );
+
+              // デバッグ情報: スライス範囲と再生位置
+              console.log('[DEBUG] 波形スライス情報:', {
                 currentTime: playbackState.currentTime,
-                duration: audioSource.duration,
+                duration: playbackState.duration,
+                ratio,
                 totalFrames,
                 currentFrameIndex,
-                windowSizeInFrames,
-                startIndex: Math.max(0, currentFrameIndex),
-                endIndex: Math.min(audioSource.waveformData[0].length, currentFrameIndex + windowSizeInFrames),
-                dataLength: waveformData[0].length,
-                firstValue: waveformData[0][0],
-                lastValue: waveformData[0][waveformData[0].length - 1],
-                progress: (playbackState.currentTime / audioSource.duration) * 100
+                startIndex,
+                endIndex,
+                windowSize,
+                progress: `${(ratio * 100).toFixed(1)}%`,
+                secondsToShow: SECONDS_TO_SHOW
               });
-            } else {
-              console.warn('波形データ取得失敗:', {
-                hasWaveformData: !!audioSource.waveformData,
-                currentFrameIndex,
-                maxLength: audioSource.waveformData?.[0]?.length,
-                currentTime: playbackState.currentTime,
-                duration: audioSource.duration,
-                progress: (playbackState.currentTime / audioSource.duration) * 100
-              });
-            }
 
-            if (audioSource.frequencyData?.[0] && currentFrameIndex < audioSource.frequencyData[0].length) {
-              frequencyData = audioSource.frequencyData.map(channel => {
-                const startIndex = Math.max(0, currentFrameIndex);
-                const endIndex = Math.min(channel.length, startIndex + windowSizeInFrames);
-                return channel.slice(startIndex, endIndex);
+              // 波形データを取得
+              waveformData = audioSource.waveformData.map((channel, channelIndex) => {
+                // 範囲チェック
+                if (startIndex >= channel.length) {
+                  console.warn(`[WARN] スライス範囲が配列長を超過 (ch=${channelIndex}):`, {
+                    startIndex,
+                    channelLength: channel.length
+                  });
+                  return new Float32Array(0);
+                }
+
+                const slicedData = channel.slice(startIndex, endIndex);
+                
+                // デバッグ情報: スライスしたデータの内容
+                const stats = {
+                  length: slicedData.length,
+                  min: Math.min(...slicedData),
+                  max: Math.max(...slicedData),
+                  first5: Array.from(slicedData.slice(0, 5)),
+                  last5: Array.from(slicedData.slice(-5)),
+                  hasNonZero: slicedData.some(v => Math.abs(v) > 0.001),
+                  windowCenter: currentFrameIndex - startIndex // ウィンドウ内での現在位置
+                };
+                
+                console.log(`[DEBUG] 波形データ (ch=${channelIndex}):`, stats);
+                
+                return slicedData;
               });
+
+              // 周波数データも同様に処理
+              if (audioSource.frequencyData?.length > 0 && audioSource.frequencyData[0]?.length > 0) {
+                const freqTotalFrames = audioSource.frequencyData[0].length;
+                const freqIndex = Math.floor(ratio * (freqTotalFrames - 1));
+                
+                frequencyData = audioSource.frequencyData.map((channel, channelIndex) => {
+                  const freqStartIndex = Math.max(0, freqIndex - halfWindow);
+                  const freqEndIndex = Math.min(
+                    freqStartIndex + windowSize,
+                    channel.length
+                  );
+                  
+                  // 範囲チェック
+                  if (freqStartIndex >= channel.length) {
+                    console.warn(`[WARN] 周波数データ範囲超過 (ch=${channelIndex}):`, {
+                      startIndex: freqStartIndex,
+                      channelLength: channel.length
+                    });
+                    return new Uint8Array(0);
+                  }
+
+                  const slicedFreq = channel.slice(freqStartIndex, freqEndIndex);
+                  
+                  // デバッグ情報: 周波数データの内容
+                  console.log(`[DEBUG] 周波数データ (ch=${channelIndex}):`, {
+                    length: slicedFreq.length,
+                    min: Math.min(...slicedFreq),
+                    max: Math.max(...slicedFreq),
+                    first5: Array.from(slicedFreq.slice(0, 5)),
+                    hasNonZero: slicedFreq.some(v => v > 0),
+                    windowCenter: freqIndex - freqStartIndex
+                  });
+                  
+                  return slicedFreq;
+                });
+              }
             }
 
             this.currentParams = {
@@ -345,24 +391,12 @@ export class EffectManager {
               frequencyData
             };
 
-            console.log('パラメータ更新:', {
-              currentTime: this.currentParams.currentTime,
-              duration: audioSource.duration,
-              progress: (this.currentParams.currentTime / audioSource.duration) * 100,
-              isPlaying: this.currentParams.isPlaying,
-              hasWaveformData: !!this.currentParams.waveformData,
-              waveformLength: this.currentParams.waveformData?.[0]?.length,
-              hasFrequencyData: !!this.currentParams.frequencyData,
-              frequencyLength: this.currentParams.frequencyData?.[0]?.length
-            });
-
             // 状態を保存
             this.lastPlaybackState = {
               currentTime: playbackState.currentTime,
               isPlaying: playbackState.isPlaying
             };
 
-            // 強制的に1回描画を実行
             this.render();
           }
           

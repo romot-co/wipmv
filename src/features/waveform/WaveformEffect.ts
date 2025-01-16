@@ -2,8 +2,6 @@ import { EffectBase } from '../../core/EffectBase';
 import {
   WaveformEffectConfig,
   AudioVisualParameters,
-  AppError,
-  ErrorType,
   EffectType,
   Position2D,
   Size2D
@@ -128,103 +126,62 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     if (!this.isVisible(params.currentTime)) return;
 
     const config = this.getConfig();
-    const { width, height } = ctx.canvas;
+    const canvasWidth = ctx.canvas.width;
+    const canvasHeight = ctx.canvas.height;
 
-    // サイズが未設定の場合はキャンバスサイズを使用
-    const size: Size2D = {
-      width: config.size?.width ?? width,
-      height: config.size?.height ?? height / 3
+    // サイズを計算（相対値から実際のピクセル値に変換）
+    const effectiveWidth = Math.floor(canvasWidth * (config.size?.width ?? 0.8));
+    const effectiveHeight = Math.floor(canvasHeight * (config.size?.height ?? 0.3));
+
+    // 位置を計算（中央配置）
+    const effectiveX = Math.floor((canvasWidth - effectiveWidth) / 2);
+    const effectiveY = Math.floor((canvasHeight - effectiveHeight) / 2);
+
+    // 波形データの取得と前処理
+    const visualData = this.processVisualData(
+      params.waveformData?.[0] ?? new Float32Array(),
+      params.frequencyData?.[0] ?? new Uint8Array()
+    );
+
+    if (!visualData) return;
+
+    // アニメーション更新
+    const deltaTime = (params.currentTime - this.lastRenderTime) || 0;
+    this.updateAnimation(deltaTime);
+    this.lastRenderTime = params.currentTime;
+
+    // 描画オプションの設定
+    const drawOptions: DrawOptions = {
+      position: { x: effectiveX, y: effectiveY },
+      size: { width: effectiveWidth, height: effectiveHeight },
+      data: visualData.waveform,
+      color: config.color ?? '#ffffff',
+      opacity: config.opacity ?? 1,
+      barWidth: config.barWidth ?? 2,
+      barSpacing: config.barSpacing ?? 1,
+      mirror: config.mirror ?? false,
+      sensitivity: config.sensitivity ?? 1.0,
+      previousData: this.previousData ?? undefined,
+      interpolationFactor: 0.5,
+      animation: config.animation
     };
 
-    // 描画データの取得
-    const { waveformData, frequencyData } = params;
-    console.log('波形データ受信:', {
-      hasWaveformData: !!waveformData,
-      hasFrequencyData: !!frequencyData,
-      waveformType: waveformData?.[0]?.constructor.name,
-      frequencyType: frequencyData?.[0]?.constructor.name,
-      waveformLength: waveformData?.[0]?.length,
-      frequencyLength: frequencyData?.[0]?.length
-    });
-
-    if (!waveformData?.[0] || !(waveformData[0] instanceof Float32Array)) {
-      console.warn('波形データが存在しないか、不正な型です');
-      return;
+    // 波形タイプに応じた描画
+    switch (config.waveformType) {
+      case 'line':
+        this.drawLineWaveform(ctx, drawOptions);
+        break;
+      case 'circle':
+        this.drawCircleWaveform(ctx, drawOptions);
+        break;
+      case 'bar':
+      default:
+        this.drawBarWaveform(ctx, drawOptions);
+        break;
     }
 
-    // 型チェックと安全な変換
-    const waveformArray = waveformData[0];
-    const frequencyArray = frequencyData?.[0] instanceof Uint8Array 
-      ? frequencyData[0] 
-      : new Uint8Array(1024).fill(0);
-
-    const visualData = this.processVisualData(waveformArray, frequencyArray);
-    if (!visualData) {
-      console.warn('波形データの処理に失敗しました');
-      return;
-    }
-
-    console.log('描画準備:', {
-      canvasSize: { width, height },
-      effectSize: size,
-      waveformRange: [Math.min(...visualData.waveform), Math.max(...visualData.waveform)],
-      config: {
-        position: config.position,
-        opacity: config.opacity,
-        waveformType: config.waveformType
-      }
-    });
-
-    ctx.save();
-    try {
-      // 共通の描画設定
-      ctx.globalAlpha = config.opacity ?? 1;
-      ctx.globalCompositeOperation = config.blendMode ?? 'source-over';
-
-      // アニメーションの更新
-      const currentTime = performance.now();
-      const deltaTime = (currentTime - this.lastRenderTime) / 1000;
-      this.lastRenderTime = currentTime;
-      this.updateAnimation(deltaTime);
-
-      // 波形の描画
-      const drawOptions: DrawOptions = {
-        position: config.position ?? { x: 0, y: 0 },
-        size,
-        data: visualData.waveform,
-        color: config.color ?? '#ffffff',
-        opacity: config.opacity ?? 1,
-        barWidth: config.barWidth ?? 2,
-        barSpacing: config.barSpacing ?? 1,
-        mirror: config.mirror ?? false,
-        sensitivity: config.sensitivity ?? 1.0,
-        previousData: this.previousData ?? undefined,
-        interpolationFactor: config.smoothingFactor ?? 0.5,
-        animation: config.animation
-      };
-
-      switch (config.waveformType) {
-        case 'line':
-          this.drawLineWaveform(ctx, drawOptions);
-          break;
-        case 'circle':
-          this.drawCircleWaveform(ctx, drawOptions);
-          break;
-        case 'bar':
-        default:
-          this.drawBarWaveform(ctx, drawOptions);
-          break;
-      }
-    } catch (error) {
-      console.error('波形描画エラー:', error);
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        'Failed to render waveform effect',
-        error instanceof Error ? error : new Error(String(error))
-      );
-    } finally {
-      ctx.restore();
-    }
+    // 前回のデータを保存
+    this.previousData = visualData.waveform;
   }
 
   private getColorForFrequency(frequency: number): string {
@@ -248,59 +205,81 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
   ): { waveform: Float32Array; frequency: Float32Array } | null {
     try {
       const config = this.getConfig();
-      const sensitivity = config.sensitivity ?? 1.0;
+      const sensitivity = config.sensitivity ?? 2.0;
 
-      // 波形データの正規化とリサンプリング
-      const targetSamples = Math.min(waveformData.length, 256); // 表示用のサンプル数（最大256）
+      // デバッグ情報: 入力データの状態
+      console.log('[DEBUG] processVisualData 入力:', {
+        waveformLength: waveformData.length,
+        frequencyLength: frequencyData.length,
+        waveformRange: [Math.min(...waveformData), Math.max(...waveformData)],
+        frequencyRange: [Math.min(...frequencyData), Math.max(...frequencyData)],
+        sensitivity
+      });
+
+      // 波形データの最適化処理
+      const targetSamples = Math.min(waveformData.length, 256);
       const normalizedWaveform = new Float32Array(targetSamples);
       const samplesPerBin = Math.max(1, Math.floor(waveformData.length / targetSamples));
 
       // RMSベースの振幅計算
       for (let i = 0; i < targetSamples; i++) {
         let sumSquares = 0;
-        let count = 0;
         const startIdx = i * samplesPerBin;
         const endIdx = Math.min(startIdx + samplesPerBin, waveformData.length);
+        let count = 0;
 
         for (let j = startIdx; j < endIdx; j++) {
-          sumSquares += waveformData[j] * waveformData[j];
+          const amp = waveformData[j];
+          sumSquares += amp * amp;
           count++;
         }
 
-        // RMS（二乗平均平方根）を計算
-        normalizedWaveform[i] = Math.sqrt(sumSquares / (count || 1)) * sensitivity;
+        // RMS値を計算し、感度で調整
+        normalizedWaveform[i] = Math.sqrt(sumSquares / count) * sensitivity;
       }
 
-      // 周波数データの正規化とリサンプリング
+      // 周波数データの最適化
       const normalizedFrequency = new Float32Array(targetSamples);
-      const freqSamplesPerBin = Math.max(1, Math.floor(frequencyData.length / targetSamples));
 
+      // 対数スケールでの周波数マッピング
       for (let i = 0; i < targetSamples; i++) {
+        const logIndex = Math.floor(Math.exp(Math.log(1 + frequencyData.length) * i / targetSamples)) - 1;
         let sum = 0;
         let count = 0;
-        const startIdx = i * freqSamplesPerBin;
-        const endIdx = Math.min(startIdx + freqSamplesPerBin, frequencyData.length);
 
-        for (let j = startIdx; j < endIdx; j++) {
-          sum += frequencyData[j];
-          count++;
+        // 周辺の周波数も考慮（スムージング効果）
+        const binStart = Math.max(0, logIndex - 1);
+        const binEnd = Math.min(frequencyData.length, logIndex + 2);
+
+        for (let j = binStart; j < binEnd; j++) {
+          const weight = 1 - Math.abs(j - logIndex) * 0.5;
+          sum += (frequencyData[j] / 255) * weight;
+          count += weight;
         }
 
-        normalizedFrequency[i] = (count > 0 ? (sum / count) / 255 : 0) * sensitivity;
+        normalizedFrequency[i] = (sum / count) * sensitivity;
       }
 
-      // スムージングの適用
-      if (this.previousData && config.smoothingFactor && config.smoothingFactor > 0) {
-        const smoothingFactor = config.smoothingFactor;
+      // スムージング処理
+      if (this.previousData && this.previousData.length === normalizedWaveform.length) {
+        const smoothingFactor = Math.min(config.smoothingFactor ?? 0.3, 0.3);
+        const momentum = 1 - smoothingFactor;
+
         for (let i = 0; i < normalizedWaveform.length; i++) {
-          normalizedWaveform[i] = 
-            this.previousData[i] * (1 - smoothingFactor) +
-            normalizedWaveform[i] * smoothingFactor;
+          // 現在値と前回値の指数移動平均
+          const currentValue = normalizedWaveform[i];
+          const previousValue = this.previousData[i];
+          
+          // 急激な変化を抑制
+          const maxChange = 0.2;
+          const targetValue = previousValue + Math.max(
+            Math.min(currentValue - previousValue, maxChange),
+            -maxChange
+          );
+          
+          normalizedWaveform[i] = previousValue * momentum + targetValue * smoothingFactor;
         }
       }
-
-      // 前回のデータを保存
-      this.previousData = normalizedWaveform.slice();
 
       return {
         waveform: normalizedWaveform,
@@ -317,8 +296,12 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     const config = this.getConfig();
     if (!config.animation) return;
 
-    this.animationPhase += config.animation.intensity * deltaTime;
-    if (this.animationPhase > Math.PI * 2) {
+    // フレームレートに依存しない一定の更新速度を確保
+    const normalizedDeltaTime = Math.min(deltaTime, 1/30);
+    this.animationPhase += config.animation.intensity * normalizedDeltaTime;
+    
+    // 位相をリセット
+    while (this.animationPhase > Math.PI * 2) {
       this.animationPhase -= Math.PI * 2;
     }
   }
@@ -327,56 +310,66 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
     options: DrawOptions
   ): void {
-    const { position, size, data, barWidth, barSpacing, mirror } = options;
-    const config = this.getConfig();
+    const { position, size, data, color, opacity, barWidth, barSpacing, mirror, sensitivity } = options;
+    const { width, height } = size;
 
-    // バーの数を計算（データ点の数に基づく）
-    const numBars = Math.min(data.length, Math.floor(size.width / (barWidth + barSpacing)));
-    const samplesPerBar = Math.ceil(data.length / numBars);
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = color;
 
-    // パスを使用してバッチ描画
-    ctx.beginPath();
-    ctx.fillStyle = options.color;
+    // データポイントの数を計算
+    const numPoints = Math.min(data.length, Math.floor(width / (barWidth + barSpacing)));
+    const samplesPerPoint = Math.ceil(data.length / numPoints);
 
-    for (let i = 0; i < numBars; i++) {
+    // 描画開始位置を調整（中央揃え）
+    const startX = position.x;
+    const centerY = position.y + height / 2;
+
+    // 各バーのデータを計算して描画
+    for (let i = 0; i < numPoints; i++) {
       // データの平均値を計算
       let sum = 0;
       let count = 0;
-      const startIdx = i * samplesPerBar;
-      const endIdx = Math.min(startIdx + samplesPerBar, data.length);
+      const startIdx = i * samplesPerPoint;
+      const endIdx = Math.min(startIdx + samplesPerPoint, data.length);
 
       for (let j = startIdx; j < endIdx; j++) {
-        sum += data[j];
+        sum += Math.abs(data[j]);
         count++;
       }
 
-      const value = count > 0 ? sum / count : 0;
+      const amplitude = (count > 0 ? sum / count : 0) * sensitivity;
+      const barHeight = Math.min(height * 0.9, amplitude * height); // 最大高さを90%に制限
 
-      // バーの高さを計算（対数スケールを適用）
-      const normalizedValue = Math.min(Math.max(value, 0), 1);
-      let barHeight = normalizedValue * size.height;
+      const x = startX + i * (barWidth + barSpacing);
 
-      // アニメーション効果の適用
-      if (config.animation) {
-        const animationFactor = 1 + Math.sin(this.animationPhase + i * 0.1) * 0.3;
-        barHeight *= animationFactor;
-      }
-
-      // バーの位置を計算
-      const x = position.x + i * (barWidth + barSpacing);
-      const y = position.y + (mirror ? size.height / 2 : size.height) - barHeight;
-
-      // バーを描画
-      ctx.rect(x, y, barWidth, barHeight);
-
-      // ミラーモードの場合は下側にも描画
       if (mirror) {
-        const mirrorY = position.y + size.height / 2;
-        ctx.rect(x, mirrorY, barWidth, barHeight);
+        // 上下対称に描画
+        const halfBarHeight = barHeight / 2;
+        ctx.fillRect(
+          x,
+          centerY - halfBarHeight,
+          barWidth,
+          halfBarHeight
+        );
+        ctx.fillRect(
+          x,
+          centerY,
+          barWidth,
+          halfBarHeight
+        );
+      } else {
+        // 下から上に描画
+        ctx.fillRect(
+          x,
+          position.y + height - barHeight,
+          barWidth,
+          barHeight
+        );
       }
     }
 
-    ctx.fill();
+    ctx.restore();
   }
 
   /**
@@ -387,50 +380,58 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     options: DrawOptions
   ): void {
     const { position, size, data, color, mirror, sensitivity } = options;
-    const step = Math.ceil(data.length / size.width);
-
+    
+    // 描画の準備
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     ctx.beginPath();
 
-    for (let i = 0; i < size.width; i++) {
-      // データのサンプリング
-      let value = 0;
-      for (let j = 0; j < step; j++) {
-        const index = i * step + j;
-        if (index < data.length) {
-          value = Math.max(value, Math.abs(data[index]));
-        }
-      }
+    // データポイント間の間隔を計算
+    const pointSpacing = size.width / (data.length - 1);
+    
+    // 中央線の位置を計算（ミラーモードの場合は上部から開始）
+    const centerY = position.y + (mirror ? 0 : size.height / 2);
 
-      // 感度調整
-      value = Math.min(value * sensitivity, 1);
+    // 最初のポイントを設定
+    const initialValue = Math.abs(data[0]) * sensitivity;
+    const scaledInitialValue = initialValue * (size.height / 2);
+    ctx.moveTo(position.x, centerY + (mirror ? scaledInitialValue : -scaledInitialValue));
 
-      const x = position.x + i;
-      if (i === 0) {
-        ctx.moveTo(x, position.y + (mirror ? 0 : size.height * (1 - value)));
+    // 波形を描画
+    for (let i = 0; i < data.length; i++) {
+      const x = position.x + (i * pointSpacing);
+      const value = Math.abs(data[i]) * sensitivity;
+      const scaledValue = value * (size.height / 2);
+      
+      if (mirror) {
+        // ミラーモード: 上部から下に向かって描画
+        ctx.lineTo(x, centerY + scaledValue);
       } else {
-        ctx.lineTo(x, position.y + (mirror ? size.height * value / 2 : size.height * (1 - value)));
+        // 通常モード: 中央線を基準に上下に描画
+        ctx.lineTo(x, centerY - scaledValue);
       }
     }
 
+    // ミラーモードの場合、反転した波形を描画
     if (mirror) {
-      // 反転した波形を描画
-      for (let i = size.width - 1; i >= 0; i--) {
-        let value = 0;
-        for (let j = 0; j < step; j++) {
-          const index = i * step + j;
-          if (index < data.length) {
-            value = Math.max(value, Math.abs(data[index]));
-          }
-        }
-        value = Math.min(value * sensitivity, 1);
-        const x = position.x + i;
-        ctx.lineTo(x, position.y + size.height * (1 - value / 2));
+      for (let i = data.length - 1; i >= 0; i--) {
+        const x = position.x + (i * pointSpacing);
+        const value = Math.abs(data[i]) * sensitivity;
+        const scaledValue = value * (size.height / 2);
+        ctx.lineTo(x, centerY - scaledValue);
       }
+      ctx.closePath();
     }
 
     ctx.stroke();
+    
+    // ミラーモードの場合は塗りつぶしも追加
+    if (mirror) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.2;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
   }
 
   /**

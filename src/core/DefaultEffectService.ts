@@ -28,14 +28,15 @@ export function createDefaultWaveformEffect(): WaveformEffectConfig {
     waveformType: 'bar',
     color: '#ffffff',
     position: { x: 0, y: 0 },
-    size: { width: 800, height: 200 },
-    barWidth: 4,
-    barSpacing: 2,
-    sensitivity: 1.0,
+    size: { width: 0.95, height: 0.2 },
+    barWidth: 3,
+    barSpacing: 1,
+    sensitivity: 2.0,
     smoothingFactor: 0.5,
     opacity: 1,
     blendMode: 'source-over',
-    zIndex: 0
+    zIndex: 0,
+    mirror: true
   };
 }
 

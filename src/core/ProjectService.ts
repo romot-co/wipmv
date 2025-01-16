@@ -89,8 +89,8 @@ export class ProjectService {
       updatedAt: now,
       version: '1.0.0',
       videoSettings: {
-        width: 1920,
-        height: 1080,
+        width: 960,
+        height: 540,
         fps: 30,
         bitrate: 5000000
       },

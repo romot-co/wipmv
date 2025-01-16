@@ -91,6 +91,11 @@ export const App: React.FC = () => {
 
     // 既存のエフェクトがあれば再設定
     effects.forEach(effect => {
+      console.log('既存エフェクトの再設定:', {
+        id: effect.getConfig().id,
+        type: effect.getConfig().type
+      });
+      
       if (hasSetAudioSource(effect)) {
         const currentAudioSource = audioService.getAudioSource();
         if (currentAudioSource) {
@@ -101,6 +106,17 @@ export const App: React.FC = () => {
     });
 
     setManager(newManager);
+    
+    // 現在のエフェクト一覧を更新
+    const currentEffects = newManager.getEffects();
+    console.log('初期化後のエフェクト一覧:', {
+      count: currentEffects.length,
+      effects: currentEffects.map(e => ({
+        id: e.getConfig().id,
+        type: e.getConfig().type
+      }))
+    });
+    setEffects(currentEffects);
   }, [audioService, manager, effects]);
 
   // オーディオ制御フック (UI操作用)
@@ -113,14 +129,25 @@ export const App: React.FC = () => {
 
   // エフェクト追加
   const handleEffectAdd = useCallback(async (type: EffectType) => {
-    if (!manager) return;
+    if (!manager) {
+      console.warn('EffectManagerが初期化されていません');
+      return;
+    }
+
     try {
       const currentEffects = manager.getEffects();
       const zIndex = currentEffects.length;
       let effect: EffectBase;
       const currentDuration = audioService.getAudioSource()?.duration || 0;
-      console.log('エフェクト追加:', { type, currentDuration });
+      console.log('エフェクト追加開始:', { 
+        type, 
+        currentDuration,
+        currentEffectCount: currentEffects.length,
+        managerExists: !!manager,
+        audioSourceExists: !!audioService.getAudioSource()
+      });
 
+      // エフェクトの作成
       switch (type) {
         case EffectType.Background:
           effect = new BackgroundEffect({
@@ -154,33 +181,71 @@ export const App: React.FC = () => {
             endTime: currentDuration
           });
           break;
+        default:
+          throw new Error(`不正なエフェクトタイプ: ${type}`);
       }
+
+      console.log('エフェクト作成完了:', {
+        id: effect.getConfig().id,
+        type: effect.getConfig().type,
+        zIndex: effect.getConfig().zIndex
+      });
 
       // エフェクト追加時に事前解析データを設定
       const currentAudioSource = audioService.getAudioSource();
       if (currentAudioSource && hasSetAudioSource(effect)) {
         console.log('エフェクトに音声ソースを設定:', {
           effectType: type,
-          hasWaveformData: !!currentAudioSource.waveformData
+          hasWaveformData: !!currentAudioSource.waveformData,
+          waveformDataLength: currentAudioSource.waveformData?.[0]?.length
         });
         effect.setAudioSource(currentAudioSource);
+      } else {
+        console.log('音声ソース設定をスキップ:', {
+          hasAudioSource: !!currentAudioSource,
+          effectSupportsAudio: hasSetAudioSource(effect)
+        });
       }
 
+      // エフェクトをマネージャーに追加
       manager.addEffect(effect);
+      
+      // エフェクト一覧を更新
       const updatedEffects = manager.getEffects();
-      console.log('エフェクト更新:', {
+      console.log('エフェクト更新完了:', {
         type,
         effectCount: updatedEffects.length,
         effects: updatedEffects.map(e => ({
           id: e.getConfig().id,
-          type: e.getConfig().type
+          type: e.getConfig().type,
+          zIndex: e.getConfig().zIndex
         }))
       });
-      setEffects(updatedEffects);
-      // 新しく追加したエフェクトを選択
+
+      // 状態を更新
+      setEffects(prevEffects => {
+        const newEffects = [...prevEffects, effect];
+        console.log('エフェクト状態更新:', {
+          prevCount: prevEffects.length,
+          newCount: newEffects.length,
+          addedEffect: {
+            id: effect.getConfig().id,
+            type: effect.getConfig().type
+          }
+        });
+        return newEffects;
+      });
+      
       setSelectedEffectId(effect.getConfig().id);
       clearError('effect');
+
+      // レンダリングを強制的に更新
+      requestAnimationFrame(() => {
+        manager.render();
+      });
+
     } catch (error) {
+      console.error('エフェクト追加エラー:', error);
       handleError('effect', error instanceof Error ? error : new Error('エフェクトの追加に失敗しました'));
     }
   }, [manager, handleError, audioService, clearError]);
