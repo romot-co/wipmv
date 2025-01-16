@@ -1,5 +1,6 @@
 import React from 'react';
 import { BackgroundEffectConfig } from '../../../core/types';
+import '../../EffectSettings.css';
 
 interface BackgroundSettingsProps {
   config: BackgroundEffectConfig;
@@ -10,91 +11,32 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
   config,
   onChange
 }) => {
-  const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newType = e.target.value as BackgroundEffectConfig['backgroundType'];
-    const newConfig: Partial<BackgroundEffectConfig> = {
-      backgroundType: newType
-    };
-
-    // 新しいタイプに応じてデフォルト値を設定
-    switch (newType) {
-      case 'color':
-        newConfig.color = '#000000';
-        break;
-      case 'image':
-        newConfig.imageUrl = '';
-        break;
-      case 'gradient':
-        newConfig.gradientColors = ['#000000', '#ffffff'];
-        newConfig.gradientDirection = 'horizontal';
-        break;
-    }
-
-    onChange(newConfig);
-  };
-
-  const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange({ color: e.target.value });
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      // FileをData URLに変換
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        onChange({ imageUrl: dataUrl });
-      };
-      reader.readAsDataURL(file);
-    } catch (error) {
-      console.error('Failed to load image:', error);
-    }
-  };
-
-  const handleGradientChange = (
-    index: number,
-    color: string
-  ) => {
-    if (!config.gradientColors) return;
-    const newColors = [...config.gradientColors];
-    newColors[index] = color;
-    onChange({
-      gradientColors: newColors
-    });
-  };
-
-  const handleGradientDirectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onChange({
-      gradientDirection: e.target.value as 'horizontal' | 'vertical' | 'radial'
-    });
-  };
-
   return (
-    <div className="background-settings">
+    <div className="effect-settings">
       <div className="setting-group">
-        <label>背景タイプ</label>
-        <select value={config.backgroundType} onChange={handleTypeChange}>
-          <option value="color">単色</option>
-          <option value="image">画像</option>
+        <label>背景種類</label>
+        <select
+          value={config.backgroundType}
+          onChange={(e) => onChange({ backgroundType: e.target.value as BackgroundEffectConfig['backgroundType'] })}
+        >
+          <option value="solid">単色</option>
           <option value="gradient">グラデーション</option>
+          <option value="image">画像</option>
         </select>
       </div>
 
-      {config.backgroundType === 'color' && (
+      {config.backgroundType === 'solid' && (
         <div className="setting-group">
           <label>背景色</label>
           <div className="color-picker">
             <input
               type="color"
-              value={config.color || '#000000'}
-              onChange={handleColorChange}
+              value={config.color}
+              onChange={(e) => onChange({ color: e.target.value })}
             />
             <input
               type="text"
-              value={config.color || '#000000'}
+              value={config.color}
               onChange={(e) => onChange({ color: e.target.value })}
               pattern="^#[0-9A-Fa-f]{6}$"
             />
@@ -102,62 +44,63 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
         </div>
       )}
 
-      {config.backgroundType === 'image' && (
-        <div className="setting-group">
-          <label>画像</label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            className="file-input"
-          />
-          {config.imageUrl && (
-            <div className="image-preview">
-              <img src={config.imageUrl} alt="背景プレビュー" />
-            </div>
-          )}
-        </div>
-      )}
-
-      {config.backgroundType === 'gradient' && config.gradientColors && (
+      {config.backgroundType === 'gradient' && (
         <>
           <div className="setting-group">
             <label>グラデーション開始色</label>
             <div className="color-picker">
               <input
                 type="color"
-                value={config.gradientColors[0]}
-                onChange={(e) => handleGradientChange(0, e.target.value)}
+                value={config.gradientColors?.[0]}
+                onChange={(e) => {
+                  const colors = [...(config.gradientColors || ['#000000', '#ffffff'])];
+                  colors[0] = e.target.value;
+                  onChange({ gradientColors: colors as [string, string] });
+                }}
               />
               <input
                 type="text"
-                value={config.gradientColors[0]}
-                onChange={(e) => handleGradientChange(0, e.target.value)}
+                value={config.gradientColors?.[0]}
+                onChange={(e) => {
+                  const colors = [...(config.gradientColors || ['#000000', '#ffffff'])];
+                  colors[0] = e.target.value;
+                  onChange({ gradientColors: colors as [string, string] });
+                }}
                 pattern="^#[0-9A-Fa-f]{6}$"
               />
             </div>
           </div>
+
           <div className="setting-group">
             <label>グラデーション終了色</label>
             <div className="color-picker">
               <input
                 type="color"
-                value={config.gradientColors[1]}
-                onChange={(e) => handleGradientChange(1, e.target.value)}
+                value={config.gradientColors?.[1]}
+                onChange={(e) => {
+                  const colors = [...(config.gradientColors || ['#000000', '#ffffff'])];
+                  colors[1] = e.target.value;
+                  onChange({ gradientColors: colors as [string, string] });
+                }}
               />
               <input
                 type="text"
-                value={config.gradientColors[1]}
-                onChange={(e) => handleGradientChange(1, e.target.value)}
+                value={config.gradientColors?.[1]}
+                onChange={(e) => {
+                  const colors = [...(config.gradientColors || ['#000000', '#ffffff'])];
+                  colors[1] = e.target.value;
+                  onChange({ gradientColors: colors as [string, string] });
+                }}
                 pattern="^#[0-9A-Fa-f]{6}$"
               />
             </div>
           </div>
+
           <div className="setting-group">
             <label>グラデーション方向</label>
             <select
               value={config.gradientDirection}
-              onChange={handleGradientDirectionChange}
+              onChange={(e) => onChange({ gradientDirection: e.target.value as 'horizontal' | 'vertical' | 'radial' })}
             >
               <option value="horizontal">水平</option>
               <option value="vertical">垂直</option>
@@ -167,17 +110,76 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
         </>
       )}
 
+      {config.backgroundType === 'image' && (
+        <>
+          <div className="setting-group">
+            <label>画像URL</label>
+            <input
+              type="text"
+              value={config.imageUrl}
+              onChange={(e) => onChange({ imageUrl: e.target.value })}
+            />
+          </div>
+
+          <div className="setting-group">
+            <label>画像サイズ</label>
+            <select
+              value={config.imageSize}
+              onChange={(e) => onChange({ imageSize: e.target.value as 'cover' | 'contain' | 'stretch' })}
+            >
+              <option value="cover">カバー</option>
+              <option value="contain">コンテイン</option>
+              <option value="stretch">ストレッチ</option>
+            </select>
+          </div>
+
+          <div className="setting-group">
+            <label>画像位置</label>
+            <div className="position-inputs">
+              <div>
+                <label>X座標</label>
+                <input
+                  type="number"
+                  value={config.imagePosition?.x ?? 0}
+                  onChange={(e) => onChange({
+                    imagePosition: {
+                      x: Number(e.target.value),
+                      y: config.imagePosition?.y ?? 0
+                    }
+                  })}
+                />
+              </div>
+              <div>
+                <label>Y座標</label>
+                <input
+                  type="number"
+                  value={config.imagePosition?.y ?? 0}
+                  onChange={(e) => onChange({
+                    imagePosition: {
+                      x: config.imagePosition?.x ?? 0,
+                      y: Number(e.target.value)
+                    }
+                  })}
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="setting-group">
         <label>不透明度</label>
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.1"
-          value={config.opacity ?? 1}
-          onChange={(e) => onChange({ opacity: Number(e.target.value) })}
-        />
-        <span>{config.opacity ?? 1}</span>
+        <div className="range-input">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={config.opacity ?? 1}
+            onChange={(e) => onChange({ opacity: Number(e.target.value) })}
+          />
+          <span>{config.opacity ?? 1}</span>
+        </div>
       </div>
 
       <div className="setting-group">
@@ -196,87 +198,4 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
       </div>
     </div>
   );
-};
-
-// スタイルの追加
-const style = document.createElement('style');
-style.textContent = `
-.background-settings {
-  padding: 1rem;
-}
-
-.setting-group {
-  margin-bottom: 1rem;
-}
-
-.setting-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-}
-
-.setting-group select,
-.setting-group input[type="text"] {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.color-picker {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.color-picker input[type="color"] {
-  width: 50px;
-  height: 40px;
-  padding: 0;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.color-picker input[type="text"] {
-  flex: 1;
-}
-
-.file-input {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #fff;
-}
-
-.image-preview {
-  margin-top: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.image-preview img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-}
-
-.range-input {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.range-input input[type="range"] {
-  flex: 1;
-}
-
-.range-input span {
-  min-width: 3em;
-  text-align: right;
-  font-size: 0.9rem;
-  color: #666;
-}
-`;
-document.head.appendChild(style); 
+}; 

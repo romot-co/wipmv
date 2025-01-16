@@ -170,44 +170,39 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
     const imageAspect = this.image.width / this.image.height;
     const canvasAspect = width / height;
 
-    const sw = this.image.width;
-    const sh = this.image.height;
-    const sx = 0;
-    const sy = 0;
-    let dx = 0;
-    let dy = 0;
-    let dw = width;
-    let dh = height;
+    let dw: number;
+    let dh: number;
 
     if (fitMode === 'cover') {
-      // キャンバスを完全に覆うように画像を拡大/縮小
+      // キャンバス全体を覆うように画像を描画
       if (canvasAspect > imageAspect) {
         // キャンバスの方が横長の場合、幅に合わせる
         dw = width;
         dh = width / imageAspect;
-        dy = (height - dh) / 2;
       } else {
         // キャンバスの方が縦長の場合、高さに合わせる
         dh = height;
         dw = height * imageAspect;
-        dx = (width - dw) / 2;
       }
-    } else if (fitMode === 'contain') {
+    } else {
       // アスペクト比を保持しながら、キャンバス内に収める
       if (canvasAspect > imageAspect) {
         // キャンバスの方が横長の場合、高さに合わせる
         dh = height;
         dw = height * imageAspect;
-        dx = (width - dw) / 2;
       } else {
         // キャンバスの方が縦長の場合、幅に合わせる
         dw = width;
         dh = width / imageAspect;
-        dy = (height - dh) / 2;
       }
     }
 
-    ctx.drawImage(this.image, sx, sy, sw, sh, dx, dy, dw, dh);
+    // 中央に配置
+    const dx = (width - dw) / 2;
+    const dy = (height - dh) / 2;
+
+    // 画像を描画
+    ctx.drawImage(this.image, 0, 0, this.image.width, this.image.height, dx, dy, dw, dh);
   }
 
   /**

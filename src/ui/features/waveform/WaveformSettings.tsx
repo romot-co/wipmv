@@ -1,5 +1,6 @@
 import React from 'react';
-import { WaveformEffectConfig } from '../../../core/types';
+import { WaveformEffectConfig, EffectType } from '../../../core/types';
+import '../../EffectSettings.css';
 
 interface WaveformSettingsProps {
   config: WaveformEffectConfig;
@@ -11,21 +12,64 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
   onChange
 }) => {
   return (
-    <div className="waveform-settings">
+    <div className="effect-settings">
       <div className="setting-group">
-        <label>波形タイプ</label>
+        <label>波形種別</label>
         <select
           value={config.waveformType}
           onChange={(e) => onChange({ waveformType: e.target.value as WaveformEffectConfig['waveformType'] })}
         >
-          <option value="line">ライン</option>
           <option value="bar">バー</option>
+          <option value="line">ライン</option>
           <option value="circle">サークル</option>
         </select>
       </div>
 
       <div className="setting-group">
-        <label>色</label>
+        <label>バーの幅</label>
+        <div className="range-input">
+          <input
+            type="range"
+            min="1"
+            max="50"
+            value={config.barWidth}
+            onChange={(e) => onChange({ barWidth: Number(e.target.value) })}
+          />
+          <span>{config.barWidth}px</span>
+        </div>
+      </div>
+
+      <div className="setting-group">
+        <label>バーの間隔</label>
+        <div className="range-input">
+          <input
+            type="range"
+            min="0"
+            max="20"
+            value={config.barGap}
+            onChange={(e) => onChange({ barGap: Number(e.target.value) })}
+          />
+          <span>{config.barGap}px</span>
+        </div>
+      </div>
+
+      <div className="setting-group">
+        <label>感度</label>
+        <div className="range-input">
+          <input
+            type="range"
+            min="0.1"
+            max="5"
+            step="0.1"
+            value={config.sensitivity}
+            onChange={(e) => onChange({ sensitivity: Number(e.target.value) })}
+          />
+          <span>{config.sensitivity}</span>
+        </div>
+      </div>
+
+      <div className="setting-group">
+        <label>波形の色</label>
         <div className="color-picker">
           <input
             type="color"
@@ -38,53 +82,6 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
             onChange={(e) => onChange({ color: e.target.value })}
             pattern="^#[0-9A-Fa-f]{6}$"
           />
-        </div>
-      </div>
-
-      {config.waveformType === 'bar' && (
-        <>
-          <div className="setting-group">
-            <label>バーの幅</label>
-            <div className="range-input">
-              <input
-                type="range"
-                min="1"
-                max="20"
-                value={config.barWidth ?? 2}
-                onChange={(e) => onChange({ barWidth: Number(e.target.value) })}
-              />
-              <span>{config.barWidth ?? 2}px</span>
-            </div>
-          </div>
-
-          <div className="setting-group">
-            <label>バーの間隔</label>
-            <div className="range-input">
-              <input
-                type="range"
-                min="0"
-                max="10"
-                value={config.barSpacing ?? 1}
-                onChange={(e) => onChange({ barSpacing: Number(e.target.value) })}
-              />
-              <span>{config.barSpacing ?? 1}px</span>
-            </div>
-          </div>
-        </>
-      )}
-
-      <div className="setting-group">
-        <label>感度</label>
-        <div className="range-input">
-          <input
-            type="range"
-            min="0"
-            max="2"
-            step="0.1"
-            value={config.sensitivity ?? 1}
-            onChange={(e) => onChange({ sensitivity: Number(e.target.value) })}
-          />
-          <span>{config.sensitivity ?? 1}</span>
         </div>
       </div>
 
@@ -105,20 +102,24 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
 
       <div className="setting-group">
         <label>ミラーモード</label>
-        <input
-          type="checkbox"
-          checked={config.mirror ?? false}
-          onChange={(e) => onChange({ mirror: e.target.checked })}
-        />
+        <div className="checkbox-group">
+          <input
+            type="checkbox"
+            checked={config.mirror ?? false}
+            onChange={(e) => onChange({ mirror: e.target.checked })}
+          />
+        </div>
       </div>
 
       <div className="setting-group">
         <label>カラーバンド</label>
-        <input
-          type="checkbox"
-          checked={config.useColorBands ?? false}
-          onChange={(e) => onChange({ useColorBands: e.target.checked })}
-        />
+        <div className="checkbox-group">
+          <input
+            type="checkbox"
+            checked={config.useColorBands ?? false}
+            onChange={(e) => onChange({ useColorBands: e.target.checked })}
+          />
+        </div>
       </div>
 
       <div className="setting-group">
@@ -152,74 +153,4 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
       </div>
     </div>
   );
-};
-
-// スタイルの追加
-const style = document.createElement('style');
-style.textContent = `
-.waveform-settings {
-  padding: 1rem;
-}
-
-.setting-group {
-  margin-bottom: 1rem;
-}
-
-.setting-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-}
-
-.setting-group select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.color-picker {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.color-picker input[type="color"] {
-  width: 50px;
-  height: 40px;
-  padding: 0;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.color-picker input[type="text"] {
-  flex: 1;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.range-input {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.range-input input[type="range"] {
-  flex: 1;
-}
-
-.range-input span {
-  min-width: 3em;
-  text-align: right;
-  font-size: 0.9rem;
-  color: #666;
-}
-
-input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  margin: 0;
-}
-`;
-document.head.appendChild(style); 
+}; 

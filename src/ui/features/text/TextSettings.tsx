@@ -1,5 +1,6 @@
 import React from 'react';
 import { TextEffectConfig } from '../../../core/types';
+import '../../EffectSettings.css';
 
 interface TextSettingsProps {
   config: TextEffectConfig;
@@ -11,14 +12,13 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
   onChange
 }) => {
   return (
-    <div className="text-settings">
+    <div className="effect-settings">
       <div className="setting-group">
         <label>テキスト</label>
         <textarea
           value={config.text}
           onChange={(e) => onChange({ text: e.target.value })}
           rows={3}
-          className="text-input"
         />
       </div>
 
@@ -33,6 +33,11 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
           <option value="Times New Roman">Times New Roman</option>
           <option value="Courier New">Courier New</option>
           <option value="Georgia">Georgia</option>
+          <option value="Meiryo">メイリオ</option>
+          <option value="MS Gothic">ＭＳ ゴシック</option>
+          <option value="MS Mincho">ＭＳ 明朝</option>
+          <option value="Yu Gothic">游ゴシック</option>
+          <option value="Yu Mincho">游明朝</option>
         </select>
       </div>
 
@@ -48,6 +53,23 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
           />
           <span>{config.fontSize}px</span>
         </div>
+      </div>
+
+      <div className="setting-group">
+        <label>フォントの太さ</label>
+        <select
+          value={config.fontWeight}
+          onChange={(e) => onChange({ fontWeight: e.target.value })}
+        >
+          <option value="normal">通常</option>
+          <option value="bold">太字</option>
+          <option value="100">Thin (100)</option>
+          <option value="300">Light (300)</option>
+          <option value="400">Regular (400)</option>
+          <option value="500">Medium (500)</option>
+          <option value="700">Bold (700)</option>
+          <option value="900">Black (900)</option>
+        </select>
       </div>
 
       <div className="setting-group">
@@ -77,8 +99,8 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
               value={config.position.x}
               onChange={(e) => onChange({
                 position: {
-                  ...config.position,
-                  x: Number(e.target.value)
+                  x: Number(e.target.value),
+                  y: config.position.y
                 }
               })}
             />
@@ -90,13 +112,25 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
               value={config.position.y}
               onChange={(e) => onChange({
                 position: {
-                  ...config.position,
+                  x: config.position.x,
                   y: Number(e.target.value)
                 }
               })}
             />
           </div>
         </div>
+      </div>
+
+      <div className="setting-group">
+        <label>テキストの配置</label>
+        <select
+          value={config.alignment ?? 'left'}
+          onChange={(e) => onChange({ alignment: e.target.value as 'left' | 'center' | 'right' })}
+        >
+          <option value="left">左揃え</option>
+          <option value="center">中央揃え</option>
+          <option value="right">右揃え</option>
+        </select>
       </div>
 
       <div className="setting-group">
@@ -130,89 +164,4 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
       </div>
     </div>
   );
-};
-
-// スタイルの追加
-const style = document.createElement('style');
-style.textContent = `
-.text-settings {
-  padding: 1rem;
-}
-
-.setting-group {
-  margin-bottom: 1rem;
-}
-
-.setting-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-}
-
-.text-input {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  resize: vertical;
-}
-
-.setting-group select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.color-picker {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.color-picker input[type="color"] {
-  width: 50px;
-  height: 40px;
-  padding: 0;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.color-picker input[type="text"] {
-  flex: 1;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.position-inputs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-
-.position-inputs input[type="number"] {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.range-input {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.range-input input[type="range"] {
-  flex: 1;
-}
-
-.range-input span {
-  min-width: 3em;
-  text-align: right;
-  font-size: 0.9rem;
-  color: #666;
-}
-`;
-document.head.appendChild(style); 
+}; 

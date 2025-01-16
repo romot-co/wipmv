@@ -137,8 +137,14 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     mirror: boolean,
     sensitivity: number
   ): void {
-    const barCount = Math.floor(width / (barWidth + barSpacing));
+    // バーの数を計算（全体幅から逆算）
+    const totalWidth = width;
+    const barCount = Math.floor(totalWidth / (barWidth + barSpacing));
     const samplesPerBar = Math.max(1, Math.floor(data.length / barCount));
+
+    // バー幅とスペースを調整して全体幅を埋める
+    const adjustedBarWidth = barWidth;
+    const adjustedSpacing = (totalWidth - (barCount * barWidth)) / (barCount - 1);
 
     for (let i = 0; i < barCount; i++) {
       let sum = 0;
@@ -152,13 +158,13 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
       const amplitude = (sum / samplesPerBar) * sensitivity;
       const barHeight = amplitude * height;
       
-      const x = i * (barWidth + barSpacing);
+      const x = i * (adjustedBarWidth + adjustedSpacing);
       if (mirror) {
         const y = (height - barHeight) / 2;
-        ctx.fillRect(x, y, barWidth, barHeight);
+        ctx.fillRect(x, y, adjustedBarWidth, barHeight);
       } else {
         const y = height - barHeight;
-        ctx.fillRect(x, y, barWidth, barHeight);
+        ctx.fillRect(x, y, adjustedBarWidth, barHeight);
       }
     }
   }
@@ -174,13 +180,12 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     mirror: boolean,
     sensitivity: number
   ): void {
-    const step = width / data.length;
+    const step = width / (data.length - 1); // 端点を含めるために -1
     const centerY = height / 2;
 
     ctx.beginPath();
     ctx.strokeStyle = this.config.color ?? '#ffffff';
     ctx.lineWidth = this.config.barWidth ?? 2;
-    ctx.moveTo(0, centerY);
 
     for (let i = 0; i < data.length; i++) {
       const x = i * step;
@@ -209,15 +214,15 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     height: number,
     sensitivity: number
   ): void {
-    ctx.strokeStyle = this.config.color ?? '#ffffff';
-    ctx.lineWidth = this.config.barWidth ?? 2;
-    
     const centerX = width / 2;
     const centerY = height / 2;
-    const radius = Math.min(width, height) / 2;
+    const radius = Math.min(width, height) / 2.5; // 余白を確保するために2.5で割る
     const step = (Math.PI * 2) / data.length;
 
     ctx.beginPath();
+    ctx.strokeStyle = this.config.color ?? '#ffffff';
+    ctx.lineWidth = this.config.barWidth ?? 2;
+
     for (let i = 0; i < data.length; i++) {
       const amplitude = 1 + (data[i] * sensitivity);
       const r = radius * amplitude;

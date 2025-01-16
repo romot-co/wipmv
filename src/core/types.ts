@@ -302,13 +302,13 @@ export interface ProjectMetadata {
  */
 export interface BackgroundEffectConfig extends BaseEffectConfig {
   type: EffectType.Background;
-  backgroundType: 'color' | 'image' | 'gradient';
+  backgroundType: 'solid' | 'gradient' | 'image';
   color?: string;
-  imageUrl?: string;
-  gradientColors?: string[];
+  gradientColors?: [string, string];
   gradientDirection?: 'horizontal' | 'vertical' | 'radial';
-  fitMode?: 'cover' | 'contain' | 'fill' | 'center';
-  animation?: BackgroundAnimation;
+  imageUrl?: string;
+  imageSize?: 'cover' | 'contain' | 'stretch';
+  imagePosition?: Position2D;
 }
 
 /**
@@ -319,11 +319,11 @@ export interface TextEffectConfig extends BaseEffectConfig {
   text: string;
   fontFamily: string;
   fontSize: number;
-  fontWeight: string;
+  fontWeight?: number | string;
   color: string;
-  align: CanvasTextAlign;
   position: Position2D;
-  animation?: TextAnimation;
+  alignment?: 'left' | 'center' | 'right';
+  animations?: TextAnimation[];
 }
 
 /**
@@ -339,17 +339,13 @@ export interface WaveformAnimation {
 export interface WaveformEffectConfig extends BaseEffectConfig {
   type: EffectType.Waveform;
   waveformType: 'bar' | 'line' | 'circle';
+  barWidth: number;
+  barGap: number;
+  sensitivity: number;
   color: string;
-  barWidth?: number;
-  barSpacing?: number;
-  mirror?: boolean;
-  position: Position2D;
-  size?: Size2D;
-  sensitivity?: number;
-  useColorBands?: boolean;
   smoothingFactor?: number;
-  animation?: WaveformAnimation;
-  audioSource?: AudioSource;
+  mirror?: boolean;
+  useColorBands?: boolean;
 }
 
 /**
@@ -365,11 +361,10 @@ export interface WatermarkEffectConfig extends BaseEffectConfig {
   type: EffectType.Watermark;
   imageUrl: string;
   position: Position2D;
-  size?: Size2D;
+  size: Size2D;
   rotation?: number;
-  tiled?: boolean;
-  tileSpacing?: number;
-  animation?: WatermarkAnimation;
+  repeat?: boolean;
+  opacity?: number;
 }
 
 export type BackgroundAnimation = FadeAnimation | ScaleAnimation | RotateAnimation | ColorAnimation;

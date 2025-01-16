@@ -286,13 +286,11 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
 
   return (
     <div className="effect-settings">
-      <Flex direction="column" gap="4">
-        <Heading as="h3" size="4">エフェクト設定</Heading>
-
+      <div className="effect-settings-content">
         {/* 時間設定 */}
-        <Card>
-          <Flex direction="column" gap="2">
-            <Heading as="h4" size="3">表示時間</Heading>
+        <Card size="1">
+          <Flex direction="column" gap="1">
+            <Heading as="h4" size="2">表示時間</Heading>
             <EffectTimeSettings
               startTime={config.startTime ?? 0}
               endTime={config.endTime ?? duration}
@@ -303,43 +301,41 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
         </Card>
 
         {/* エフェクト固有の設定 */}
-        <Card>
-          <Flex direction="column" gap="2">
-            <Heading as="h4" size="3">エフェクト設定</Heading>
+        <Card size="1">
+          <Flex direction="column" gap="1">
+            <Heading as="h4" size="2">エフェクト設定</Heading>
             <div className="effect-specific-settings">
               {renderEffectSpecificSettings()}
             </div>
           </Flex>
         </Card>
 
-        {/* 表示/非表示切り替え */}
-        <Card>
-          <Flex align="center" justify="between" gap="2">
-            <Text as="label" size="2">表示</Text>
-            <Switch
-              checked={config.visible}
-              onCheckedChange={(checked) => handleConfigChange({ visible: checked })}
-            />
-          </Flex>
-        </Card>
-
-        {/* zIndex設定 */}
-        <Card>
+        {/* 表示/非表示切り替えとzIndex設定 */}
+        <Card size="1">
           <Flex direction="column" gap="2">
-            <Text as="label" size="2" htmlFor="zIndex">レイヤー順序</Text>
-            <input
-              id="zIndex"
-              type="number"
-              value={config.zIndex}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
-                handleConfigChange({ zIndex: parseInt(e.target.value, 10) })
-              }
-              min={0}
-              className="rt-TextFieldInput"
-            />
+            <Flex align="center" justify="between" gap="2">
+              <Text as="label" size="1">表示</Text>
+              <Switch
+                checked={config.visible}
+                onCheckedChange={(checked) => handleConfigChange({ visible: checked })}
+              />
+            </Flex>
+            <Flex direction="column" gap="1">
+              <Text as="label" size="1" htmlFor="zIndex">レイヤー順序</Text>
+              <input
+                id="zIndex"
+                type="number"
+                value={config.zIndex}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                  handleConfigChange({ zIndex: parseInt(e.target.value, 10) })
+                }
+                min={0}
+                className="rt-TextFieldInput rt-r-size-1"
+              />
+            </Flex>
           </Flex>
         </Card>
-      </Flex>
+      </div>
     </div>
   );
 }; 
