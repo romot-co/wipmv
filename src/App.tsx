@@ -197,63 +197,59 @@ export const App: React.FC = () => {
   // オーディオファイルのロード処理
   const handleAudioLoad = useCallback(async (file: File) => {
     try {
-      // 1. 事前解析の実行
-      console.log('オーディオ解析を開始...');
+      console.log('オーディオロード＆解析を開始...');
+
+      // AudioPlaybackService でファイルを読み込み＆decode
+      await audioService.loadAudio(file);
+
+      // decode済みのAudioSourceを取得(まだAnalyzerは走っていない状態)
+      const loadedSource = audioService.getAudioSource();
+      if (!loadedSource?.buffer) {
+        throw new Error('AudioBufferが正しくロードされませんでした。');
+      }
+
+      // オフライン解析する場合は、AudioAnalyzerServiceにAudioBufferを渡す
       const analyzer = AudioAnalyzerService.getInstance();
-      const audioContext = new AudioContext();
-      const arrayBuffer = await file.arrayBuffer();
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      audioContext.close(); // デコード後にクローズ
-      
-      const analysisResult = await analyzer.analyzeAudio(audioBuffer);
+      const analysisResult = await analyzer.analyzeAudio(loadedSource);
+
+      // WaveformEffectなどに使う解析データをstateに保持
       setAudioSource(analysisResult);
 
-      // AudioPlaybackServiceに音声ソースを設定
+      // AudioPlaybackServiceにも解析済みsourceを再設定する場合はここで呼ぶ
+      // （必要なければスキップしてもよい）
       await audioService.setAudioSource(analysisResult);
 
-      // 2. エラークリアと状態遷移
+      // エラークリア＆状態遷移
       clearError('audio');
       transition('ready');
 
-      // 3. 新規プロジェクトの作成
-      try {
-        const projectService = ProjectService.getInstance();
-        const projectData = await projectService.createProject('New Project');
-        
-        if (manager) {
-          // 設定復元
-          const newSettings = {
-            width: projectData.videoSettings.width,
-            height: projectData.videoSettings.height,
-            frameRate: projectData.videoSettings.fps,
-            videoBitrate: projectData.videoSettings.bitrate,
-            audioBitrate: 128000 // デフォルト値
-          };
-          setVideoSettings(newSettings);
+      // 新規プロジェクト生成など既存処理
+      const projectService = ProjectService.getInstance();
+      const projectData = await projectService.createProject('New Project');
+      if (manager) {
+        // videoSettingsやエフェクトの初期化
+        const newSettings = {
+          width: projectData.videoSettings.width,
+          height: projectData.videoSettings.height,
+          frameRate: projectData.videoSettings.fps,
+          videoBitrate: projectData.videoSettings.bitrate,
+          audioBitrate: 128000
+        };
+        setVideoSettings(newSettings);
 
-          // 既存エフェクトをクリア
-          manager.getEffects().forEach(effect => {
-            manager.removeEffect(effect.getConfig().id);
-          });
-
-          // デフォルトエフェクトを作成
-          handleEffectAdd(EffectType.Background);
-          handleEffectAdd(EffectType.Waveform);
-
-          // エフェクトリスト更新
-          setEffects(manager.getEffects());
-        }
-      } catch (error) {
-        console.warn('Failed to create new project:', error);
-        // プロジェクト作成に失敗してもアプリケーションは継続可能
-        if (manager) {
-          handleEffectAdd(EffectType.Background);
-          handleEffectAdd(EffectType.Waveform);
-          setEffects(manager.getEffects());
-        }
+        // 画面にあったDefaultEffectの追加
+        manager.getEffects().forEach(effect => {
+          manager.removeEffect(effect.getConfig().id);
+        });
+        handleEffectAdd(EffectType.Background);
+        handleEffectAdd(EffectType.Waveform);
+        setEffects(manager.getEffects());
       }
     } catch (error) {
-      handleError('audio', error instanceof Error ? error : new Error('オーディオ読み込みに失敗しました'));
+      handleError(
+        'audio',
+        error instanceof Error ? error : new Error('オーディオ読み込みに失敗しました')
+      );
     }
   }, [audioService, manager, handleEffectAdd, handleError, clearError, transition, setVideoSettings]);
 
@@ -399,7 +395,6 @@ export const App: React.FC = () => {
                   {/* Export処理 */}
                   {audioService.getAudioSource() && (
                     <ExportButton
-                      audioBuffer={audioService.getAudioSource()!.buffer}
                       manager={manager}
                       onError={(error) => handleError('export', error)}
                       onProgress={handleExportProgress}

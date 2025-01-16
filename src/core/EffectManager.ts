@@ -7,18 +7,15 @@
  *   再生中かどうか・currentTime等を取得し、render()を呼ぶ
  */
 
-import { EffectBase } from './EffectBase';
 import { Renderer } from './Renderer';
-import { 
-  AudioVisualParameters, 
-  EffectConfig, 
-  Disposable, 
-  AudioSource,
-  AppError,
-  ErrorType
-} from './types';
+import { EffectBase } from './EffectBase';
 import { AudioPlaybackService } from './AudioPlaybackService';
-import { AudioAnalyzerService } from './AudioAnalyzerService';
+import { AudioVisualParameters, AudioSource, EffectConfig, AppError, ErrorType } from './types';
+
+// インターフェース定義
+interface Disposable {
+  dispose: () => void;
+}
 
 interface WithAudioSource {
   setAudioSource: (source: AudioSource) => void;
@@ -28,22 +25,26 @@ interface WithImageLoadCallback {
   setOnImageLoadCallback: (callback: () => void) => void;
 }
 
-export class EffectManager implements Disposable {
+/**
+ * エフェクトの描画と管理を担当するクラス
+ */
+export class EffectManager {
+  private readonly renderer: Renderer;
+  private readonly canvas: HTMLCanvasElement;
+  private readonly ctx: CanvasRenderingContext2D;
   private effects: Map<string, EffectBase> = new Map();
   private audioService: AudioPlaybackService | null = null;
-  private animationFrameId: number | null = null;
-  private canvas: HTMLCanvasElement;
-  private renderer: Renderer;
-  private ctx: CanvasRenderingContext2D;
   private isDisposed = false;
-
+  private animationFrameId: number | null = null;
+  private lastRenderTime = 0;
   private currentParams: AudioVisualParameters = {
     currentTime: 0,
     duration: 0,
-    isPlaying: false
+    isPlaying: false,
+    waveformData: null,
+    frequencyData: null
   };
 
-  private lastRenderTime = 0;
   private readonly FRAME_INTERVAL = 1000 / 60; // 60fps
 
   constructor(renderer: Renderer) {
@@ -238,14 +239,14 @@ export class EffectManager implements Disposable {
       if (elapsed >= this.FRAME_INTERVAL) {
         // オーディオパラメータの更新
         const playbackState = this.audioService.getPlaybackState();
-        const analyzer = AudioAnalyzerService.getInstance();
+        const audioSource = this.audioService.getAudioSource();
 
         this.currentParams = {
           currentTime: playbackState.currentTime,
           duration: playbackState.duration,
           isPlaying: playbackState.isPlaying,
-          waveformData: analyzer?.getWaveformData() ?? null,
-          frequencyData: analyzer?.getFrequencyData() ?? null
+          waveformData: audioSource?.waveformData?.[0] ?? null,
+          frequencyData: audioSource?.frequencyData?.[0] ? new Uint8Array(Array.from(audioSource.frequencyData[0], v => Math.min(255, Math.floor(Number(v) * 255)))) : null,
         };
 
         // 描画の実行

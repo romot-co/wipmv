@@ -30,7 +30,7 @@ self.onmessage = async (event: MessageEvent<AudioAnalyzerWorkerData>) => {
     // 周波数データの解析
     console.log('Worker: 周波数データの解析開始');
     const frequencyData = channelData.map(channel => {
-      return analyzeFrequency(channel, sampleRate);
+      return analyzeFrequency(channel);
     });
     console.log('Worker: 周波数データの解析完了', frequencyData.length);
 
@@ -142,7 +142,7 @@ function analyzeWaveform(channelData: Float32Array): Float32Array {
 }
 
 // 周波数データの解析
-function analyzeFrequency(channelData: Float32Array, sampleRate: number): Float32Array[] {
+function analyzeFrequency(channelData: Float32Array): Float32Array[] {
   const fftSize = 2048;
   const hopSize = fftSize / 4;
   const numFrames = Math.floor((channelData.length - fftSize) / hopSize) + 1;
