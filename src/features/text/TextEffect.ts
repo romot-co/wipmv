@@ -1,20 +1,5 @@
 import { EffectBase } from '../../core/EffectBase';
-import {
-  TextEffectConfig,
-  AudioVisualParameters,
-  AppError,
-  ErrorType,
-  EffectType,
-  TextAnimation,
-  Position2D,
-  Color
-} from '../../core/types';
-
-interface AnimationState {
-  startTime: number;
-  progress: number;
-  currentValue: number | Position2D | Color;
-}
+import { TextEffectConfig } from '../../core/types';
 
 /**
  * テキストエフェクト
@@ -23,213 +8,145 @@ interface AnimationState {
  * - アラインメント制御
  */
 export class TextEffect extends EffectBase<TextEffectConfig> {
-  private animationState: AnimationState | null = null;
+  private animationState: {
+    progress: number;
+    opacity: number;
+    scale: number;
+    position: { x: number; y: number };
+    rotation: number;
+    color: string;
+  } | null = null;
 
   constructor(config: TextEffectConfig) {
-    if (!config.text) {
-      throw new AppError(
-        ErrorType.EffectInitFailed,
-        'Text content is required for text effect'
-      );
-    }
-
     super({
       ...config,
-      type: EffectType.Text,
-      text: config.text,
+      text: config.text ?? 'テキストを入力',
       fontFamily: config.fontFamily ?? 'Arial',
-      fontSize: config.fontSize ?? 24,
-      fontWeight: config.fontWeight ?? 'normal',
+      fontSize: config.fontSize ?? 48,
+      fontWeight: config.fontWeight ?? 'bold',
       color: config.color ?? '#ffffff',
       align: config.align ?? 'center',
+      position: config.position ?? { x: 400, y: 300 },
       opacity: config.opacity ?? 1,
-      blendMode: config.blendMode ?? 'source-over',
-      position: config.position ?? { x: 0, y: 0 }
+      blendMode: config.blendMode ?? 'source-over'
     });
   }
 
-  protected override onConfigUpdate(oldConfig: TextEffectConfig, newConfig: TextEffectConfig): void {
-    // アニメーション設定が変更された場合は状態をリセット
-    if (newConfig.animation && 
-        (!oldConfig.animation || 
-         newConfig.animation.type !== oldConfig.animation.type ||
-         newConfig.animation.duration !== oldConfig.animation.duration)) {
+  /**
+   * 現在時刻に応じて内部状態を更新
+   */
+  update(currentTime: number): void {
+    if (!this.isActive(currentTime)) return;
+
+    const config = this.getConfig();
+    const animation = config.animation;
+    if (!animation) {
       this.animationState = null;
+      return;
+    }
+
+    // アニメーションの進行度を計算
+    const startTime = config.startTime ?? 0;
+    const duration = animation.duration;
+    const delay = animation.delay ?? 0;
+    let progress = (currentTime - startTime - delay) / duration;
+
+    // 進行度が範囲外の場合は更新しない
+    if (progress < 0 || progress > 1) {
+      this.animationState = null;
+      return;
+    }
+
+    // イージングの適用
+    progress = this.applyEasing(progress, animation.easing);
+
+    // アニメーション状態の更新
+    this.animationState = {
+      progress,
+      opacity: config.opacity ?? 1,
+      scale: 1,
+      position: { ...config.position },
+      rotation: 0,
+      color: config.color ?? '#ffffff'
+    };
+
+    // アニメーション種別ごとの処理
+    let from: number;
+    let to: number;
+    let fromColor: { r: number; g: number; b: number; a: number };
+    let toColor: { r: number; g: number; b: number; a: number };
+    let r: number;
+    let g: number;
+    let b: number;
+    let a: number;
+
+    switch (animation.type) {
+      case 'fade':
+        from = animation.from ?? 0;
+        to = animation.to ?? 1;
+        this.animationState.opacity = from + (to - from) * progress;
+        break;
+
+      case 'scale':
+        this.animationState.scale = animation.from + (animation.to - animation.from) * progress;
+        break;
+
+      case 'move':
+        this.animationState.position = {
+          x: animation.from.x + (animation.to.x - animation.from.x) * progress,
+          y: animation.from.y + (animation.to.y - animation.from.y) * progress
+        };
+        break;
+
+      case 'rotate':
+        this.animationState.rotation = (animation.from + (animation.to - animation.from) * progress) * Math.PI / 180;
+        break;
+
+      case 'color':
+        ({ from: fromColor, to: toColor } = animation);
+        r = Math.round(fromColor.r + (toColor.r - fromColor.r) * progress);
+        g = Math.round(fromColor.g + (toColor.g - fromColor.g) * progress);
+        b = Math.round(fromColor.b + (toColor.b - fromColor.b) * progress);
+        a = fromColor.a + (toColor.a - fromColor.a) * progress;
+        this.animationState.color = `rgba(${r},${g},${b},${a})`;
+        break;
     }
   }
 
-  public render(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    params: AudioVisualParameters
-  ): void {
-    if (!this.isVisible(params.currentTime)) return;
-
+  /**
+   * テキストを描画
+   */
+  render(ctx: CanvasRenderingContext2D): void {
     const config = this.getConfig();
-    if (!config.text) return; // テキストが空の場合は描画しない
+    if (!config.text) return;
 
     ctx.save();
     try {
       // 共通の描画設定
-      ctx.globalAlpha = config.opacity ?? 1;
+      ctx.globalAlpha = this.animationState?.opacity ?? config.opacity ?? 1;
       ctx.globalCompositeOperation = config.blendMode ?? 'source-over';
       ctx.textAlign = config.align ?? 'center';
       ctx.textBaseline = 'middle';
 
       // フォント設定
       ctx.font = `${config.fontWeight} ${config.fontSize}px ${config.fontFamily}`;
-      ctx.fillStyle = config.color;
+      ctx.fillStyle = this.animationState?.color ?? config.color ?? '#ffffff';
 
-      // アニメーションの適用
-      this.applyAnimation(ctx, config, params.currentTime);
+      // 描画位置の計算
+      const position = this.animationState?.position ?? config.position;
+      const scale = this.animationState?.scale ?? 1;
+      const rotation = this.animationState?.rotation ?? 0;
+
+      // 変形の適用
+      ctx.translate(position.x, position.y);
+      if (rotation !== 0) ctx.rotate(rotation);
+      if (scale !== 1) ctx.scale(scale, scale);
 
       // テキストの描画
-      ctx.fillText(config.text, config.position.x, config.position.y);
-
-    } catch (error) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        'Failed to render text effect',
-        error instanceof Error ? error : new Error(String(error))
-      );
+      ctx.fillText(config.text, 0, 0);
     } finally {
       ctx.restore();
     }
-  }
-
-  /**
-   * アニメーションの適用
-   */
-  private applyAnimation(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    config: TextEffectConfig,
-    currentTime: number
-  ): void {
-    if (!config.animation) return;
-
-    const animation = config.animation;
-    const startTime = config.startTime ?? 0;
-    const duration = animation.duration;
-    const delay = animation.delay ?? 0;
-
-    // アニメーションの進行度を計算
-    let progress = (currentTime - startTime - delay) / duration;
-    if (progress < 0 || progress > 1) return;
-
-    // イージング関数の適用
-    progress = this.applyEasing(progress, animation.easing);
-
-    try {
-      // アニメーション種別ごとの処理
-      switch (animation.type) {
-        case 'fade':
-          this.applyFadeAnimation(ctx, animation, progress);
-          break;
-        case 'scale':
-          this.applyScaleAnimation(ctx, animation, progress, config);
-          break;
-        case 'move':
-          this.applyMoveAnimation(ctx, animation, progress, config);
-          break;
-        case 'rotate':
-          this.applyRotateAnimation(ctx, animation, progress, config);
-          break;
-        case 'color':
-          this.applyColorAnimation(ctx, animation, progress);
-          break;
-        default:
-          throw new AppError(
-            ErrorType.EffectUpdateFailed,
-            `Unsupported animation type: ${(animation as TextAnimation).type}`
-          );
-      }
-    } catch (error) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        'Failed to apply animation',
-        error instanceof Error ? error : new Error(String(error))
-      );
-    }
-  }
-
-  /**
-   * フェードアニメーションの適用
-   */
-  private applyFadeAnimation(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    animation: TextAnimation,
-    progress: number
-  ): void {
-    if (animation.type !== 'fade') return;
-    const from = animation.from ?? 0;
-    const to = animation.to ?? 1;
-    const opacity = from + (to - from) * progress;
-    ctx.globalAlpha *= opacity;
-  }
-
-  /**
-   * スケールアニメーションの適用
-   */
-  private applyScaleAnimation(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    animation: TextAnimation,
-    progress: number,
-    config: TextEffectConfig
-  ): void {
-    if (animation.type !== 'scale') return;
-    const scale = animation.from + (animation.to - animation.from) * progress;
-    const { x, y } = config.position;
-    ctx.translate(x, y);
-    ctx.scale(scale, scale);
-    ctx.translate(-x, -y);
-  }
-
-  /**
-   * 移動アニメーションの適用
-   */
-  private applyMoveAnimation(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    animation: TextAnimation,
-    progress: number,
-    config: TextEffectConfig
-  ): void {
-    if (animation.type !== 'move') return;
-    const x = animation.from.x + (animation.to.x - animation.from.x) * progress;
-    const y = animation.from.y + (animation.to.y - animation.from.y) * progress;
-    ctx.translate(x - config.position.x, y - config.position.y);
-  }
-
-  /**
-   * 回転アニメーションの適用
-   */
-  private applyRotateAnimation(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    animation: TextAnimation,
-    progress: number,
-    config: TextEffectConfig
-  ): void {
-    if (animation.type !== 'rotate') return;
-    const angle = (animation.from + (animation.to - animation.from) * progress) * Math.PI / 180;
-    const { x, y } = config.position;
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.translate(-x, -y);
-  }
-
-  /**
-   * 色アニメーションの適用
-   */
-  private applyColorAnimation(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    animation: TextAnimation,
-    progress: number
-  ): void {
-    if (animation.type !== 'color') return;
-    const { from, to } = animation;
-    const r = Math.round(from.r + (to.r - from.r) * progress);
-    const g = Math.round(from.g + (to.g - from.g) * progress);
-    const b = Math.round(from.b + (to.b - from.b) * progress);
-    const a = from.a + (to.a - from.a) * progress;
-    ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
   }
 
   /**
@@ -250,7 +167,10 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
     }
   }
 
-  public override dispose(): void {
+  /**
+   * リソースの解放
+   */
+  override dispose(): void {
     this.animationState = null;
     super.dispose();
   }

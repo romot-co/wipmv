@@ -18,8 +18,8 @@ import { Card, Flex, Text, Heading, Switch } from '@radix-ui/themes';
 import './EffectSettings.css';
 
 interface EffectSettingsProps {
-  effect: EffectBase;
-  onUpdate: (config: Partial<BaseEffectConfig>) => void;
+  effect: EffectBase<EffectConfig>;
+  onUpdate: (config: Partial<EffectConfig>) => void;
   duration: number;
 }
 

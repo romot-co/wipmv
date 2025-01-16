@@ -1,26 +1,9 @@
 import { EffectBase } from '../../core/EffectBase';
-import {
-  BackgroundEffectConfig,
-  AudioVisualParameters,
-  AppError,
-  ErrorType,
-  EffectType,
-  Size2D,
-  BackgroundAnimation
-} from '../../core/types';
+import { BackgroundEffectConfig } from '../../core/types';
 
-interface DrawImageOptions {
-  image: HTMLImageElement;
-  fitMode: 'cover' | 'contain' | 'fill' | 'center';
-  canvasSize: Size2D;
-  opacity: number;
-}
-
-interface DrawGradientOptions {
-  colors: string[];
-  direction: 'horizontal' | 'vertical' | 'radial';
-  canvasSize: Size2D;
-  opacity: number;
+interface Size2D {
+  width: number;
+  height: number;
 }
 
 /**
@@ -32,68 +15,109 @@ interface DrawGradientOptions {
  */
 export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
   private image: HTMLImageElement | null = null;
-  private imageLoader: Promise<void> | null = null;
-  private onImageLoadCallback: (() => void) | null = null;
+  private animationState: {
+    progress: number;
+    opacity: number;
+    color: string;
+  } | null = null;
 
   constructor(config: BackgroundEffectConfig) {
     super({
       ...config,
-      type: EffectType.Background,
       backgroundType: config.backgroundType ?? 'color',
       color: config.color ?? '#000000',
       opacity: config.opacity ?? 1,
-      blendMode: config.blendMode ?? 'source-over',
-      fitMode: config.fitMode ?? 'cover'
+      blendMode: config.blendMode ?? 'source-over'
     });
 
-    // 画像の場合は読み込みを開始
-    if (config.backgroundType === 'image' && config.imageUrl) {
-      this.loadImage(config.imageUrl);
-    }
-  }
-
-  protected override onConfigUpdate(oldConfig: BackgroundEffectConfig, newConfig: BackgroundEffectConfig): void {
-    // 画像URLが変更された場合は再読み込み
-    if (
-      newConfig.backgroundType === 'image' &&
-      newConfig.imageUrl &&
-      newConfig.imageUrl !== oldConfig.imageUrl
-    ) {
-      this.loadImage(newConfig.imageUrl);
+    // 画像URLが指定されている場合は読み込みを開始
+    if (config.imageUrl) {
+      this.loadImage(config.imageUrl).catch(error => {
+        console.error('Failed to load background image:', error);
+      });
     }
   }
 
   /**
    * 画像の読み込み
    */
-  private loadImage(url: string): void {
-    // 既存の読み込みをキャンセル
-    if (this.onImageLoadCallback) {
-      this.onImageLoadCallback = null;
-    }
-
-    this.image = new Image();
-    this.imageLoader = new Promise((resolve, reject) => {
-      if (!this.image) return reject(new Error('Image is null'));
-
-      this.onImageLoadCallback = () => resolve();
-      this.image.onload = this.onImageLoadCallback;
-      this.image.onerror = () => {
-        reject(new AppError(
-          ErrorType.EffectInitFailed,
-          `Failed to load image: ${url}`
-        ));
-      };
-      this.image.src = url;
-    });
+  private async loadImage(url: string): Promise<void> {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    this.image = img;
   }
 
-  public render(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    params: AudioVisualParameters
-  ): void {
-    if (!this.isVisible(params.currentTime)) return;
+  /**
+   * 現在時刻に応じて内部状態を更新
+   */
+  update(currentTime: number): void {
+    if (!this.isActive(currentTime)) return;
 
+    const config = this.getConfig();
+    const animation = config.animation;
+    if (!animation) {
+      this.animationState = null;
+      return;
+    }
+
+    // アニメーションの進行度を計算
+    const startTime = config.startTime ?? 0;
+    const duration = animation.duration;
+    const delay = animation.delay ?? 0;
+    let progress = (currentTime - startTime - delay) / duration;
+
+    // 進行度が範囲外の場合は更新しない
+    if (progress < 0 || progress > 1) {
+      this.animationState = null;
+      return;
+    }
+
+    // イージングの適用
+    progress = this.applyEasing(progress, animation.easing);
+
+    // アニメーション状態の更新
+    this.animationState = {
+      progress,
+      opacity: config.opacity ?? 1,
+      color: config.color ?? '#000000'
+    };
+
+    // アニメーション種別ごとの処理
+    let fromColor: { r: number; g: number; b: number; a: number };
+    let toColor: { r: number; g: number; b: number; a: number };
+    let r: number;
+    let g: number;
+    let b: number;
+    let a: number;
+    let from: number;
+    let to: number;
+
+    switch (animation.type) {
+      case 'fade':
+        from = animation.from ?? 0;
+        to = animation.to ?? 1;
+        this.animationState.opacity = from + (to - from) * progress;
+        break;
+
+      case 'color':
+        if ('from' in animation && 'to' in animation) {
+          fromColor = animation.from;
+          toColor = animation.to;
+          r = Math.round(fromColor.r + (toColor.r - fromColor.r) * progress);
+          g = Math.round(fromColor.g + (toColor.g - fromColor.g) * progress);
+          b = Math.round(fromColor.b + (toColor.b - fromColor.b) * progress);
+          a = fromColor.a + (toColor.a - fromColor.a) * progress;
+          this.animationState.color = `rgba(${r},${g},${b},${a})`;
+        }
+        break;
+    }
+  }
+
+  /**
+   * 背景を描画
+   */
+  render(ctx: CanvasRenderingContext2D): void {
     const config = this.getConfig();
     const { width, height } = ctx.canvas;
     const canvasSize: Size2D = { width, height };
@@ -101,201 +125,118 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
     ctx.save();
     try {
       // 共通の描画設定
-      ctx.globalAlpha = config.opacity ?? 1;
+      ctx.globalAlpha = this.animationState?.opacity ?? config.opacity ?? 1;
       ctx.globalCompositeOperation = config.blendMode ?? 'source-over';
-
-      // アニメーションの適用
-      if (config.animation) {
-        this.applyAnimation(ctx, config.animation, params.currentTime, canvasSize);
-      }
 
       // 背景タイプに応じた描画
       switch (config.backgroundType) {
         case 'image':
           if (this.image && config.imageUrl) {
-            this.drawImage(ctx, {
-              image: this.image,
-              fitMode: config.fitMode ?? 'cover',
-              canvasSize,
-              opacity: config.opacity ?? 1
-            });
+            this.drawImage(ctx, canvasSize);
           }
           break;
 
         case 'gradient':
           if (config.gradientColors && config.gradientColors.length >= 2) {
-            this.drawGradient(ctx, {
-              colors: config.gradientColors,
-              direction: config.gradientDirection ?? 'horizontal',
-              canvasSize,
-              opacity: config.opacity ?? 1
-            });
+            this.drawGradient(ctx, canvasSize);
           }
           break;
 
         case 'color':
         default:
-          if (config.color) {
-            ctx.fillStyle = config.color;
-            ctx.fillRect(0, 0, width, height);
-          }
+          this.drawColor(ctx, canvasSize);
           break;
       }
-    } catch (error) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        'Failed to render background effect',
-        error instanceof Error ? error : new Error(String(error))
-      );
     } finally {
       ctx.restore();
     }
   }
 
   /**
-   * アニメーションの適用
+   * 単色背景の描画
    */
-  private applyAnimation(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    animation: BackgroundAnimation,
-    currentTime: number,
-    canvasSize: Size2D
-  ): void {
-    const startTime = this.getConfig().startTime || 0;
-    const duration = animation.duration;
-    const delay = animation.delay || 0;
-
-    // アニメーションの進行度を計算
-    let progress = (currentTime - startTime - delay) / duration;
-    if (progress < 0 || progress > 1) return;
-
-    // イージング関数の適用
-    progress = this.applyEasing(progress, animation.easing);
-
-    // アニメーション種別ごとの処理
-    let from: number;
-    let to: number;
-    let scale: number;
-    let angle: number;
-
-    switch (animation.type) {
-      case 'fade':
-        from = animation.from ?? 0;
-        to = animation.to ?? 1;
-        ctx.globalAlpha *= from + (to - from) * progress;
-        break;
-
-      case 'scale':
-        scale = animation.from + (animation.to - animation.from) * progress;
-        ctx.translate(canvasSize.width / 2, canvasSize.height / 2);
-        ctx.scale(scale, scale);
-        ctx.translate(-canvasSize.width / 2, -canvasSize.height / 2);
-        break;
-
-      case 'rotate':
-        angle = (animation.from + (animation.to - animation.from) * progress) * Math.PI / 180;
-        ctx.translate(canvasSize.width / 2, canvasSize.height / 2);
-        ctx.rotate(angle);
-        ctx.translate(-canvasSize.width / 2, -canvasSize.height / 2);
-        break;
-    }
+  private drawColor(ctx: CanvasRenderingContext2D, size: Size2D): void {
+    const color = this.animationState?.color ?? this.config.color ?? '#000000';
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, size.width, size.height);
   }
 
   /**
-   * 画像の描画
+   * 画像背景の描画
    */
-  private drawImage(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    options: DrawImageOptions
-  ): void {
-    const { image, fitMode, canvasSize } = options;
-    const { width: canvasWidth, height: canvasHeight } = canvasSize;
-    const imageAspect = image.width / image.height;
-    const canvasAspect = canvasWidth / canvasHeight;
+  private drawImage(ctx: CanvasRenderingContext2D, size: Size2D): void {
+    if (!this.image) return;
 
-    let sx = 0;
-    let sy = 0;
-    let sWidth = image.width;
-    let sHeight = image.height;
-    let dx = 0;
-    let dy = 0;
-    let dWidth = canvasWidth;
-    let dHeight = canvasHeight;
+    const fitMode = this.config.fitMode ?? 'cover';
+    const imgWidth = this.image.width;
+    const imgHeight = this.image.height;
+    const canvasRatio = size.width / size.height;
+    const imageRatio = imgWidth / imgHeight;
 
-    switch (fitMode) {
-      case 'cover':
-        if (canvasAspect > imageAspect) {
-          sHeight = (image.width / canvasAspect);
-          sy = (image.height - sHeight) / 2;
-        } else {
-          sWidth = (image.height * canvasAspect);
-          sx = (image.width - sWidth) / 2;
-        }
-        break;
+    let drawWidth: number;
+    let drawHeight: number;
+    let drawX: number;
+    let drawY: number;
 
-      case 'contain':
-        if (canvasAspect > imageAspect) {
-          dWidth = canvasHeight * imageAspect;
-          dx = (canvasWidth - dWidth) / 2;
-        } else {
-          dHeight = canvasWidth / imageAspect;
-          dy = (canvasHeight - dHeight) / 2;
-        }
-        break;
-
-      case 'center':
-        dWidth = image.width;
-        dHeight = image.height;
-        dx = (canvasWidth - dWidth) / 2;
-        dy = (canvasHeight - dHeight) / 2;
-        break;
-
-      case 'fill':
-      default:
-        // デフォルトはfill（引き伸ばし）
-        break;
+    if (fitMode === 'cover') {
+      // カバーモード: アスペクト比を維持しながら、キャンバス全体を覆う
+      if (canvasRatio > imageRatio) {
+        drawWidth = size.width;
+        drawHeight = size.width / imageRatio;
+        drawX = 0;
+        drawY = (size.height - drawHeight) / 2;
+      } else {
+        drawHeight = size.height;
+        drawWidth = size.height * imageRatio;
+        drawX = (size.width - drawWidth) / 2;
+        drawY = 0;
+      }
+    } else if (fitMode === 'contain') {
+      // コンテインモード: アスペクト比を維持しながら、キャンバス内に収める
+      if (canvasRatio > imageRatio) {
+        drawHeight = size.height;
+        drawWidth = size.height * imageRatio;
+        drawX = (size.width - drawWidth) / 2;
+        drawY = 0;
+      } else {
+        drawWidth = size.width;
+        drawHeight = size.width / imageRatio;
+        drawX = 0;
+        drawY = (size.height - drawHeight) / 2;
+      }
+    } else {
+      // ストレッチモード: アスペクト比を無視して引き伸ばす
+      drawWidth = size.width;
+      drawHeight = size.height;
+      drawX = 0;
+      drawY = 0;
     }
 
-    ctx.drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight);
+    ctx.drawImage(this.image, drawX, drawY, drawWidth, drawHeight);
   }
 
   /**
-   * グラデーションの描画
+   * グラデーション背景の描画
    */
-  private drawGradient(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    options: DrawGradientOptions
-  ): void {
-    const { colors, direction, canvasSize } = options;
-    const { width, height } = canvasSize;
+  private drawGradient(ctx: CanvasRenderingContext2D, size: Size2D): void {
+    const colors = this.config.gradientColors ?? ['#000000', '#ffffff'];
+    const direction = this.config.gradientDirection ?? 'horizontal';
+
     let gradient: CanvasGradient;
-
-    switch (direction) {
-      case 'vertical':
-        gradient = ctx.createLinearGradient(0, 0, 0, height);
-        break;
-
-      case 'radial':
-        gradient = ctx.createRadialGradient(
-          width / 2, height / 2, 0,
-          width / 2, height / 2, Math.max(width, height) / 2
-        );
-        break;
-
-      case 'horizontal':
-      default:
-        gradient = ctx.createLinearGradient(0, 0, width, 0);
-        break;
+    if (direction === 'horizontal') {
+      gradient = ctx.createLinearGradient(0, 0, size.width, 0);
+    } else {
+      gradient = ctx.createLinearGradient(0, 0, 0, size.height);
     }
 
     // カラーストップの設定
-    const step = 1 / (colors.length - 1);
+    const stopCount = colors.length;
     colors.forEach((color, index) => {
-      gradient.addColorStop(index * step, color);
+      gradient.addColorStop(index / (stopCount - 1), color);
     });
 
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, size.width, size.height);
   }
 
   /**
@@ -317,21 +258,11 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
   }
 
   /**
-   * 画像の読み込み完了を待機
+   * リソースの解放
    */
-  public async waitForLoad(): Promise<void> {
-    if (this.imageLoader) {
-      await this.imageLoader;
-    }
-  }
-
-  public dispose(): void {
-    if (this.image) {
-      this.image.onload = null;
-      this.image.onerror = null;
-      this.image = null;
-    }
-    this.imageLoader = null;
-    this.onImageLoadCallback = null;
+  override dispose(): void {
+    this.image = null;
+    this.animationState = null;
+    super.dispose();
   }
 } 

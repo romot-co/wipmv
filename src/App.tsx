@@ -14,6 +14,10 @@ import {
   EffectType,
   AudioSource,
   EffectConfig,
+  BackgroundEffectConfig,
+  TextEffectConfig,
+  WaveformEffectConfig,
+  WatermarkEffectConfig
 } from './core/types';
 
 import { EffectManager } from './core/EffectManager';
@@ -83,11 +87,11 @@ export const App: React.FC = () => {
       return;
     }
     
-    // AudioServiceを接続（この中でAudioSourceも設定される）
-    newManager.connectAudioService(audioService);
+    // AudioServiceを接続
+    newManager.setAudioService(audioService);
     
     // レンダリングループを開始
-    newManager.startRenderLoop();
+    newManager.startPreviewLoop();
 
     // 既存のエフェクトがあれば再設定
     effects.forEach(effect => {
@@ -102,12 +106,12 @@ export const App: React.FC = () => {
           effect.setAudioSource(currentAudioSource);
         }
       }
-      newManager.addEffect(effect);
+      newManager.addEffect(effect as EffectBase<EffectConfig>);
     });
 
     setManager(newManager);
     
-    // 現在のエフェクト一覧を更新
+    // エフェクト一覧を更新
     const currentEffects = newManager.getEffects();
     console.log('初期化後のエフェクト一覧:', {
       count: currentEffects.length,
@@ -117,7 +121,11 @@ export const App: React.FC = () => {
       }))
     });
     setEffects(currentEffects);
-  }, [audioService, manager, effects]);
+
+    // エラーをクリア
+    clearError('audio');
+
+  }, [audioService, manager, effects, clearError]);
 
   // オーディオ制御フック (UI操作用)
   const {
@@ -126,165 +134,6 @@ export const App: React.FC = () => {
     pause,
     seek,
   } = useAudioControl(audioService);
-
-  // エフェクト追加
-  const handleEffectAdd = useCallback(async (type: EffectType) => {
-    if (!manager) {
-      console.warn('EffectManagerが初期化されていません');
-      return;
-    }
-
-    try {
-      const currentEffects = manager.getEffects();
-      const zIndex = currentEffects.length;
-      let effect: EffectBase;
-      const currentDuration = audioService.getAudioSource()?.duration || 0;
-      console.log('エフェクト追加開始:', { 
-        type, 
-        currentDuration,
-        currentEffectCount: currentEffects.length,
-        managerExists: !!manager,
-        audioSourceExists: !!audioService.getAudioSource()
-      });
-
-      // エフェクトの作成
-      switch (type) {
-        case EffectType.Background:
-          effect = new BackgroundEffect({
-            ...createDefaultBackgroundEffect(),
-            zIndex,
-            startTime: 0,
-            endTime: currentDuration
-          });
-          break;
-        case EffectType.Text:
-          effect = new TextEffect({
-            ...createDefaultTextEffect(),
-            zIndex,
-            startTime: 0,
-            endTime: currentDuration
-          });
-          break;
-        case EffectType.Waveform:
-          effect = new WaveformEffect({
-            ...createDefaultWaveformEffect(),
-            zIndex,
-            startTime: 0,
-            endTime: currentDuration
-          });
-          break;
-        case EffectType.Watermark:
-          effect = new WatermarkEffect({
-            ...createDefaultWatermarkEffect(),
-            zIndex,
-            startTime: 0,
-            endTime: currentDuration
-          });
-          break;
-        default:
-          throw new Error(`不正なエフェクトタイプ: ${type}`);
-      }
-
-      console.log('エフェクト作成完了:', {
-        id: effect.getConfig().id,
-        type: effect.getConfig().type,
-        zIndex: effect.getConfig().zIndex
-      });
-
-      // エフェクト追加時に事前解析データを設定
-      const currentAudioSource = audioService.getAudioSource();
-      if (currentAudioSource && hasSetAudioSource(effect)) {
-        console.log('エフェクトに音声ソースを設定:', {
-          effectType: type,
-          hasWaveformData: !!currentAudioSource.waveformData,
-          waveformDataLength: currentAudioSource.waveformData?.[0]?.length
-        });
-        effect.setAudioSource(currentAudioSource);
-      } else {
-        console.log('音声ソース設定をスキップ:', {
-          hasAudioSource: !!currentAudioSource,
-          effectSupportsAudio: hasSetAudioSource(effect)
-        });
-      }
-
-      // エフェクトをマネージャーに追加
-      manager.addEffect(effect);
-      
-      // エフェクト一覧を更新
-      const updatedEffects = manager.getEffects();
-      console.log('エフェクト更新完了:', {
-        type,
-        effectCount: updatedEffects.length,
-        effects: updatedEffects.map(e => ({
-          id: e.getConfig().id,
-          type: e.getConfig().type,
-          zIndex: e.getConfig().zIndex
-        }))
-      });
-
-      // 状態を更新
-      setEffects(prevEffects => {
-        const newEffects = [...prevEffects, effect];
-        console.log('エフェクト状態更新:', {
-          prevCount: prevEffects.length,
-          newCount: newEffects.length,
-          addedEffect: {
-            id: effect.getConfig().id,
-            type: effect.getConfig().type
-          }
-        });
-        return newEffects;
-      });
-      
-      setSelectedEffectId(effect.getConfig().id);
-      clearError('effect');
-
-      // レンダリングを強制的に更新
-      requestAnimationFrame(() => {
-        manager.render();
-      });
-
-    } catch (error) {
-      console.error('エフェクト追加エラー:', error);
-      handleError('effect', error instanceof Error ? error : new Error('エフェクトの追加に失敗しました'));
-    }
-  }, [manager, handleError, audioService, clearError]);
-
-  // エフェクト削除
-  const handleEffectRemove = useCallback((id: string) => {
-    if (!manager) return;
-    manager.removeEffect(id);
-    const updatedEffects = manager.getEffects();
-    console.log('エフェクト削除:', {
-      id,
-      remainingCount: updatedEffects.length
-    });
-    setEffects(updatedEffects);
-    // 削除したエフェクトが選択中だった場合、選択を解除
-    if (selectedEffectId === id) {
-      setSelectedEffectId(undefined);
-    }
-  }, [manager, selectedEffectId]);
-
-  // エフェクト移動
-  const handleEffectMove = useCallback((id: string, direction: 'up' | 'down') => {
-    if (!manager) return;
-    const currentEffects = manager.getEffects();
-    const currentIndex = currentEffects.findIndex(e => e.getConfig().id === id);
-    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    
-    if (newIndex >= 0 && newIndex < currentEffects.length) {
-      manager.moveEffect(currentIndex, newIndex);
-      const updatedEffects = manager.getEffects();
-      console.log('エフェクト移動:', {
-        id,
-        direction,
-        newIndex,
-        effectCount: updatedEffects.length
-      });
-      setEffects(updatedEffects);
-    }
-  }, [manager]);
 
   // オーディオファイルのロード処理
   const handleAudioLoad = useCallback(async (file: File) => {
@@ -322,7 +171,7 @@ export const App: React.FC = () => {
 
         // 既存のManagerがあれば音声ソースを設定
         if (manager) {
-          manager.connectAudioService(audioService);
+          manager.setAudioService(audioService);
         }
 
       } catch (error) {
@@ -334,25 +183,144 @@ export const App: React.FC = () => {
     }
   }, [audioService, handleError, clearError, manager]);
 
+  // エフェクト追加
+  const handleEffectAdd = useCallback(async (type: EffectType) => {
+    if (!manager) {
+      console.warn('EffectManagerが初期化されていません');
+      return;
+    }
+
+    try {
+      const currentEffects = manager.getEffects();
+      const zIndex = currentEffects.length;
+      let effect: EffectBase<EffectConfig>;
+      const currentDuration = audioService.getAudioSource()?.duration || 0;
+
+      // エフェクトの作成
+      switch (type) {
+        case EffectType.Background:
+          effect = new BackgroundEffect({
+            ...createDefaultBackgroundEffect(),
+            zIndex,
+            startTime: 0,
+            endTime: currentDuration
+          } as BackgroundEffectConfig);
+          break;
+        case EffectType.Text:
+          effect = new TextEffect({
+            ...createDefaultTextEffect(),
+            zIndex,
+            startTime: 0,
+            endTime: currentDuration
+          } as TextEffectConfig);
+          break;
+        case EffectType.Waveform:
+          effect = new WaveformEffect({
+            ...createDefaultWaveformEffect(),
+            zIndex,
+            startTime: 0,
+            endTime: currentDuration
+          } as WaveformEffectConfig);
+          break;
+        case EffectType.Watermark:
+          effect = new WatermarkEffect({
+            ...createDefaultWatermarkEffect(),
+            zIndex,
+            startTime: 0,
+            endTime: currentDuration
+          } as WatermarkEffectConfig);
+          break;
+        default:
+          throw new Error(`不正なエフェクトタイプ: ${type}`);
+      }
+
+      // エフェクト追加時に事前解析データを設定
+      const currentAudioSource = audioService.getAudioSource();
+      if (currentAudioSource && hasSetAudioSource(effect)) {
+        effect.setAudioSource(currentAudioSource);
+      }
+
+      // エフェクトをマネージャーに追加
+      manager.addEffect(effect);
+      
+      // エフェクト一覧を更新
+      const updatedEffects = manager.getEffects();
+      setEffects(updatedEffects);
+      setSelectedEffectId(effect.getId());
+      clearError('effect');
+
+      // レンダリングを強制的に更新
+      requestAnimationFrame(() => {
+        if (manager) {
+          const currentTime = audioService.getCurrentTime();
+          manager.updateAll(currentTime);
+          const canvas = document.createElement('canvas');
+          canvas.width = videoSettings.width;
+          canvas.height = videoSettings.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            manager.renderAll(ctx);
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('エフェクト追加エラー:', error);
+      handleError('effect', error instanceof Error ? error : new Error('エフェクトの追加に失敗しました'));
+    }
+  }, [manager, handleError, audioService, clearError, videoSettings]);
+
+  // エフェクト削除
+  const handleEffectRemove = useCallback((id: string) => {
+    if (!manager) return;
+    manager.removeEffect(id);
+    const updatedEffects = manager.getEffects();
+    setEffects(updatedEffects);
+    if (selectedEffectId === id) {
+      setSelectedEffectId(undefined);
+    }
+  }, [manager, selectedEffectId]);
+
+  // エフェクト移動
+  const handleEffectMove = useCallback((id: string, direction: 'up' | 'down') => {
+    if (!manager) return;
+    const currentEffects = manager.getEffects();
+    const currentIndex = currentEffects.findIndex(e => e.getId() === id);
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    
+    if (newIndex >= 0 && newIndex < currentEffects.length) {
+      // エフェクトの順序を入れ替え
+      const effects = [...currentEffects];
+      const [removed] = effects.splice(currentIndex, 1);
+      effects.splice(newIndex, 0, removed);
+      
+      // zIndexを更新
+      effects.forEach((effect, index) => {
+        effect.updateConfig({ zIndex: index });
+      });
+
+      // 更新を通知
+      setEffects(effects);
+    }
+  }, [manager]);
+
   // 選択中のエフェクトを取得
   const selectedEffect = useMemo(() => {
     if (!selectedEffectId || !manager) return null;
-    return manager.getEffects().find(e => e.getConfig().id === selectedEffectId) || null;
+    return manager.getEffect(selectedEffectId) || null;
   }, [selectedEffectId, manager]);
 
   // エフェクト設定の更新
   const handleEffectUpdate = useCallback(<T extends EffectConfig>(id: string, newConfig: Partial<T>) => {
     if (!manager) return;
     try {
-      manager.updateEffect(id, newConfig);
-      const updatedEffects = manager.getEffects();
-      console.log('エフェクト設定更新:', {
-        id,
-        config: newConfig,
-        effectCount: updatedEffects.length
-      });
-      setEffects(updatedEffects);
-      clearError('effect');
+      const effect = manager.getEffect(id);
+      if (effect) {
+        effect.updateConfig(newConfig);
+        const updatedEffects = manager.getEffects();
+        setEffects(updatedEffects);
+        clearError('effect');
+      }
     } catch (error) {
       handleError('effect', error instanceof Error ? error : new Error('エフェクトの更新に失敗しました'));
     }
@@ -408,7 +376,7 @@ export const App: React.FC = () => {
                         <Box className="effect-settings-container">
                           <EffectSettings
                             effect={selectedEffect}
-                            onUpdate={(config) => handleEffectUpdate(selectedEffect.getConfig().id, config)}
+                            onUpdate={(config) => handleEffectUpdate(selectedEffect.getId(), config)}
                             duration={audioService.getDuration()}
                           />
                         </Box>

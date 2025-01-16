@@ -1,149 +1,60 @@
-import { 
-  EffectConfig, 
-  AudioVisualParameters, 
-  AppError, 
-  ErrorType,
-  BaseAnimation,
-} from './types';
+import { BaseEffectConfig } from './types';
 
 /**
- * エフェクトの基底抽象クラス
- * - 設定値の管理
- * - 表示/非表示の制御
- * - レイヤー順の管理
- * - アニメーション制御
- * を担当
+ * エフェクトの基底クラス
+ * - 全エフェクトの共通インターフェースを定義
+ * - 更新と描画のライフサイクルを規定
  */
-export abstract class EffectBase<T extends EffectConfig = EffectConfig> {
+export abstract class EffectBase<T extends BaseEffectConfig = BaseEffectConfig> {
   protected config: T;
-  private animationStartTime: number | null = null;
 
   constructor(config: T) {
-    // 必須項目のバリデーション
-    if (!config.type) {
-      throw new AppError(
-        ErrorType.EffectInitFailed,
-        'Effect type is required'
-      );
-    }
-
-    // デフォルト値の設定
-    this.config = {
-      ...config,
-      startTime: config.startTime ?? 0,
-      endTime: config.endTime ?? Infinity,
-      zIndex: config.zIndex ?? 0,
-      visible: config.visible ?? true,
-      opacity: config.opacity ?? 1,
-      blendMode: config.blendMode ?? 'source-over'
-    };
+    this.config = config;
   }
 
   /**
-   * 設定を取得
+   * エフェクトのIDを取得
    */
-  public getConfig(): T {
+  getId(): string {
+    return this.config.id;
+  }
+
+  /**
+   * エフェクトの設定を取得
+   */
+  getConfig(): T {
     return this.config;
   }
 
   /**
-   * 設定を更新
+   * エフェクトの設定を更新
    */
-  public updateConfig(newConfig: Partial<T>): void {
-    // 型の変更は禁止
-    if (newConfig.type && newConfig.type !== this.config.type) {
-      throw new AppError(
-        ErrorType.EffectUpdateFailed,
-        'Cannot change effect type'
-      );
-    }
-    
-    // 設定を更新
-    const oldConfig = this.config;
-    this.config = {
-      ...this.config,
-      ...newConfig
-    };
-
-    // 派生クラスで必要な処理を実行
-    this.onConfigUpdate(oldConfig, this.config);
+  updateConfig(newConfig: Partial<T>): void {
+    this.config = { ...this.config, ...newConfig };
   }
 
   /**
-   * 設定更新時のフック
-   * - 派生クラスでオーバーライドして必要な処理を実装
+   * エフェクトが指定時刻でアクティブかどうか
    */
-  protected onConfigUpdate(oldConfig: T, newConfig: T): void {
-    // デフォルトは何もしない
-    console.log('onConfigUpdate', oldConfig, newConfig);
+  isActive(currentTime: number): boolean {
+    const { startTime = 0, endTime = Infinity } = this.config;
+    return currentTime >= startTime && currentTime <= endTime;
   }
 
   /**
-   * 指定時刻で表示すべきかどうかを判定
+   * 現在時刻に応じて内部状態を更新
    */
-  public isVisible(currentTime: number): boolean {
-    return (
-      (this.config.visible ?? true) &&
-      currentTime >= (this.config.startTime ?? 0) &&
-      currentTime <= (this.config.endTime ?? Infinity)
-    );
-  }
+  abstract update(currentTime: number): void;
 
   /**
-   * レイヤー順を取得
+   * キャンバスに描画
    */
-  public getZIndex(): number {
-    return this.config.zIndex ?? 0;
-  }
+  abstract render(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
 
   /**
-   * アニメーションの進行度を計算
+   * リソースの解放
    */
-  protected getAnimationProgress(
-    currentTime: number,
-    animation: BaseAnimation
-  ): number {
-    if (this.animationStartTime === null) {
-      this.animationStartTime = currentTime;
-    }
-
-    const elapsed = currentTime - this.animationStartTime;
-    const delay = animation.delay ?? 0;
-    
-    if (elapsed < delay) return 0;
-    if (elapsed >= delay + animation.duration) return 1;
-
-    const progress = (elapsed - delay) / animation.duration;
-    
-    // イージング関数の適用
-    switch (animation.easing) {
-      case 'easeIn':
-        return progress * progress;
-      case 'easeOut':
-        return 1 - (1 - progress) * (1 - progress);
-      case 'easeInOut':
-        return progress < 0.5
-          ? 2 * progress * progress
-          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-      default:
-        return progress; // linear
-    }
-  }
-
-  /**
-   * エフェクトを描画
-   * - 派生クラスで実装必須
-   */
-  public abstract render(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    params: AudioVisualParameters
-  ): void;
-
-  /**
-   * リソースを解放
-   * - 派生クラスで必要に応じてオーバーライド
-   */
-  public dispose(): void {
-    this.animationStartTime = null;
+  dispose(): void {
+    // 継承先で必要に応じてオーバーライド
   }
 } 

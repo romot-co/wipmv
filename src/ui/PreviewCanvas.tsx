@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, memo, useCallback } from 'react';
 import { EffectManager } from '../core/EffectManager';
-import { Renderer } from '../core/Renderer';
 
 // PreviewCanvas が受け取るpropsをシンプルにする
 interface PreviewCanvasProps {
@@ -43,14 +42,10 @@ export const PreviewCanvas = memo(({
     canvas.width = videoSettings.width;
     canvas.height = videoSettings.height;
 
-    // レンダラーのサイズ更新
-    const renderer = manager.getRenderer();
-    renderer.setSize(videoSettings.width, videoSettings.height);
-    
     // 強制的に再レンダリング
     requestAnimationFrame(() => {
       if (managerRef.current) {
-        managerRef.current.render();
+        managerRef.current.startPreviewLoop();
       }
     });
   }, [videoSettings.width, videoSettings.height]);
@@ -61,8 +56,8 @@ export const PreviewCanvas = memo(({
     if (!canvas || isInitializedRef.current) return;
 
     console.log('PreviewCanvas: EffectManager初期化開始');
-    const renderer = new Renderer(canvas);
-    const manager = new EffectManager(renderer);
+    const manager = new EffectManager();
+    manager.setPreviewCanvas(canvas);
     managerRef.current = manager;
     isInitializedRef.current = true;
 
@@ -77,7 +72,7 @@ export const PreviewCanvas = memo(({
     return () => {
       console.log('PreviewCanvas: クリーンアップ開始');
       if (managerRef.current) {
-        managerRef.current.stopRenderLoop();
+        managerRef.current.stopPreviewLoop();
         managerRef.current.dispose();
         managerRef.current = null;
         isInitializedRef.current = false;

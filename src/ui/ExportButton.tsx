@@ -5,6 +5,7 @@ import { EffectManager } from '../core/EffectManager';
 import { AudioSource } from '../core/types';
 import { VideoEncoderService } from '../core/VideoEncoderService';
 import { Cross2Icon, GearIcon } from '@radix-ui/react-icons';
+import { Renderer } from '../core/Renderer';
 
 /**
  * ExportButtonProps
@@ -91,40 +92,37 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       const totalFrames = Math.ceil(audioSource.duration * videoSettings.frameRate);
 
       // Export 前に EffectManager でリアルタイム描画ループ停止（必要に応じて）
-      manager.stopRenderLoop();
+      manager.stopPreviewLoop();
+
+      // エクスポート用のレンダラーを作成
+      const canvas = document.createElement('canvas');
+      canvas.width = videoSettings.width;
+      canvas.height = videoSettings.height;
+      const renderer = new Renderer(canvas);
 
       // フレームごとに描画＋エンコード
       for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
         if (cancelRef.current) {
-          // キャンセルされた場合はエラー扱いで抜ける(任意)
           throw new Error('エクスポートがキャンセルされました。');
         }
 
         // 現在時刻を計算
         const currentTime = frameIndex / videoSettings.frameRate;
 
-        // managerに対して時間を更新
-        manager.updateParams({
-          currentTime,
-          duration: audioSource.duration,
-          isPlaying: false,
-        });
+        // キャンバスをクリア
+        renderer.clear();
 
-        // 描画実行
-        manager.render();
+        // エフェクトの更新と描画（オフスクリーンに描画）
+        manager.updateAll(currentTime);
+        manager.renderAll(renderer.getOffscreenContext());
 
-        // Canvas取得
-        const canvas = manager.getCanvas();
-        if (!canvas) {
-          throw new Error('エクスポート用のCanvasが取得できません。');
-        }
+        // オフスクリーンの内容をメインキャンバスに転送
+        renderer.drawToMain();
 
         // 1フレーム分の映像エンコード
-        await encoder.encodeVideoFrame(canvas, frameIndex);
+        await encoder.encodeVideoFrame(renderer.getCanvas(), frameIndex);
 
         // 1フレーム分の音声エンコード
-        // → 必要に応じて区切ったAudio情報を渡す or 全体をまとめてencodeしておき
-        //   ここでは例としてフレーム単位で呼んでいる想定
         await encoder.encodeAudioBuffer(audioSource.buffer, frameIndex);
 
         // 進捗更新
@@ -135,28 +133,18 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         }
       }
 
-      // 完了処理
-      const result = await encoder.finalize();
-      encoder.dispose();
+      // クリーンアップ
+      canvas.width = 0;
+      canvas.height = 0;
 
-      // ダウンロード用処理
-      const blob = new Blob([result], { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'exported_video.mp4';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-    } catch (err) {
-      onError(err instanceof Error ? err : new Error('エクスポートに失敗しました。'));
+    } catch (error) {
+      console.error('エクスポートエラー:', error);
+      onError(error instanceof Error ? error : new Error('エクスポートに失敗しました'));
     } finally {
       setIsExporting(false);
-      // エクスポート完了後に何らかの再開処理やクリーンアップを行いたい場合はここ
-      manager.startRenderLoop();
+      setExportProgress(0);
     }
-  }, [manager, audioSource, videoSettings, onError, onProgress]);
+  }, [manager, onError, videoSettings, audioSource, onProgress]);
 
   /**
    * エクスポートキャンセル処理

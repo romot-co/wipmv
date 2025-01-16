@@ -355,6 +355,12 @@ export interface WaveformEffectConfig extends BaseEffectConfig {
 /**
  * ウォーターマークエフェクト設定
  */
+export interface WatermarkAnimation extends BaseAnimation {
+  type: 'fade' | 'scale' | 'rotate';
+  from?: number;
+  to?: number;
+}
+
 export interface WatermarkEffectConfig extends BaseEffectConfig {
   type: EffectType.Watermark;
   imageUrl: string;
@@ -363,9 +369,10 @@ export interface WatermarkEffectConfig extends BaseEffectConfig {
   rotation?: number;
   tiled?: boolean;
   tileSpacing?: number;
+  animation?: WatermarkAnimation;
 }
 
-export type BackgroundAnimation = FadeAnimation | ScaleAnimation | RotateAnimation;
+export type BackgroundAnimation = FadeAnimation | ScaleAnimation | RotateAnimation | ColorAnimation;
 
 /**
  * アプリケーション固有のエラー
