@@ -11,26 +11,28 @@
 /* Main content layout */
 .main-content {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(300px, 1fr);
-  gap: var(--space-4);
-  height: calc(100vh - 2 * var(--space-4));
-  min-height: 600px;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+  height: calc(100vh - 200px);
 }
 
 /* Preview section */
 .preview-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 1rem;
   height: 100%;
   background-color: var(--gray-2);
   border-radius: var(--radius-3);
   padding: var(--space-4);
+  min-height: 400px;
+  position: relative;
 }
 
 .preview-section canvas {
   width: 100%;
-  height: auto;
+  height: calc(100% - 80px);
+  min-height: 300px;
   aspect-ratio: 16 / 9;
   background-color: var(--gray-3);
   border-radius: var(--radius-2);
@@ -43,11 +45,25 @@
   grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background-color: var(--gray-3);
-  border-radius: var(--radius-2);
+  padding: 1rem;
+  background-color: var(--gray-2);
+  border-radius: var(--radius-3);
+  border: 1px solid var(--gray-4);
   margin-top: auto;
   min-height: 56px;
+  width: 100%;
+  position: relative;
+  z-index: 2;
+}
+
+/* Playback controls */
+.playback-controls {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: var(--radius-2);
+  background-color: var(--gray-3);
 }
 
 .controls-section button {
@@ -73,10 +89,80 @@
 .effects-panel {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 2 * var(--space-4));
+  height: 100%;
   background-color: var(--gray-2);
   border-radius: var(--radius-3);
+  padding: var(--space-4);
   overflow: hidden;
+}
+
+/* Effect list */
+.effect-list {
+  flex: 0 0 auto;
+  margin-bottom: var(--space-4);
+}
+
+/* Effect settings container */
+.effect-settings-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Effect settings */
+.effect-settings {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  background-color: var(--gray-2);
+  border-radius: var(--radius-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.effect-settings > * {
+  flex-shrink: 0;
+}
+
+.effect-settings::-webkit-scrollbar {
+  width: 6px;
+}
+
+.effect-settings::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.effect-settings::-webkit-scrollbar-thumb {
+  background: var(--gray-6);
+  border-radius: 3px;
+}
+
+.effect-settings::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-7);
+}
+
+/* Effect specific settings */
+.effect-specific-settings {
+  padding: var(--space-3);
+  background-color: var(--gray-3);
+  border-radius: var(--radius-2);
+  border: 1px solid var(--gray-4);
+  overflow-y: auto;
+  max-height: 300px;
+}
+
+/* Setting groups */
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background-color: var(--gray-2);
+  border-radius: var(--radius-2);
+  margin-bottom: var(--space-2);
 }
 
 /* Effects header */
@@ -129,32 +215,6 @@
   gap: var(--space-4);
 }
 
-/* Effect list */
-.effect-list {
-  flex: 1;
-  overflow-y: auto;
-  margin: 0 calc(var(--space-2) * -1);
-  padding: 0 var(--space-2);
-  scrollbar-gutter: stable;
-}
-
-.effect-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.effect-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.effect-list::-webkit-scrollbar-thumb {
-  background: var(--gray-6);
-  border-radius: 3px;
-}
-
-.effect-list::-webkit-scrollbar-thumb:hover {
-  background: var(--gray-7);
-}
-
 /* Effect item */
 .effect-item {
   display: flex;
@@ -176,32 +236,6 @@
 .effect-item.selected {
   background-color: var(--gray-4);
   border-color: var(--accent-8);
-}
-
-/* Effect settings */
-.effect-settings {
-  border-top: 1px solid var(--gray-4);
-  margin-top: auto;
-  padding-top: var(--space-4);
-  overflow-y: auto;
-  max-height: 40%;
-}
-
-.effect-settings::-webkit-scrollbar {
-  width: 6px;
-}
-
-.effect-settings::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.effect-settings::-webkit-scrollbar-thumb {
-  background: var(--gray-6);
-  border-radius: 3px;
-}
-
-.effect-settings::-webkit-scrollbar-thumb:hover {
-  background: var(--gray-7);
 }
 
 /* Add effect popover */
@@ -276,21 +310,24 @@
   }
 
   .preview-section {
-    max-height: none;
+    min-height: 300px;
+  }
+
+  .preview-section canvas {
+    height: calc(100% - 70px);
   }
 
   .effects-panel {
-    height: auto;
     max-height: 600px;
   }
 
   .effect-settings {
-    max-height: 300px;
+    max-height: 400px;
   }
 
   .controls-section {
-    grid-template-columns: auto 1fr auto auto;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
+    grid-template-columns: auto 1fr auto;
+    gap: var(--space-2);
+    padding: 0.75rem;
   }
 }

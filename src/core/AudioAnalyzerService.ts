@@ -1,22 +1,18 @@
-import {
-  AudioSource,
-  AppError,
-  ErrorType
-} from './types';
+import { AudioSource, AppError, ErrorType } from './types';
 
 /**
- * 音声解析を制御するサービス
- * - オフライン解析による波形データと周波数データの生成
- * - エラーハンドリング
+ * 音声解析サービス
+ * - 音声ファイルの波形解析
+ * - Web Workerを使用したオフライン解析
+ * - 解析結果のキャッシュ管理
  */
 export class AudioAnalyzerService {
-  private static instance: AudioAnalyzerService;
-  private worker: Worker | null;
-  private isAnalyzing: boolean;
+  private static instance: AudioAnalyzerService | null = null;
+  private worker: Worker | null = null;
+  private analysisCache: Map<string, AudioSource> = new Map();
 
   private constructor() {
-    this.worker = null;
-    this.isAnalyzing = false;
+    // シングルトンのためprivate
   }
 
   public static getInstance(): AudioAnalyzerService {
@@ -27,114 +23,159 @@ export class AudioAnalyzerService {
   }
 
   /**
-   * 音声データの解析
-   * AudioPlaybackServiceから受け取ったAudioBufferを解析し、
-   * 結果をAudioSourceに追加して返す
+   * 音声データの解析を実行
+   * @param audioBuffer デコード済みのAudioBuffer
+   * @returns 解析結果（波形データ、周波数データ等）
    */
-  public async analyzeAudio(audioSource: AudioSource): Promise<AudioSource> {
+  public async analyzeAudio(audioBuffer: AudioBuffer): Promise<AudioSource> {
     try {
-      console.log('オーディオ解析を開始...');
-      
-      // オフライン解析の実行
-      const analyzedData = await this.analyzeOffline(audioSource.buffer);
-      
-      // 解析結果をAudioSourceに追加
-      const updatedSource: AudioSource = {
-        ...audioSource,
-        waveformData: analyzedData.waveformData,
-        frequencyData: analyzedData.frequencyData,
-        amplitudeData: analyzedData.amplitudeData,
-        phaseData: analyzedData.phaseData,
-        stereoData: analyzedData.stereoData,
-        dynamicRangeData: analyzedData.dynamicRangeData,
-        spectralCentroidData: analyzedData.spectralCentroidData,
-        spectralFluxData: analyzedData.spectralFluxData
-      };
+      // キャッシュチェック
+      const cacheKey = this.generateCacheKey(audioBuffer);
+      const cached = this.analysisCache.get(cacheKey);
+      if (cached) {
+        console.log('解析キャッシュがヒット');
+        return cached;
+      }
 
-      console.log('解析結果:', {
-        waveformDataLength: analyzedData.waveformData.length,
-        frequencyDataLength: analyzedData.frequencyData.length,
-        duration: audioSource.duration,
-        sampleRate: audioSource.sampleRate
+      console.log('音声解析開始:', {
+        duration: audioBuffer.duration,
+        sampleRate: audioBuffer.sampleRate,
+        numberOfChannels: audioBuffer.numberOfChannels
       });
 
-      return updatedSource;
-      
+      // Web Workerの初期化
+      this.worker = new Worker(
+        new URL('../workers/audioAnalyzer.worker.ts', import.meta.url),
+        { type: 'module' }
+      );
+
+      // 解析の実行
+      const result = await new Promise<AudioSource>((resolve, reject) => {
+        if (!this.worker) {
+          reject(new AppError(ErrorType.AudioAnalysisFailed, 'Worker initialization failed'));
+          return;
+        }
+
+        this.worker.onmessage = (e) => {
+          if (e.data.type === 'success') {
+            // 解析結果を適切なサイズに変換
+            const waveformData = e.data.data.waveformData?.map((channel: Float32Array) => {
+              // 60fps想定で1秒あたりのサンプル数を計算
+              const samplesPerSecond = Math.floor(audioBuffer.sampleRate / 60);
+              const totalSamples = Math.floor(audioBuffer.duration * 60); // 60fps
+              
+              const resampledData = new Float32Array(totalSamples);
+              for (let i = 0; i < totalSamples; i++) {
+                const originalIndex = Math.floor(i * samplesPerSecond / 60);
+                resampledData[i] = channel[originalIndex] || 0;
+              }
+              return resampledData;
+            });
+
+            const frequencyData = e.data.data.frequencyData?.map((channel: Float32Array) => {
+              // 周波数データも同様に60fpsに合わせる
+              const samplesPerSecond = Math.floor(audioBuffer.sampleRate / 60);
+              const totalSamples = Math.floor(audioBuffer.duration * 60);
+              
+              const resampledData = new Uint8Array(totalSamples);
+              for (let i = 0; i < totalSamples; i++) {
+                const originalIndex = Math.floor(i * samplesPerSecond / 60);
+                resampledData[i] = Math.min(255, Math.floor(channel[originalIndex] * 255)) || 0;
+              }
+              return resampledData;
+            });
+
+            resolve({
+              buffer: audioBuffer,
+              duration: e.data.data.duration,
+              sampleRate: e.data.data.sampleRate,
+              numberOfChannels: e.data.data.numberOfChannels,
+              waveformData,
+              frequencyData
+            });
+          } else {
+            reject(new AppError(
+              ErrorType.AudioAnalysisFailed,
+              e.data.error || '音声解析に失敗しました',
+              e.data.details
+            ));
+          }
+        };
+
+        this.worker.onerror = (e) => {
+          console.error('Worker実行エラー:', e);
+          reject(new AppError(
+            ErrorType.AudioAnalysisFailed,
+            e.error?.message || '音声解析中にエラーが発生しました',
+            e.error
+          ));
+        };
+
+        // 解析リクエストの送信
+        this.worker.postMessage({
+          type: 'analyze',
+          audioData: {
+            channelData: audioBuffer.getChannelData(0),
+            sampleRate: audioBuffer.sampleRate,
+            duration: audioBuffer.duration,
+            numberOfChannels: audioBuffer.numberOfChannels
+          }
+        });
+      });
+
+      // キャッシュの更新
+      this.analysisCache.set(cacheKey, result);
+
+      // Workerのクリーンアップ
+      this.disposeWorker();
+
+      console.log('音声解析完了:', {
+        hasWaveformData: !!result.waveformData,
+        hasFrequencyData: !!result.frequencyData
+      });
+
+      return result;
+
     } catch (error) {
       console.error('音声解析エラー:', error);
+      this.disposeWorker();
       throw new AppError(
         ErrorType.AudioAnalysisFailed,
-        'Failed to analyze audio buffer',
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error.message : '音声解析に失敗しました',
+        error
       );
     }
   }
 
   /**
-   * オフラインでの音声解析
-   * WebWorkerを使用して別スレッドで実行
+   * キャッシュキーの生成
    */
-  private async analyzeOffline(audioBuffer: AudioBuffer): Promise<{
-    waveformData: Float32Array[];
-    frequencyData: Float32Array[][];
-    amplitudeData: Float32Array[];
-    phaseData: Float32Array[];
-    stereoData: Float32Array[];
-    dynamicRangeData: Float32Array[];
-    spectralCentroidData: Float32Array[];
-    spectralFluxData: Float32Array[];
-  }> {
-    return new Promise((resolve, reject) => {
-      if (this.isAnalyzing) {
-        reject(new AppError(
-          ErrorType.AudioAnalysisFailed,
-          'Analysis is already in progress'
-        ));
-        return;
-      }
+  private generateCacheKey(audioBuffer: AudioBuffer): string {
+    return `${audioBuffer.duration}-${audioBuffer.sampleRate}-${audioBuffer.numberOfChannels}`;
+  }
 
-      this.isAnalyzing = true;
+  /**
+   * Workerのクリーンアップ
+   */
+  private disposeWorker(): void {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+  }
 
-      // AudioBufferからFloat32Arrayを抽出
-      const channelData: Float32Array[] = [];
-      for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-        channelData.push(audioBuffer.getChannelData(i));
-      }
-
-      // WebWorkerにメッセージを送信
-      const worker = new Worker(new URL('../workers/audioAnalyzer.worker.ts', import.meta.url));
-      worker.onmessage = (event) => {
-        this.isAnalyzing = false;
-        resolve(event.data);
-        worker.terminate();
-      };
-
-      worker.onerror = (error) => {
-        this.isAnalyzing = false;
-        reject(new AppError(
-          ErrorType.AudioAnalysisFailed,
-          'Audio analysis worker failed',
-          error
-        ));
-        worker.terminate();
-      };
-
-      worker.postMessage({
-        channelData,
-        sampleRate: audioBuffer.sampleRate,
-        length: audioBuffer.length
-      });
-    });
+  /**
+   * キャッシュのクリア
+   */
+  public clearCache(): void {
+    this.analysisCache.clear();
   }
 
   /**
    * リソースの解放
    */
   public dispose(): void {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-    }
-    this.isAnalyzing = false;
+    this.disposeWorker();
+    this.clearCache();
   }
 }

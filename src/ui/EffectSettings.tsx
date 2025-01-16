@@ -84,7 +84,7 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
   };
 
   return (
-    <Card className="effect-settings">
+    <div className="effect-settings">
       <Flex direction="column" gap="4">
         <Heading as="h3" size="4">エフェクト設定</Heading>
 
@@ -105,7 +105,9 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
         <Card>
           <Flex direction="column" gap="2">
             <Heading as="h4" size="3">エフェクト設定</Heading>
-            {renderEffectSpecificSettings()}
+            <div className="effect-specific-settings">
+              {renderEffectSpecificSettings()}
+            </div>
           </Flex>
         </Card>
 
@@ -137,6 +139,6 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
           </Flex>
         </Card>
       </Flex>
-    </Card>
+    </div>
   );
 }; 

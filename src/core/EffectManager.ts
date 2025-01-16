@@ -47,6 +47,11 @@ export class EffectManager {
 
   private readonly FRAME_INTERVAL = 1000 / 60; // 60fps
 
+  private lastPlaybackState = {
+    currentTime: 0,
+    isPlaying: false
+  };
+
   constructor(renderer: Renderer) {
     this.renderer = renderer;
     this.canvas = renderer.getCanvas();
@@ -71,6 +76,12 @@ export class EffectManager {
   public connectAudioService(service: AudioPlaybackService): void {
     if (this.isDisposed) return;
     
+    // 既に同じサービスが接続されている場合は何もしない
+    if (this.audioService === service) {
+      console.log('AudioServiceは既に接続済みです');
+      return;
+    }
+    
     this.audioService = service;
     
     // AudioSourceを持つエフェクトに対して、音声データを設定
@@ -92,6 +103,11 @@ export class EffectManager {
       }
     } else {
       console.warn('オーディオソースが未設定');
+    }
+
+    // レンダリングループが停止している場合は再開
+    if (this.animationFrameId === null) {
+      this.startRenderLoop();
     }
   }
 
@@ -222,7 +238,15 @@ export class EffectManager {
   public updateParams(params: Partial<AudioVisualParameters>): void {
     if (this.isDisposed) return;
 
-    this.currentParams = { ...this.currentParams, ...params };
+    // 波形データと周波数データを適切な形式に変換
+    const updatedParams = {
+      ...this.currentParams,
+      ...params,
+      waveformData: params.waveformData ?? this.currentParams.waveformData,
+      frequencyData: params.frequencyData ?? this.currentParams.frequencyData
+    };
+
+    this.currentParams = updatedParams;
     this.render();
   }
 
@@ -230,31 +254,122 @@ export class EffectManager {
     if (this.isDisposed || this.animationFrameId !== null) return;
 
     const loop = (): void => {
-      if (this.isDisposed || !this.audioService) return;
+      if (this.isDisposed) return;
 
       const now = performance.now();
       const elapsed = now - this.lastRenderTime;
 
-      // フレームレート制御
       if (elapsed >= this.FRAME_INTERVAL) {
-        // オーディオパラメータの更新
-        const playbackState = this.audioService.getPlaybackState();
-        const audioSource = this.audioService.getAudioSource();
+        // パラメータの更新
+        if (this.audioService) {
+          const playbackState = this.audioService.getPlaybackState();
+          const audioSource = this.audioService.getAudioSource();
 
-        this.currentParams = {
-          currentTime: playbackState.currentTime,
-          duration: playbackState.duration,
-          isPlaying: playbackState.isPlaying,
-          waveformData: audioSource?.waveformData?.[0] ?? null,
-          frequencyData: audioSource?.frequencyData?.[0] ? new Uint8Array(Array.from(audioSource.frequencyData[0], v => Math.min(255, Math.floor(Number(v) * 255)))) : null,
-        };
+          // 再生状態が変化した場合、または再生中の場合のみ更新
+          const shouldUpdate = 
+            playbackState.isPlaying !== this.lastPlaybackState.isPlaying ||
+            playbackState.currentTime !== this.lastPlaybackState.currentTime ||
+            playbackState.isPlaying;
 
-        // 描画の実行
-        this.render();
-        this.lastRenderTime = now;
+          if (shouldUpdate && audioSource) {
+            console.log('オーディオ更新チェック:', {
+              currentTime: playbackState.currentTime,
+              isPlaying: playbackState.isPlaying,
+              hasAudioSource: !!audioSource,
+              sourceInfo: {
+                duration: audioSource.duration,
+                sampleRate: audioSource.sampleRate,
+                hasWaveformData: !!audioSource.waveformData,
+                waveformChannels: audioSource.waveformData?.length,
+                waveformLength: audioSource.waveformData?.[0]?.length,
+                hasFrequencyData: !!audioSource.frequencyData,
+                frequencyChannels: audioSource.frequencyData?.length,
+                frequencyLength: audioSource.frequencyData?.[0]?.length
+              }
+            });
+
+            // 波形データと周波数データの取得
+            const totalFrames = Math.floor(audioSource.duration * 60); // 全フレーム数
+            const currentFrameIndex = Math.floor((playbackState.currentTime / audioSource.duration) * totalFrames);
+            
+            // 表示用のウィンドウサイズ（フレーム数）
+            const windowSizeInFrames = 12; // 0.2秒分 = 12フレーム
+            
+            let waveformData: Float32Array[] | null = null;
+            let frequencyData: Uint8Array[] | null = null;
+
+            if (audioSource.waveformData?.[0] && currentFrameIndex < audioSource.waveformData[0].length) {
+              waveformData = audioSource.waveformData.map(channel => {
+                const startIndex = Math.max(0, currentFrameIndex);
+                const endIndex = Math.min(channel.length, startIndex + windowSizeInFrames);
+                return channel.slice(startIndex, endIndex);
+              });
+
+              console.log('波形データ取得:', {
+                currentTime: playbackState.currentTime,
+                duration: audioSource.duration,
+                totalFrames,
+                currentFrameIndex,
+                windowSizeInFrames,
+                startIndex: Math.max(0, currentFrameIndex),
+                endIndex: Math.min(audioSource.waveformData[0].length, currentFrameIndex + windowSizeInFrames),
+                dataLength: waveformData[0].length,
+                firstValue: waveformData[0][0],
+                lastValue: waveformData[0][waveformData[0].length - 1],
+                progress: (playbackState.currentTime / audioSource.duration) * 100
+              });
+            } else {
+              console.warn('波形データ取得失敗:', {
+                hasWaveformData: !!audioSource.waveformData,
+                currentFrameIndex,
+                maxLength: audioSource.waveformData?.[0]?.length,
+                currentTime: playbackState.currentTime,
+                duration: audioSource.duration,
+                progress: (playbackState.currentTime / audioSource.duration) * 100
+              });
+            }
+
+            if (audioSource.frequencyData?.[0] && currentFrameIndex < audioSource.frequencyData[0].length) {
+              frequencyData = audioSource.frequencyData.map(channel => {
+                const startIndex = Math.max(0, currentFrameIndex);
+                const endIndex = Math.min(channel.length, startIndex + windowSizeInFrames);
+                return channel.slice(startIndex, endIndex);
+              });
+            }
+
+            this.currentParams = {
+              currentTime: playbackState.currentTime,
+              duration: playbackState.duration,
+              isPlaying: playbackState.isPlaying,
+              waveformData,
+              frequencyData
+            };
+
+            console.log('パラメータ更新:', {
+              currentTime: this.currentParams.currentTime,
+              duration: audioSource.duration,
+              progress: (this.currentParams.currentTime / audioSource.duration) * 100,
+              isPlaying: this.currentParams.isPlaying,
+              hasWaveformData: !!this.currentParams.waveformData,
+              waveformLength: this.currentParams.waveformData?.[0]?.length,
+              hasFrequencyData: !!this.currentParams.frequencyData,
+              frequencyLength: this.currentParams.frequencyData?.[0]?.length
+            });
+
+            // 状態を保存
+            this.lastPlaybackState = {
+              currentTime: playbackState.currentTime,
+              isPlaying: playbackState.isPlaying
+            };
+
+            // 強制的に1回描画を実行
+            this.render();
+          }
+          
+          this.lastRenderTime = now;
+        }
       }
 
-      // 次のフレームをリクエスト
       this.animationFrameId = requestAnimationFrame(loop);
     };
 
@@ -274,10 +389,47 @@ export class EffectManager {
     // キャンバスをクリア
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // 現在時刻に応じて表示すべきエフェクトのみを描画
-    for (const effect of this.effects.values()) {
-      if (effect.isVisible(this.currentParams.currentTime)) {
+    // すべてのエフェクトを描画
+    const effects = Array.from(this.effects.values());
+    
+    console.log('レンダリング:', {
+      effectCount: effects.length,
+      effects: effects.map(e => ({
+        id: e.getConfig().id,
+        type: e.getConfig().type,
+        zIndex: e.getZIndex()
+      })),
+      currentTime: this.currentParams.currentTime,
+      hasWaveformData: !!this.currentParams.waveformData,
+      hasFrequencyData: !!this.currentParams.frequencyData,
+      waveformDataType: this.currentParams.waveformData?.constructor.name,
+      frequencyDataType: this.currentParams.frequencyData?.constructor.name,
+      canvasSize: {
+        width: this.canvas.width,
+        height: this.canvas.height
+      }
+    });
+
+    for (const effect of effects) {
+      try {
+        console.log('エフェクト描画開始:', {
+          id: effect.getConfig().id,
+          type: effect.getConfig().type,
+          config: effect.getConfig()
+        });
+        
         effect.render(this.ctx, this.currentParams);
+        
+        console.log('エフェクト描画完了:', {
+          id: effect.getConfig().id,
+          type: effect.getConfig().type
+        });
+      } catch (error) {
+        console.error('エフェクトの描画エラー:', {
+          id: effect.getConfig().id,
+          type: effect.getConfig().type,
+          error
+        });
       }
     }
   }
@@ -288,5 +440,50 @@ export class EffectManager {
 
   private hasImageLoadCallback(effect: unknown): effect is WithImageLoadCallback {
     return typeof (effect as WithImageLoadCallback).setOnImageLoadCallback === 'function';
+  }
+
+  /**
+   * エフェクトを指定位置に移動
+   */
+  public moveEffect(fromIndex: number, toIndex: number): void {
+    if (this.isDisposed) return;
+
+    const effects = Array.from(this.effects.values());
+    if (
+      fromIndex < 0 || 
+      fromIndex >= effects.length || 
+      toIndex < 0 || 
+      toIndex >= effects.length || 
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+
+    // 移動元と移動先のエフェクトを取得
+    const effect = effects[fromIndex];
+    const targetZIndex = effects[toIndex].getZIndex();
+
+    // 移動方向に応じてz-indexを更新
+    if (fromIndex < toIndex) {
+      // 下に移動する場合
+      for (let i = fromIndex; i < toIndex; i++) {
+        const current = effects[i];
+        const next = effects[i + 1];
+        current.updateConfig({ zIndex: next.getZIndex() });
+      }
+    } else {
+      // 上に移動する場合
+      for (let i = fromIndex; i > toIndex; i--) {
+        const current = effects[i];
+        const prev = effects[i - 1];
+        current.updateConfig({ zIndex: prev.getZIndex() });
+      }
+    }
+
+    // 移動対象のエフェクトを目的の位置に配置
+    effect.updateConfig({ zIndex: targetZIndex });
+
+    this.sortEffectsByZIndex();
+    this.render();
   }
 }

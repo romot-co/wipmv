@@ -4,6 +4,7 @@ import { Theme } from '@radix-ui/themes'
 import '@radix-ui/themes/styles.css'
 import '@radix-ui/themes/layout.css'
 import App from './App'
+import { AppProvider } from './contexts/AppContext'
 import './styles/index.css'
 
 const rootElement = document.getElementById('root');
@@ -21,7 +22,9 @@ root.render(
       scaling="95%"
       radius="medium"
     >
-      <App />
+      <AppProvider>
+        <App />
+      </AppProvider>
     </Theme>
   </React.StrictMode>
 );

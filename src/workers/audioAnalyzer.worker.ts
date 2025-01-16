@@ -1,276 +1,143 @@
-interface AudioAnalyzerWorkerData {
-  channelData: Float32Array[];
-  sampleRate: number;
-  length: number;
+/// <reference lib="webworker" />
+import FFT from 'fft.js';
+
+interface AudioData {
+  readonly channelData: Float32Array;
+  readonly sampleRate: number;
+  readonly duration: number;
+  readonly numberOfChannels: number;
 }
 
-interface AnalysisData {
-  waveformData: Float32Array[];
-  frequencyData: Float32Array[][];
-  amplitudeData: Float32Array[];
-  phaseData: Float32Array[];
-  stereoData: Float32Array[];
-  dynamicRangeData: Float32Array[];
-  spectralCentroidData: Float32Array[];
-  spectralFluxData: Float32Array[];
+interface WorkerMessage {
+  readonly type: 'analyze';
+  readonly audioData: AudioData;
 }
 
-self.onmessage = async (event: MessageEvent<AudioAnalyzerWorkerData>) => {
-  const { channelData, sampleRate, length } = event.data;
-  console.log('Worker: 解析開始', { channels: channelData.length, sampleRate, length });
+// FFTサイズとホップサイズの定義
+const FFT_SIZE = 2048;
+const HOP_SIZE = FFT_SIZE / 4;
 
+// FFT処理の実装
+function computeFFT(data: Float32Array): Float32Array {
+  const fft = new FFT(FFT_SIZE);
+  const out = fft.createComplexArray();
+  const input = new Float32Array(FFT_SIZE);
+
+  // ハニング窓を適用
+  for (let i = 0; i < FFT_SIZE; i++) {
+    if (i < data.length) {
+      const windowValue = 0.5 * (1 - Math.cos(2 * Math.PI * i / FFT_SIZE));
+      input[i] = data[i] * windowValue;
+    }
+  }
+
+  // FFT計算
+  fft.realTransform(out, input);
+
+  // パワースペクトルの計算
+  const magnitudes = new Float32Array(FFT_SIZE / 2);
+  for (let i = 0; i < FFT_SIZE / 2; i++) {
+    const real = out[2 * i];
+    const imag = out[2 * i + 1];
+    magnitudes[i] = Math.sqrt(real * real + imag * imag) / FFT_SIZE;
+  }
+
+  return magnitudes;
+}
+
+// 音声解析処理
+const analyzeAudio = (audioData: AudioData) => {
   try {
-    // 波形データの解析
-    console.log('Worker: 波形データの解析開始');
-    const waveformData = channelData.map(channel => {
-      return analyzeWaveform(channel);
-    });
-    console.log('Worker: 波形データの解析完了', waveformData.length);
+    const { channelData, duration, sampleRate } = audioData;
+
+    // 波形データの抽出（1秒あたり60サンプル）
+    const samplesPerSecond = 60;
+    const totalSamples = Math.ceil(duration * samplesPerSecond);
+    const waveformData = new Float32Array(totalSamples);
+    const samplesPerPoint = Math.floor(channelData.length / totalSamples);
+
+    // 波形データの生成（RMS値を使用）
+    for (let i = 0; i < totalSamples; i++) {
+      const startSample = i * samplesPerPoint;
+      const endSample = Math.min(startSample + samplesPerPoint, channelData.length);
+      let sum = 0;
+      
+      for (let j = startSample; j < endSample; j++) {
+        sum += channelData[j] * channelData[j];
+      }
+      
+      waveformData[i] = Math.sqrt(sum / (endSample - startSample));
+    }
 
     // 周波数データの解析
-    console.log('Worker: 周波数データの解析開始');
-    const frequencyData = channelData.map(channel => {
-      return analyzeFrequency(channel);
-    });
-    console.log('Worker: 周波数データの解析完了', frequencyData.length);
+    const numFrames = Math.floor((channelData.length - FFT_SIZE) / HOP_SIZE) + 1;
+    const frequencyData = new Float32Array(FFT_SIZE / 2);
 
-    // 振幅データの解析
-    console.log('Worker: 振幅データの解析開始');
-    const amplitudeData = channelData.map(channel => {
-      return analyzeAmplitude(channel);
-    });
-    console.log('Worker: 振幅データの解析完了');
+    // 各フレームでFFTを計算し、平均を取る
+    for (let frame = 0; frame < numFrames; frame++) {
+      const startIndex = frame * HOP_SIZE;
+      const segment = channelData.slice(startIndex, startIndex + FFT_SIZE);
+      const fft = computeFFT(segment);
 
-    // 位相データの解析
-    console.log('Worker: 位相データの解析開始');
-    const phaseData = channelData.map(channel => {
-      return analyzePhase(channel);
-    });
-    console.log('Worker: 位相データの解析完了');
-
-    // ステレオデータの解析
-    console.log('Worker: ステレオデータの解析開始');
-    const stereoData = analyzeStereo(channelData);
-    console.log('Worker: ステレオデータの解析完了');
-
-    // ダイナミックレンジの解析
-    console.log('Worker: ダイナミックレンジの解析開始');
-    const dynamicRangeData = channelData.map(channel => {
-      return analyzeDynamicRange(channel);
-    });
-    console.log('Worker: ダイナミックレンジの解析完了');
-
-    // スペクトル重心の解析
-    console.log('Worker: スペクトル重心の解析開始');
-    const spectralCentroidData = channelData.map(channel => {
-      return analyzeSpectralCentroid(channel, sampleRate);
-    });
-    console.log('Worker: スペクトル重心の解析完了');
-
-    // スペクトラルフラックスの解析
-    console.log('Worker: スペクトラルフラックスの解析開始');
-    const spectralFluxData = channelData.map(channel => {
-      return analyzeSpectralFlux(channel);
-    });
-    console.log('Worker: スペクトラルフラックスの解析完了');
-
-    // データの検証
-    const isValid = validateAnalysisData({
-      waveformData,
-      frequencyData,
-      amplitudeData,
-      phaseData,
-      stereoData,
-      dynamicRangeData,
-      spectralCentroidData,
-      spectralFluxData
-    });
-
-    if (!isValid) {
-      throw new Error('解析データの検証に失敗しました');
+      // 周波数ビンごとに加算
+      for (let i = 0; i < FFT_SIZE / 2; i++) {
+        frequencyData[i] += fft[i];
+      }
     }
 
-    // 結果を返信
-    console.log('Worker: 解析結果の送信開始');
-    self.postMessage({
-      waveformData,
-      frequencyData,
-      amplitudeData,
-      phaseData,
-      stereoData,
-      dynamicRangeData,
-      spectralCentroidData,
-      spectralFluxData
-    });
-    console.log('Worker: 解析結果の送信完了');
-
-  } catch (error: unknown) {
-    console.error('Worker: エラー発生', error);
-    if (error instanceof Error) {
-      throw new Error('Failed to analyze audio data: ' + error.message);
-    } else {
-      throw new Error('Failed to analyze audio data: Unknown error');
+    // 平均化
+    for (let i = 0; i < FFT_SIZE / 2; i++) {
+      frequencyData[i] /= numFrames;
     }
+
+    return {
+      duration,
+      sampleRate,
+      numberOfChannels: audioData.numberOfChannels,
+      waveformData: [waveformData],
+      frequencyData: [frequencyData]
+    };
+
+  } catch (error) {
+    console.error('音声解析エラー:', error);
+    throw new Error(error instanceof Error ? error.message : '音声解析に失敗しました');
   }
 };
 
-function validateAnalysisData(data: AnalysisData): boolean {
-  // 各データの存在チェック
-  if (!data.waveformData || !data.frequencyData) {
-    console.error('必須データが欠落しています');
-    return false;
-  }
-
-  // データの長さチェック
-  if (data.waveformData.length === 0 || data.frequencyData.length === 0) {
-    console.error('データが空です');
-    return false;
-  }
-
-  // データの型チェック
-  if (!Array.isArray(data.waveformData) || !Array.isArray(data.frequencyData)) {
-    console.error('データの型が不正です');
-    return false;
-  }
-
-  return true;
-}
-
-// 波形データの解析
-function analyzeWaveform(channelData: Float32Array): Float32Array {
-  return channelData;
-}
-
-// 周波数データの解析
-function analyzeFrequency(channelData: Float32Array): Float32Array[] {
-  const fftSize = 2048;
-  const hopSize = fftSize / 4;
-  const numFrames = Math.floor((channelData.length - fftSize) / hopSize) + 1;
-  const frames: Float32Array[] = [];
-
-  for (let i = 0; i < numFrames; i++) {
-    const frame = new Float32Array(fftSize);
-    const startIndex = i * hopSize;
-    frame.set(channelData.slice(startIndex, startIndex + fftSize));
-    frames.push(performFFT(frame));
-  }
-
-  return frames;
-}
-
-// FFTの実行
-function performFFT(frame: Float32Array): Float32Array {
-  // ここにFFTの実装を追加
-  // 簡易的な実装として、同じデータを返す
-  return frame;
-}
-
-// 振幅データの解析
-function analyzeAmplitude(channelData: Float32Array): Float32Array {
-  const frameSize = 1024;
-  const hopSize = frameSize / 2;
-  const numFrames = Math.floor((channelData.length - frameSize) / hopSize) + 1;
-  const amplitudes = new Float32Array(numFrames);
-
-  for (let i = 0; i < numFrames; i++) {
-    const startIndex = i * hopSize;
-    const frame = channelData.slice(startIndex, startIndex + frameSize);
-    amplitudes[i] = Math.max(...frame.map(Math.abs));
-  }
-
-  return amplitudes;
-}
-
-// 位相データの解析
-function analyzePhase(channelData: Float32Array): Float32Array {
-  // 簡易的な実装として、同じデータを返す
-  return channelData;
-}
-
-// ステレオデータの解析
-function analyzeStereo(channelData: Float32Array[]): Float32Array[] {
-  if (channelData.length < 2) {
-    return [new Float32Array(channelData[0].length)];
-  }
-
-  const stereoData = new Float32Array(channelData[0].length);
-  for (let i = 0; i < channelData[0].length; i++) {
-    stereoData[i] = Math.abs(channelData[0][i] - channelData[1][i]);
-  }
-
-  return [stereoData];
-}
-
-// ダイナミックレンジの解析
-function analyzeDynamicRange(channelData: Float32Array): Float32Array {
-  const frameSize = 1024;
-  const hopSize = frameSize / 2;
-  const numFrames = Math.floor((channelData.length - frameSize) / hopSize) + 1;
-  const dynamicRange = new Float32Array(numFrames);
-
-  for (let i = 0; i < numFrames; i++) {
-    const startIndex = i * hopSize;
-    const frame = channelData.slice(startIndex, startIndex + frameSize);
-    const max = Math.max(...frame);
-    const min = Math.min(...frame);
-    dynamicRange[i] = max - min;
-  }
-
-  return dynamicRange;
-}
-
-// スペクトル重心の解析
-function analyzeSpectralCentroid(channelData: Float32Array, sampleRate: number): Float32Array {
-  const frameSize = 2048;
-  const hopSize = frameSize / 4;
-  const numFrames = Math.floor((channelData.length - frameSize) / hopSize) + 1;
-  const centroid = new Float32Array(numFrames);
-
-  for (let i = 0; i < numFrames; i++) {
-    const startIndex = i * hopSize;
-    const frame = channelData.slice(startIndex, startIndex + frameSize);
-    const spectrum = performFFT(frame);
-    
-    let weightedSum = 0;
-    let sum = 0;
-    
-    for (let j = 0; j < spectrum.length / 2; j++) {
-      const magnitude = Math.abs(spectrum[j]);
-      weightedSum += j * magnitude;
-      sum += magnitude;
+// メッセージハンドラ
+self.onmessage = (e: MessageEvent<WorkerMessage>) => {
+  try {
+    if (e.data.type !== 'analyze') {
+      throw new Error('不正なメッセージタイプです');
     }
     
-    centroid[i] = sum !== 0 ? (weightedSum / sum) * (sampleRate / frameSize) : 0;
-  }
-
-  return centroid;
-}
-
-// スペクトラルフラックスの解析
-function analyzeSpectralFlux(channelData: Float32Array): Float32Array {
-  const frameSize = 2048;
-  const hopSize = frameSize / 4;
-  const numFrames = Math.floor((channelData.length - frameSize) / hopSize) + 1;
-  const flux = new Float32Array(numFrames);
-  
-  let prevSpectrum: Float32Array | null = null;
-  
-  for (let i = 0; i < numFrames; i++) {
-    const startIndex = i * hopSize;
-    const frame = channelData.slice(startIndex, startIndex + frameSize);
-    const spectrum = performFFT(frame);
-    
-    if (prevSpectrum) {
-      let fluxSum = 0;
-      for (let j = 0; j < spectrum.length / 2; j++) {
-        const diff = Math.abs(spectrum[j]) - Math.abs(prevSpectrum[j]);
-        fluxSum += diff > 0 ? diff : 0;
-      }
-      flux[i] = fluxSum;
+    if (!e.data.audioData?.channelData) {
+      throw new Error('音声データが不正です');
     }
+
+    console.log('Worker: 解析開始', {
+      sampleRate: e.data.audioData.sampleRate,
+      duration: e.data.audioData.duration,
+      dataLength: e.data.audioData.channelData.length
+    });
     
-    prevSpectrum = spectrum;
+    const result = analyzeAudio(e.data.audioData);
+    
+    console.log('Worker: 解析完了', {
+      waveformLength: result.waveformData?.[0]?.length,
+      frequencyLength: result.frequencyData?.[0]?.length
+    });
+
+    self.postMessage({ 
+      type: 'success', 
+      data: result 
+    });
+  } catch (error) {
+    console.error('Worker: エラー発生', error);
+    self.postMessage({ 
+      type: 'error', 
+      error: error instanceof Error ? error.message : '音声解析に失敗しました',
+      details: error
+    });
   }
-  
-  return flux;
-} 
+}; 

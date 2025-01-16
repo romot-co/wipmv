@@ -16,32 +16,12 @@ export interface VideoSettings {
  * どんな情報をまとめて持つか
  */
 export interface AudioSource {
-  /** 元のファイル */
-  file?: File;
-  /** デコード済み AudioBuffer */
   buffer: AudioBuffer;
-  /** サンプリングレート */
-  sampleRate: number;
-  /** チャンネル数 */
-  numberOfChannels: number;
-  /** 再生総時間(秒) */
   duration: number;
-  /** 波形データ */
+  sampleRate: number;
+  numberOfChannels: number;
   waveformData?: Float32Array[];
-  /** 周波数データ */
-  frequencyData?: Float32Array[][];
-  /** 振幅データ */
-  amplitudeData?: Float32Array[];
-  /** 位相データ */
-  phaseData?: Float32Array[];
-  /** ステレオデータ */
-  stereoData?: Float32Array[];
-  /** ダイナミックレンジデータ */
-  dynamicRangeData?: Float32Array[];
-  /** スペクトル重心データ */
-  spectralCentroidData?: Float32Array[];
-  /** スペクトラルフラックスデータ */
-  spectralFluxData?: Float32Array[];
+  frequencyData?: Uint8Array[];
 }
 
 /**
@@ -193,8 +173,8 @@ export interface AudioVisualParameters {
   currentTime: number;
   duration: number;
   isPlaying: boolean;
-  waveformData?: Float32Array | null;
-  frequencyData?: Uint8Array | null;
+  waveformData?: Float32Array[] | null;
+  frequencyData?: Uint8Array[] | null;
 }
 
 /**
@@ -229,7 +209,16 @@ export enum ErrorType {
   // エクスポート関連
   ExportInitFailed = 'ExportInitFailed',
   ExportRenderFailed = 'ExportRenderFailed',
-  ExportEncodeFailed = 'ExportEncodeFailed'
+  ExportEncodeFailed = 'ExportEncodeFailed',
+  
+  // 再生エラー
+  PlaybackError = 'PlaybackError',
+  
+  // エクスポートエラー
+  ExportFailed = 'ExportFailed',
+  
+  // 未知のエラー
+  UnknownError = 'UnknownError'
 }
 
 /**
@@ -264,7 +253,16 @@ export const ErrorMessages: Record<ErrorType, string> = {
   // エクスポート関連
   ExportInitFailed: 'エクスポートの初期化に失敗しました',
   ExportRenderFailed: 'エクスポートのレンダリングに失敗しました',
-  ExportEncodeFailed: 'エクスポートのエンコードに失敗しました'
+  ExportEncodeFailed: 'エクスポートのエンコードに失敗しました',
+  
+  // 再生エラー
+  PlaybackError: '再生中にエラーが発生しました',
+  
+  // エクスポートエラー
+  ExportFailed: 'エクスポートに失敗しました',
+  
+  // 未知のエラー
+  UnknownError: '未知のエラーが発生しました'
 };
 
 /**

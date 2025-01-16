@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { AudioPlaybackService } from '../core/AudioPlaybackService';
-import { AudioPlaybackState } from '../core/types';
+import { AudioPlaybackState, AppError } from '../core/types';
 
 export function useAudioControl(audioService: AudioPlaybackService) {
   const [state, setState] = useState<AudioPlaybackState>({
@@ -36,7 +36,9 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     const playbackState = audioService.getPlaybackState();
     setState(prev => ({
       ...prev,
-      currentTime: Math.round(playbackState.currentTime * 1000) / 1000 // 小数点以下3桁に正規化
+      currentTime: Math.round(playbackState.currentTime * 1000) / 1000, // 小数点以下3桁に正規化
+      isPlaying: playbackState.isPlaying,
+      duration: Math.round(playbackState.duration * 1000) / 1000 // 小数点以下3桁に正規化
     }));
     
     rafIdRef.current = requestAnimationFrame(updateTime);
@@ -62,7 +64,7 @@ export function useAudioControl(audioService: AudioPlaybackService) {
         rafIdRef.current = requestAnimationFrame(updateTime);
       }
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("再生に失敗しました");
+      const error = err instanceof AppError ? err : new Error("再生に失敗しました");
       setState((prev) => ({ ...prev, error }));
     }
   }, [audioService, updateTime]);
@@ -70,9 +72,9 @@ export function useAudioControl(audioService: AudioPlaybackService) {
   /**
    * pause
    */
-  const pause = useCallback(() => {
+  const pause = useCallback(async () => {
     try {
-      audioService.pause();
+      await audioService.pause();
       setState((prev) => ({ ...prev, isPlaying: false, error: null }));
 
       // 一時停止時にRAFを停止
@@ -81,7 +83,7 @@ export function useAudioControl(audioService: AudioPlaybackService) {
         rafIdRef.current = null;
       }
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("一時停止に失敗しました");
+      const error = err instanceof AppError ? err : new Error("一時停止に失敗しました");
       setState((prev) => ({ ...prev, error }));
     }
   }, [audioService]);
@@ -89,10 +91,10 @@ export function useAudioControl(audioService: AudioPlaybackService) {
   /**
    * stop
    */
-  const stop = useCallback(() => {
+  const stop = useCallback(async () => {
     try {
-      audioService.pause(); // 一時停止
-      audioService.seek(0); // 先頭にシーク
+      await audioService.pause(); // 一時停止
+      await audioService.seek(0); // 先頭にシーク
       setState((prev) => ({ 
         ...prev, 
         isPlaying: false, 
@@ -106,7 +108,7 @@ export function useAudioControl(audioService: AudioPlaybackService) {
         rafIdRef.current = null;
       }
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("停止に失敗しました");
+      const error = err instanceof AppError ? err : new Error("停止に失敗しました");
       setState((prev) => ({ ...prev, error }));
     }
   }, [audioService]);
@@ -117,7 +119,7 @@ export function useAudioControl(audioService: AudioPlaybackService) {
   const seek = useCallback(
     async (time: number) => {
       try {
-        audioService.seek(time);
+        await audioService.seek(time);
         const playbackState = audioService.getPlaybackState();
         setState((prev) => ({
           ...prev,
@@ -125,7 +127,43 @@ export function useAudioControl(audioService: AudioPlaybackService) {
           currentTime: Math.round(playbackState.currentTime * 1000) / 1000 // 小数点以下3桁に正規化
         }));
       } catch (err) {
-        const error = err instanceof Error ? err : new Error("シークに失敗しました");
+        const error = err instanceof AppError ? err : new Error("シークに失敗しました");
+        setState((prev) => ({ ...prev, error }));
+      }
+    },
+    [audioService]
+  );
+
+  // 音量設定
+  const setVolume = useCallback(
+    (volume: number) => {
+      try {
+        audioService.setVolume(volume);
+        setState((prev) => ({
+          ...prev,
+          volume,
+          error: null
+        }));
+      } catch (err) {
+        const error = err instanceof AppError ? err : new Error("音量設定に失敗しました");
+        setState((prev) => ({ ...prev, error }));
+      }
+    },
+    [audioService]
+  );
+
+  // ループ設定
+  const setLoop = useCallback(
+    (loop: boolean) => {
+      try {
+        audioService.setLoop(loop);
+        setState((prev) => ({
+          ...prev,
+          loop,
+          error: null
+        }));
+      } catch (err) {
+        const error = err instanceof AppError ? err : new Error("ループ設定に失敗しました");
         setState((prev) => ({ ...prev, error }));
       }
     },
@@ -148,5 +186,7 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     pause,
     stop,
     seek,
+    setVolume,
+    setLoop
   };
 }

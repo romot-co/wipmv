@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { Container, Flex, Box, Card, Button, Text, Section } from '@radix-ui/themes';
+import React, { useState, useCallback, useMemo } from 'react';
+import { Container, Flex, Box, Card, Section } from '@radix-ui/themes';
 import { PlaybackControls } from './ui/PlaybackControls';
 import { EffectList } from './ui/EffectList';
 import { EffectSettings } from './ui/EffectSettings';
@@ -7,19 +7,20 @@ import { PreviewCanvas } from './ui/PreviewCanvas';
 import { ExportButton } from './ui/ExportButton';
 import { AudioUploader } from './ui/AudioUploader';
 import { useAudioControl } from './hooks/useAudioControl';
+import { useApp } from './contexts/AppContext';
+import { ErrorBoundary, CustomErrorFallback } from './ErrorBoundary';
 
 import { 
-  EffectConfig, 
   EffectType,
   AudioSource,
-  ProjectData
+  EffectConfig,
 } from './core/types';
 
 import { EffectManager } from './core/EffectManager';
 import { AudioPlaybackService } from './core/AudioPlaybackService';
+import { ProjectService } from './core/ProjectService';
 import { AudioAnalyzerService } from './core/AudioAnalyzerService';
 import { EffectBase } from './core/EffectBase';
-import { ProjectService } from './core/ProjectService';
 import { BackgroundEffect } from './features/background/BackgroundEffect';
 import { TextEffect } from './features/text/TextEffect';
 import { WaveformEffect } from './features/waveform/WaveformEffect';
@@ -44,44 +45,7 @@ function hasSetAudioSource(effect: unknown): effect is WithAudioSource {
 }
 
 export const App: React.FC = () => {
-  // アプリケーション状態
-  type AppState = 'initial' | 'ready' | 'error';
-  const [appState, setAppState] = useState<AppState>('initial');
-
-  // エラー集約
-  const [errors, setErrors] = useState<{
-    audio?: Error;
-    effect?: Error;
-    export?: Error;
-  }>({});
-
-  // エラーハンドリング
-  const handleError = useCallback((type: keyof typeof errors, error: Error) => {
-    console.error(`${type}エラー:`, error);
-    setErrors(prev => ({
-      ...prev,
-      [type]: error
-    }));
-    setAppState('error');
-  }, []);
-
-  // 状態遷移
-  const transition = useCallback((newState: AppState) => {
-    console.log(`状態遷移: ${appState} -> ${newState}`);
-    setAppState(newState);
-  }, [appState]);
-
-  // エラー状態のクリア
-  const clearError = useCallback((type: keyof typeof errors) => {
-    setErrors(prev => {
-      const newErrors = { ...prev };
-      delete newErrors[type];
-      return newErrors;
-    });
-    if (Object.keys(errors).length === 1) {
-      transition('ready');
-    }
-  }, [errors, transition]);
+  const { handleError, clearError } = useApp();
 
   // 動画設定
   const [videoSettings, setVideoSettings] = useState({
@@ -101,7 +65,7 @@ export const App: React.FC = () => {
   const [selectedEffectId, setSelectedEffectId] = useState<string>();
 
   // AudioPlaybackServiceをシングルトン的に保持
-  const [audioService] = useState(() => AudioPlaybackService.getInstance());
+  const audioService = useMemo(() => AudioPlaybackService.getInstance(), []);
 
   // 事前解析データを保持
   const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
@@ -109,27 +73,35 @@ export const App: React.FC = () => {
   const [manager, setManager] = useState<EffectManager | null>(null);
   const [effects, setEffects] = useState<EffectBase[]>([]);
 
-  // ProjectServiceの初期化
-  useEffect(() => {
-    const initializeProjectService = async () => {
-      try {
-        await ProjectService.getInstance().initialize();
-      } catch (error) {
-        handleError('effect', error instanceof Error ? error : new Error('プロジェクトサービスの初期化に失敗しました'));
-      }
-    };
-    initializeProjectService();
-  }, [handleError]);
-
   // EffectManager初期化時に呼ばれる
   const handleManagerInit = useCallback((newManager: EffectManager) => {
     console.log('EffectManager初期化:', newManager);
-    setManager(newManager);
-
-    // AudioServiceを接続して描画ループ開始
+    
+    // 既に初期化済みの場合は何もしない
+    if (manager) {
+      console.log('EffectManagerは既に初期化済みです');
+      return;
+    }
+    
+    // AudioServiceを接続（この中でAudioSourceも設定される）
     newManager.connectAudioService(audioService);
+    
+    // レンダリングループを開始
     newManager.startRenderLoop();
-  }, [audioService]);
+
+    // 既存のエフェクトがあれば再設定
+    effects.forEach(effect => {
+      if (hasSetAudioSource(effect)) {
+        const currentAudioSource = audioService.getAudioSource();
+        if (currentAudioSource) {
+          effect.setAudioSource(currentAudioSource);
+        }
+      }
+      newManager.addEffect(effect);
+    });
+
+    setManager(newManager);
+  }, [audioService, manager, effects]);
 
   // オーディオ制御フック (UI操作用)
   const {
@@ -140,12 +112,14 @@ export const App: React.FC = () => {
   } = useAudioControl(audioService);
 
   // エフェクト追加
-  const handleEffectAdd = useCallback((type: EffectType) => {
+  const handleEffectAdd = useCallback(async (type: EffectType) => {
     if (!manager) return;
     try {
-      const zIndex = manager.getEffects().length;
+      const currentEffects = manager.getEffects();
+      const zIndex = currentEffects.length;
       let effect: EffectBase;
-      const currentDuration = duration || 0;
+      const currentDuration = audioService.getAudioSource()?.duration || 0;
+      console.log('エフェクト追加:', { type, currentDuration });
 
       switch (type) {
         case EffectType.Background:
@@ -183,51 +157,95 @@ export const App: React.FC = () => {
       }
 
       // エフェクト追加時に事前解析データを設定
-      if (audioSource && hasSetAudioSource(effect)) {
-        effect.setAudioSource(audioSource);
+      const currentAudioSource = audioService.getAudioSource();
+      if (currentAudioSource && hasSetAudioSource(effect)) {
+        console.log('エフェクトに音声ソースを設定:', {
+          effectType: type,
+          hasWaveformData: !!currentAudioSource.waveformData
+        });
+        effect.setAudioSource(currentAudioSource);
       }
 
       manager.addEffect(effect);
-      setEffects(manager.getEffects());
+      const updatedEffects = manager.getEffects();
+      console.log('エフェクト更新:', {
+        type,
+        effectCount: updatedEffects.length,
+        effects: updatedEffects.map(e => ({
+          id: e.getConfig().id,
+          type: e.getConfig().type
+        }))
+      });
+      setEffects(updatedEffects);
+      // 新しく追加したエフェクトを選択
+      setSelectedEffectId(effect.getConfig().id);
+      clearError('effect');
     } catch (error) {
       handleError('effect', error instanceof Error ? error : new Error('エフェクトの追加に失敗しました'));
     }
-  }, [manager, handleError, duration, audioSource]);
+  }, [manager, handleError, audioService, clearError]);
+
+  // エフェクト削除
+  const handleEffectRemove = useCallback((id: string) => {
+    if (!manager) return;
+    manager.removeEffect(id);
+    const updatedEffects = manager.getEffects();
+    console.log('エフェクト削除:', {
+      id,
+      remainingCount: updatedEffects.length
+    });
+    setEffects(updatedEffects);
+    // 削除したエフェクトが選択中だった場合、選択を解除
+    if (selectedEffectId === id) {
+      setSelectedEffectId(undefined);
+    }
+  }, [manager, selectedEffectId]);
+
+  // エフェクト移動
+  const handleEffectMove = useCallback((id: string, direction: 'up' | 'down') => {
+    if (!manager) return;
+    const currentEffects = manager.getEffects();
+    const currentIndex = currentEffects.findIndex(e => e.getConfig().id === id);
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    
+    if (newIndex >= 0 && newIndex < currentEffects.length) {
+      manager.moveEffect(currentIndex, newIndex);
+      const updatedEffects = manager.getEffects();
+      console.log('エフェクト移動:', {
+        id,
+        direction,
+        newIndex,
+        effectCount: updatedEffects.length
+      });
+      setEffects(updatedEffects);
+    }
+  }, [manager]);
 
   // オーディオファイルのロード処理
   const handleAudioLoad = useCallback(async (file: File) => {
     try {
-      console.log('オーディオロード＆解析を開始...');
+      // AudioPlaybackServiceからAudioContextを取得
+      const audioContext = audioService.getAudioContext();
+      const arrayBuffer = await file.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-      // AudioPlaybackService でファイルを読み込み＆decode
-      await audioService.loadAudio(file);
+      // AudioAnalyzerServiceを使用して解析
+      const analyzerService = AudioAnalyzerService.getInstance();
+      const analysisResult = await analyzerService.analyzeAudio(audioBuffer);
 
-      // decode済みのAudioSourceを取得(まだAnalyzerは走っていない状態)
-      const loadedSource = audioService.getAudioSource();
-      if (!loadedSource?.buffer) {
-        throw new Error('AudioBufferが正しくロードされませんでした。');
-      }
-
-      // オフライン解析する場合は、AudioAnalyzerServiceにAudioBufferを渡す
-      const analyzer = AudioAnalyzerService.getInstance();
-      const analysisResult = await analyzer.analyzeAudio(loadedSource);
-
-      // WaveformEffectなどに使う解析データをstateに保持
+      // 音声ソースを設定
       setAudioSource(analysisResult);
-
-      // AudioPlaybackServiceにも解析済みsourceを再設定する場合はここで呼ぶ
-      // （必要なければスキップしてもよい）
       await audioService.setAudioSource(analysisResult);
 
-      // エラークリア＆状態遷移
+      // エラークリア
       clearError('audio');
-      transition('ready');
 
-      // 新規プロジェクト生成など既存処理
-      const projectService = ProjectService.getInstance();
-      const projectData = await projectService.createProject('New Project');
-      if (manager) {
-        // videoSettingsやエフェクトの初期化
+      // 新規プロジェクトの作成
+      try {
+        const projectService = ProjectService.getInstance();
+        const projectData = await projectService.createProject('New Project');
+        
+        // 設定復元
         const newSettings = {
           width: projectData.videoSettings.width,
           height: projectData.videoSettings.height,
@@ -237,217 +255,124 @@ export const App: React.FC = () => {
         };
         setVideoSettings(newSettings);
 
-        // 画面にあったDefaultEffectの追加
-        manager.getEffects().forEach(effect => {
-          manager.removeEffect(effect.getConfig().id);
-        });
-        handleEffectAdd(EffectType.Background);
-        handleEffectAdd(EffectType.Waveform);
-        setEffects(manager.getEffects());
+        // 既存のManagerがあれば音声ソースを設定
+        if (manager) {
+          manager.connectAudioService(audioService);
+        }
+
+      } catch (error) {
+        console.warn('プロジェクトの作成に失敗しました:', error);
       }
+
     } catch (error) {
-      handleError(
-        'audio',
-        error instanceof Error ? error : new Error('オーディオ読み込みに失敗しました')
-      );
+      handleError('audio', error instanceof Error ? error : new Error('音声ファイルの読み込みに失敗しました'));
     }
-  }, [audioService, manager, handleEffectAdd, handleError, clearError, transition, setVideoSettings]);
+  }, [audioService, handleError, clearError, manager]);
 
-  // エフェクト削除
-  const handleEffectRemove = useCallback((id: string) => {
-    if (!manager) return;
-    manager.removeEffect(id);
-    setEffects(manager.getEffects());
-    if (selectedEffectId === id) {
-      setSelectedEffectId(undefined);
-    }
-  }, [manager, selectedEffectId]);
-
-  // エフェクトの上下移動
-  const handleEffectMove = useCallback((id: string, direction: 'up' | 'down') => {
-    if (!manager) return;
-    if (direction === 'up') {
-      manager.moveEffectUp(id);
-    } else {
-      manager.moveEffectDown(id);
-    }
-    setEffects(manager.getEffects());
-  }, [manager]);
-
-  // エフェクト設定の更新
-  const handleEffectUpdate = useCallback((config: Partial<EffectConfig>) => {
-    if (!manager || !selectedEffectId) return;
-    manager.updateEffect(selectedEffectId, config);
-    setEffects(manager.getEffects());
-  }, [manager, selectedEffectId]);
-
-  // 選択中エフェクト
+  // 選択中のエフェクトを取得
   const selectedEffect = useMemo(() => {
-    if (!selectedEffectId || !manager) return undefined;
-    return manager.getEffects().find(e => e.getConfig().id === selectedEffectId);
+    if (!selectedEffectId || !manager) return null;
+    return manager.getEffects().find(e => e.getConfig().id === selectedEffectId) || null;
   }, [selectedEffectId, manager]);
 
-  // プロジェクト保存
-  const saveProject = useCallback(() => {
+  // エフェクト設定の更新
+  const handleEffectUpdate = useCallback(<T extends EffectConfig>(id: string, newConfig: Partial<T>) => {
     if (!manager) return;
     try {
-      const audioSource = audioService.getAudioSource();
-      const projectData: ProjectData = {
-        version: '1.0.0',
-        id: crypto.randomUUID(),
-        name: 'Untitled Project',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        videoSettings: {
-          width: videoSettings.width,
-          height: videoSettings.height,
-          fps: videoSettings.frameRate,
-          bitrate: videoSettings.videoBitrate
-        },
-        effects: manager.getEffects().map(effect => effect.getConfig()),
-        audioInfo: audioSource
-          ? {
-              fileName: 'audio.mp3',
-              duration: audioSource.duration,
-              sampleRate: audioSource.sampleRate,
-              numberOfChannels: audioSource.numberOfChannels
-            }
-          : undefined
-      };
-      ProjectService.getInstance().saveProject(projectData);
+      manager.updateEffect(id, newConfig);
+      const updatedEffects = manager.getEffects();
+      console.log('エフェクト設定更新:', {
+        id,
+        config: newConfig,
+        effectCount: updatedEffects.length
+      });
+      setEffects(updatedEffects);
+      clearError('effect');
     } catch (error) {
-      handleError('effect', error instanceof Error ? error : new Error('プロジェクトの保存に失敗しました'));
+      handleError('effect', error instanceof Error ? error : new Error('エフェクトの更新に失敗しました'));
     }
-  }, [manager, videoSettings, audioService, handleError]);
-
-  // PlaybackControls 用
-  const playbackProps = useMemo(() => ({
-    isPlaying,
-    currentTime,
-    duration,
-    onPlay: async () => await play(),
-    onPause: async () => pause(),
-    onSeek: seek
-  }), [isPlaying, currentTime, duration, play, pause, seek]);
-
-  // PreviewCanvas 用
-  const previewProps = useMemo(() => ({
-    isPlaying,
-    onManagerInit: handleManagerInit,  // PreviewCanvas内でEffectManager作成時に呼ぶ
-    onError: (error: Error) => handleError('effect', error),
-    videoSettings
-  }), [isPlaying, handleManagerInit, handleError, videoSettings]);
-
-  // エラー表示コンポーネント
-  const ErrorMessage: React.FC<{
-    type: keyof typeof errors;
-    error: Error;
-  }> = ({ type, error }) => (
-    <Card className="error-section">
-      <Flex direction="column" gap="3" p="3">
-        <Text color="red" size="2" weight="medium">{error.message}</Text>
-        <Button onClick={() => clearError(type)} variant="soft" color="gray">
-          再試行
-        </Button>
-      </Flex>
-    </Card>
-  );
+  }, [manager, handleError, clearError]);
 
   return (
-    <Container className="app">
-      {appState === 'initial' ? (
-        <Flex className="app--empty">
-          <Container size="2">
-            <Flex direction="column" gap="4" align="center">
-              <Section size="2">
+    <ErrorBoundary fallback={CustomErrorFallback}>
+      <div className="app">
+        <Container>
+          <Section>
+            {!audioSource ? (
+              <Card className="upload-section">
                 <AudioUploader
                   onFileSelect={handleAudioLoad}
                   onError={(error) => handleError('audio', error)}
                 />
-              </Section>
-              {errors.audio && <ErrorMessage type="audio" error={errors.audio} />}
-            </Flex>
-          </Container>
-        </Flex>
-      ) : appState === 'error' ? (
-        <Flex className="app--error">
-          <Container size="2">
-            <Flex direction="column" gap="4">
-              {Object.entries(errors).map(([type, error]) => (
-                <ErrorMessage
-                  key={type}
-                  type={type as keyof typeof errors}
-                  error={error}
-                />
-              ))}
-            </Flex>
-          </Container>
-        </Flex>
-      ) : (
-        <>
-          <Flex className="main-content">
-            <Section className="preview-section" size="3">
-              {/* PreviewCanvasコンポーネントがEffectManagerを初期化し、handleManagerInitを呼ぶ */}
-              <PreviewCanvas {...previewProps} />
-              <Card className="controls-section">
-                <PlaybackControls {...playbackProps} />
-                <Flex gap="2">
-                  {/* Export処理 */}
-                  {audioService.getAudioSource() && (
-                    <ExportButton
-                      manager={manager}
-                      onError={(error) => handleError('export', error)}
-                      onProgress={handleExportProgress}
+              </Card>
+            ) : (
+              <Flex direction="column" gap="4">
+                <Box className="main-content">
+                  <Card className="preview-section">
+                    <PreviewCanvas
+                      onManagerInit={handleManagerInit}
                       videoSettings={videoSettings}
-                      onSettingsChange={setVideoSettings}
-                      audioSource={audioService.getAudioSource()!}
                     />
-                  )}
-                  {/* プロジェクト保存 */}
-                  <Button
-                    variant="surface"
-                    color="gray"
-                    onClick={saveProject}
-                  >
-                    プロジェクトを保存
-                  </Button>
-                </Flex>
-                {exportProgress > 0 && (
-                  <Text size="2" color="gray">
-                    エクスポート進捗: {Math.round(exportProgress)}%
-                  </Text>
-                )}
-              </Card>
-            </Section>
+                    <Box className="controls-section">
+                      <PlaybackControls
+                        currentTime={currentTime}
+                        duration={duration}
+                        isPlaying={isPlaying}
+                        onPlay={play}
+                        onPause={pause}
+                        onSeek={seek}
+                        volume={audioService.getVolume()}
+                        onVolumeChange={(v) => audioService.setVolume(v)}
+                        loop={audioService.getLoop()}
+                        onLoopChange={(l) => audioService.setLoop(l)}
+                      />
+                    </Box>
+                  </Card>
 
-            {/* エフェクト管理 UI */}
-            <Box className="effects-panel">
-              <Card className="effects-section">
-                <Box className="effect-list">
-                  <EffectList
-                    effects={effects}
-                    selectedEffectId={selectedEffectId}
-                    onEffectSelect={setSelectedEffectId}
-                    onEffectRemove={handleEffectRemove}
-                    onEffectMove={handleEffectMove}
-                    onEffectAdd={handleEffectAdd}
-                  />
+                  <Card className="effects-panel">
+                    <Flex direction="column" gap="4">
+                      <EffectList
+                        effects={effects}
+                        selectedEffectId={selectedEffectId}
+                        onEffectSelect={setSelectedEffectId}
+                        onEffectAdd={handleEffectAdd}
+                        onEffectRemove={handleEffectRemove}
+                        onEffectMove={handleEffectMove}
+                      />
+                      {selectedEffect && (
+                        <Box className="effect-settings-container">
+                          <EffectSettings
+                            effect={selectedEffect}
+                            onUpdate={(config) => handleEffectUpdate(selectedEffect.getConfig().id, config)}
+                            duration={audioService.getDuration()}
+                          />
+                        </Box>
+                      )}
+                    </Flex>
+                  </Card>
                 </Box>
-                {selectedEffect && (
-                  <Box className="effect-settings">
-                    <EffectSettings
-                      effect={selectedEffect}
-                      onUpdate={handleEffectUpdate}
-                      duration={duration || 0}
-                    />
-                  </Box>
-                )}
-              </Card>
-            </Box>
-          </Flex>
-        </>
-      )}
-    </Container>
+
+                <Card className="export-section">
+                  <ExportButton
+                    manager={manager}
+                    onError={(error) => handleError('export', error)}
+                    onProgress={handleExportProgress}
+                    videoSettings={videoSettings}
+                    onSettingsChange={setVideoSettings}
+                    audioSource={audioSource}
+                  />
+                  {exportProgress > 0 && exportProgress < 100 && (
+                    <Box className="export-progress">
+                      エクスポート中... {Math.round(exportProgress)}%
+                    </Box>
+                  )}
+                </Card>
+              </Flex>
+            )}
+          </Section>
+        </Container>
+      </div>
+    </ErrorBoundary>
   );
 };
 
