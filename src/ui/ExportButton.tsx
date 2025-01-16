@@ -133,9 +133,24 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         }
       }
 
+      // エンコード完了処理
+      const result = await encoder.finalize();
+      
+      // ダウンロード処理
+      const blob = new Blob([result], { type: 'video/mp4' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'exported_video.mp4';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
       // クリーンアップ
       canvas.width = 0;
       canvas.height = 0;
+      encoder.dispose();
 
     } catch (error) {
       console.error('エクスポートエラー:', error);
@@ -143,6 +158,10 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
     } finally {
       setIsExporting(false);
       setExportProgress(0);
+      // プレビューを再開
+      if (manager) {
+        manager.startPreviewLoop();
+      }
     }
   }, [manager, onError, videoSettings, audioSource, onProgress]);
 

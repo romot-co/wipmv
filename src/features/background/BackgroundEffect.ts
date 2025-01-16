@@ -117,35 +117,25 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
   /**
    * 背景を描画
    */
-  render(ctx: CanvasRenderingContext2D): void {
-    const config = this.getConfig();
+  render(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
     const { width, height } = ctx.canvas;
-    const canvasSize: Size2D = { width, height };
+    const size = { width, height };
 
     ctx.save();
     try {
-      // 共通の描画設定
-      ctx.globalAlpha = this.animationState?.opacity ?? config.opacity ?? 1;
-      ctx.globalCompositeOperation = config.blendMode ?? 'source-over';
+      // 透明度とブレンドモードの設定
+      ctx.globalAlpha = this.animationState?.opacity ?? this.config.opacity ?? 1;
+      ctx.globalCompositeOperation = this.config.blendMode ?? 'source-over';
 
-      // 背景タイプに応じた描画
-      switch (config.backgroundType) {
-        case 'image':
-          if (this.image && config.imageUrl) {
-            this.drawImage(ctx, canvasSize);
-          }
-          break;
-
-        case 'gradient':
-          if (config.gradientColors && config.gradientColors.length >= 2) {
-            this.drawGradient(ctx, canvasSize);
-          }
-          break;
-
-        case 'color':
-        default:
-          this.drawColor(ctx, canvasSize);
-          break;
+      // 背景タイプに応じて描画
+      if (this.image) {
+        this.drawImage(ctx, size);
+      } else if (this.config.gradientColors) {
+        this.drawGradient(ctx, size);
+      } else {
+        // 単色背景
+        ctx.fillStyle = this.animationState?.color ?? this.config.color ?? '#000000';
+        ctx.fillRect(0, 0, width, height);
       }
     } finally {
       ctx.restore();
@@ -153,72 +143,77 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
   }
 
   /**
-   * 単色背景の描画
+   * 画像を設定
    */
-  private drawColor(ctx: CanvasRenderingContext2D, size: Size2D): void {
-    const color = this.animationState?.color ?? this.config.color ?? '#000000';
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, size.width, size.height);
+  setImage(url: string): void {
+    if (!url) {
+      this.image = null;
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      this.image = img;
+    };
+    img.src = url;
   }
 
   /**
-   * 画像背景の描画
+   * 画像を描画
    */
-  private drawImage(ctx: CanvasRenderingContext2D, size: Size2D): void {
+  private drawImage(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, size: Size2D): void {
     if (!this.image) return;
 
-    const fitMode = this.config.fitMode ?? 'cover';
-    const imgWidth = this.image.width;
-    const imgHeight = this.image.height;
-    const canvasRatio = size.width / size.height;
-    const imageRatio = imgWidth / imgHeight;
+    const { width, height } = size;
+    const { fitMode = 'cover' } = this.config;
 
-    let drawWidth: number;
-    let drawHeight: number;
-    let drawX: number;
-    let drawY: number;
+    const imageAspect = this.image.width / this.image.height;
+    const canvasAspect = width / height;
+
+    const sw = this.image.width;
+    const sh = this.image.height;
+    const sx = 0;
+    const sy = 0;
+    let dx = 0;
+    let dy = 0;
+    let dw = width;
+    let dh = height;
 
     if (fitMode === 'cover') {
-      // カバーモード: アスペクト比を維持しながら、キャンバス全体を覆う
-      if (canvasRatio > imageRatio) {
-        drawWidth = size.width;
-        drawHeight = size.width / imageRatio;
-        drawX = 0;
-        drawY = (size.height - drawHeight) / 2;
+      // キャンバスを完全に覆うように画像を拡大/縮小
+      if (canvasAspect > imageAspect) {
+        // キャンバスの方が横長の場合、幅に合わせる
+        dw = width;
+        dh = width / imageAspect;
+        dy = (height - dh) / 2;
       } else {
-        drawHeight = size.height;
-        drawWidth = size.height * imageRatio;
-        drawX = (size.width - drawWidth) / 2;
-        drawY = 0;
+        // キャンバスの方が縦長の場合、高さに合わせる
+        dh = height;
+        dw = height * imageAspect;
+        dx = (width - dw) / 2;
       }
     } else if (fitMode === 'contain') {
-      // コンテインモード: アスペクト比を維持しながら、キャンバス内に収める
-      if (canvasRatio > imageRatio) {
-        drawHeight = size.height;
-        drawWidth = size.height * imageRatio;
-        drawX = (size.width - drawWidth) / 2;
-        drawY = 0;
+      // アスペクト比を保持しながら、キャンバス内に収める
+      if (canvasAspect > imageAspect) {
+        // キャンバスの方が横長の場合、高さに合わせる
+        dh = height;
+        dw = height * imageAspect;
+        dx = (width - dw) / 2;
       } else {
-        drawWidth = size.width;
-        drawHeight = size.width / imageRatio;
-        drawX = 0;
-        drawY = (size.height - drawHeight) / 2;
+        // キャンバスの方が縦長の場合、幅に合わせる
+        dw = width;
+        dh = width / imageAspect;
+        dy = (height - dh) / 2;
       }
-    } else {
-      // ストレッチモード: アスペクト比を無視して引き伸ばす
-      drawWidth = size.width;
-      drawHeight = size.height;
-      drawX = 0;
-      drawY = 0;
     }
 
-    ctx.drawImage(this.image, drawX, drawY, drawWidth, drawHeight);
+    ctx.drawImage(this.image, sx, sy, sw, sh, dx, dy, dw, dh);
   }
 
   /**
    * グラデーション背景の描画
    */
-  private drawGradient(ctx: CanvasRenderingContext2D, size: Size2D): void {
+  private drawGradient(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, size: Size2D): void {
     const colors = this.config.gradientColors ?? ['#000000', '#ffffff'];
     const direction = this.config.gradientDirection ?? 'horizontal';
 

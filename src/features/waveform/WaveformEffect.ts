@@ -81,43 +81,157 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     if (!this.currentWaveformData || this.currentWaveformData.length === 0) return;
 
     const { width, height } = ctx.canvas;
-    const { color = '#ffffff', barWidth = 3, barSpacing = 1, size = { width: 0.95, height: 0.2 } } = this.config;
+    const {
+      color = '#ffffff',
+      barWidth = 3,
+      barSpacing = 1,
+      size = { width: 0.95, height: 0.2 },
+      waveformType = 'bar',
+      mirror = false,
+      sensitivity = 2.0,
+      position = { x: 0, y: 0 },
+      opacity = 1.0,
+      blendMode = 'source-over'
+    } = this.config;
 
     // 描画領域の計算
     const drawWidth = width * size.width;
     const drawHeight = height * size.height;
-    const drawX = (width - drawWidth) / 2;
-    const drawY = (height - drawHeight) / 2;
+    const drawX = (width - drawWidth) / 2 + (position.x * width);
+    const drawY = (height - drawHeight) / 2 + (position.y * height);
 
     // 描画スタイルの設定
     ctx.save();
     ctx.translate(drawX, drawY);
+    ctx.globalAlpha = opacity;
+    ctx.globalCompositeOperation = blendMode;
     ctx.fillStyle = color;
 
-    // 波形データの描画
     const channel = this.currentWaveformData[0]; // モノラル or 左チャンネル
-    const barCount = Math.floor(drawWidth / (barWidth + barSpacing));
-    const samplesPerBar = Math.max(1, Math.floor(channel.length / barCount));
 
-    for (let i = 0; i < barCount; i++) {
-      // 各バーの波形データを平均化
-      let sum = 0;
-      const startSample = i * samplesPerBar;
-      const endSample = Math.min(startSample + samplesPerBar, channel.length);
-      
-      for (let j = startSample; j < endSample; j++) {
-        sum += Math.abs(channel[j]);
-      }
-      
-      const amplitude = sum / samplesPerBar;
-      const barHeight = amplitude * drawHeight;
-      
-      // バーを描画
-      const x = i * (barWidth + barSpacing);
-      const y = (drawHeight - barHeight) / 2;
-      ctx.fillRect(x, y, barWidth, barHeight);
+    switch (waveformType) {
+      case 'bar':
+        this.renderBars(ctx, channel, drawWidth, drawHeight, barWidth, barSpacing, mirror, sensitivity);
+        break;
+      case 'line':
+        this.renderLine(ctx, channel, drawWidth, drawHeight, mirror, sensitivity);
+        break;
+      case 'circle':
+        this.renderCircle(ctx, channel, drawWidth, drawHeight, sensitivity);
+        break;
     }
 
     ctx.restore();
+  }
+
+  /**
+   * バー型の波形を描画
+   */
+  private renderBars(
+    ctx: CanvasRenderingContext2D,
+    data: Float32Array,
+    width: number,
+    height: number,
+    barWidth: number,
+    barSpacing: number,
+    mirror: boolean,
+    sensitivity: number
+  ): void {
+    const barCount = Math.floor(width / (barWidth + barSpacing));
+    const samplesPerBar = Math.max(1, Math.floor(data.length / barCount));
+
+    for (let i = 0; i < barCount; i++) {
+      let sum = 0;
+      const startSample = i * samplesPerBar;
+      const endSample = Math.min(startSample + samplesPerBar, data.length);
+      
+      for (let j = startSample; j < endSample; j++) {
+        sum += Math.abs(data[j]);
+      }
+      
+      const amplitude = (sum / samplesPerBar) * sensitivity;
+      const barHeight = amplitude * height;
+      
+      const x = i * (barWidth + barSpacing);
+      if (mirror) {
+        const y = (height - barHeight) / 2;
+        ctx.fillRect(x, y, barWidth, barHeight);
+      } else {
+        const y = height - barHeight;
+        ctx.fillRect(x, y, barWidth, barHeight);
+      }
+    }
+  }
+
+  /**
+   * ライン型の波形を描画
+   */
+  private renderLine(
+    ctx: CanvasRenderingContext2D,
+    data: Float32Array,
+    width: number,
+    height: number,
+    mirror: boolean,
+    sensitivity: number
+  ): void {
+    const step = width / data.length;
+    const centerY = height / 2;
+
+    ctx.beginPath();
+    ctx.strokeStyle = this.config.color ?? '#ffffff';
+    ctx.lineWidth = this.config.barWidth ?? 2;
+    ctx.moveTo(0, centerY);
+
+    for (let i = 0; i < data.length; i++) {
+      const x = i * step;
+      const amplitude = data[i] * sensitivity;
+      const y = mirror
+        ? centerY + (amplitude * height / 2)
+        : height - (amplitude * height);
+      
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+
+    ctx.stroke();
+  }
+
+  /**
+   * サークル型の波形を描画
+   */
+  private renderCircle(
+    ctx: CanvasRenderingContext2D,
+    data: Float32Array,
+    width: number,
+    height: number,
+    sensitivity: number
+  ): void {
+    ctx.strokeStyle = this.config.color ?? '#ffffff';
+    ctx.lineWidth = this.config.barWidth ?? 2;
+    
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const radius = Math.min(width, height) / 2;
+    const step = (Math.PI * 2) / data.length;
+
+    ctx.beginPath();
+    for (let i = 0; i < data.length; i++) {
+      const amplitude = 1 + (data[i] * sensitivity);
+      const r = radius * amplitude;
+      const angle = i * step;
+      const x = centerX + Math.cos(angle) * r;
+      const y = centerY + Math.sin(angle) * r;
+      
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.closePath();
+    ctx.stroke();
   }
 } 

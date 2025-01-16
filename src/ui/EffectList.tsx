@@ -39,12 +39,13 @@ export const EffectList: React.FC<Props> = ({
   onEffectMove,
   onEffectAdd
 }) => {
-  // エフェクトを逆順に表示（zIndexが大きい順）
-  const sortedEffects = [...effects].reverse();
+  // エフェクトリストをz-indexの降順でソート
+  const sortedEffects = [...effects].sort((a, b) => 
+    (b.getConfig().zIndex ?? 0) - (a.getConfig().zIndex ?? 0)
+  );
 
   return (
     <Flex direction="column" gap="3" className="effect-list-container">
-      {/* エフェクト追加ボタン */}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger>
           <Button size="2" variant="soft" className="add-effect-button">
@@ -67,7 +68,6 @@ export const EffectList: React.FC<Props> = ({
         </DropdownMenu.Content>
       </DropdownMenu.Root>
 
-      {/* エフェクトリスト */}
       <Flex direction="column" gap="2" className="effect-list">
         {sortedEffects.map((effect, index) => {
           const config = effect.getConfig();

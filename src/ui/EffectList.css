@@ -1,114 +1,93 @@
+.effect-list-container {
+  width: 100%;
+}
+
 .effect-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.5rem;
+  width: 100%;
+  overflow-y: auto;
+  max-height: 400px;
 }
 
 .effect-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  background-color: var(--gray-2);
-  border: 2px solid transparent;
-  border-radius: var(--radius-3);
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+  border: 1px solid var(--gray-5);
 }
 
 .effect-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  background-color: var(--gray-3);
+  background-color: var(--gray-4);
+  border-color: var(--accent-8);
 }
 
 .effect-item.selected {
-  background-color: var(--gray-3);
-  border-color: var(--accent-9);
-  box-shadow: 0 0 0 2px var(--accent-9);
+  background-color: var(--accent-3);
+  border-color: var(--accent-8);
 }
 
-.effect-item-content {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.effect-item-type {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--gray-12);
-}
-
-.effect-item-index {
-  color: var(--gray-11);
-  font-size: 0.85rem;
-  padding: 0.25rem 0.5rem;
-  background-color: var(--gray-4);
-  border-radius: var(--radius-2);
-}
-
-.effect-item-controls {
-  display: flex;
-  gap: 0.5rem;
-  opacity: 0.7;
-  transition: opacity 0.2s ease;
-}
-
-.effect-item:hover .effect-item-controls {
-  opacity: 1;
-}
-
-.effect-item-button {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--gray-7);
-  border-radius: var(--radius-2);
-  background-color: var(--gray-3);
-  color: var(--gray-11);
-  font-size: 1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* ボタンのホバー状態 */
+.effect-item button {
   transition: all 0.2s ease;
 }
 
-.effect-item-button:hover:not(:disabled) {
-  background-color: var(--accent-9);
-  border-color: var(--accent-9);
-  color: white;
-  transform: scale(1.05);
+.effect-item button:hover:not(:disabled) {
+  background-color: var(--accent-4);
+  color: var(--accent-11);
+  transform: translateY(-1px);
 }
 
-.effect-item-button:disabled {
-  opacity: 0.3;
+.effect-item button:active:not(:disabled) {
+  background-color: var(--accent-5);
+  transform: translateY(0);
+}
+
+/* 削除ボタンのホバー状態 */
+.effect-item button[color="red"]:hover:not(:disabled) {
+  background-color: var(--red-4);
+  color: var(--red-11);
+}
+
+.effect-item button[color="red"]:active:not(:disabled) {
+  background-color: var(--red-5);
+}
+
+/* 無効状態のボタン */
+.effect-item button:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.effect-item-button.delete:hover {
-  background-color: var(--red-9);
-  border-color: var(--red-9);
-}
-
-.effect-item-icon {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
+/* エフェクト追加ボタン */
+.add-effect-button {
+  width: 100%;
   justify-content: center;
-  border-radius: var(--radius-2);
-  background-color: var(--gray-4);
-  font-size: 1.2rem;
-  color: var(--gray-11);
-  transition: transform 0.2s ease;
+  background-color: var(--accent-9);
+  color: white;
+  transition: all 0.2s ease;
 }
 
-.effect-item:hover .effect-item-icon {
-  transform: scale(1.1);
-  background-color: var(--gray-5);
+.add-effect-button:hover {
+  background-color: var(--accent-10);
+  transform: translateY(-1px);
+}
+
+.add-effect-button:active {
+  background-color: var(--accent-11);
+  transform: translateY(0);
+}
+
+/* スクロールバーのスタイル */
+.effect-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.effect-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.effect-list::-webkit-scrollbar-thumb {
+  background: var(--gray-6);
+  border-radius: 3px;
+}
+
+.effect-list::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-7);
 } 

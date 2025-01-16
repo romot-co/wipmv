@@ -284,24 +284,36 @@ export const App: React.FC = () => {
   // エフェクト移動
   const handleEffectMove = useCallback((id: string, direction: 'up' | 'down') => {
     if (!manager) return;
-    const currentEffects = manager.getEffects();
-    const currentIndex = currentEffects.findIndex(e => e.getId() === id);
-    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     
-    if (newIndex >= 0 && newIndex < currentEffects.length) {
-      // エフェクトの順序を入れ替え
-      const effects = [...currentEffects];
-      const [removed] = effects.splice(currentIndex, 1);
-      effects.splice(newIndex, 0, removed);
-      
-      // zIndexを更新
-      effects.forEach((effect, index) => {
-        effect.updateConfig({ zIndex: index });
-      });
+    // 現在のエフェクトリストを取得
+    const currentEffects = manager.getEffects();
+    
+    // z-indexでソート
+    const sortedEffects = [...currentEffects].sort((a, b) => 
+      (b.getConfig().zIndex ?? 0) - (a.getConfig().zIndex ?? 0)
+    );
 
-      // 更新を通知
-      setEffects(effects);
-    }
+    // 移動対象のインデックスを取得
+    const currentIndex = sortedEffects.findIndex(e => e.getId() === id);
+    if (currentIndex === -1) return;
+
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex < 0 || newIndex >= sortedEffects.length) return;
+
+    // 移動対象と入れ替え先のエフェクトを取得
+    const currentEffect = sortedEffects[currentIndex];
+    const targetEffect = sortedEffects[newIndex];
+
+    // z-indexを交換
+    const currentZIndex = currentEffect.getConfig().zIndex ?? 0;
+    const targetZIndex = targetEffect.getConfig().zIndex ?? 0;
+
+    // エフェクトの設定を更新
+    manager.updateEffectConfig(currentEffect.getId(), { zIndex: targetZIndex });
+    manager.updateEffectConfig(targetEffect.getId(), { zIndex: currentZIndex });
+
+    // 更新を通知
+    setEffects(manager.getEffects());
   }, [manager]);
 
   // 選択中のエフェクトを取得
@@ -317,6 +329,14 @@ export const App: React.FC = () => {
       const effect = manager.getEffect(id);
       if (effect) {
         effect.updateConfig(newConfig);
+
+        // 画像URLが変更された場合は画像を設定
+        if ('imageUrl' in newConfig && typeof newConfig.imageUrl === 'string') {
+          if ('setImage' in effect && typeof effect.setImage === 'function') {
+            effect.setImage(newConfig.imageUrl);
+          }
+        }
+
         const updatedEffects = manager.getEffects();
         setEffects(updatedEffects);
         clearError('effect');

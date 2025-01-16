@@ -126,7 +126,7 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
   /**
    * ウォーターマークを描画
    */
-  render(ctx: CanvasRenderingContext2D): void {
+  render(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
     if (!this.image) return;
 
     const config = this.getConfig();
@@ -152,14 +152,14 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
   /**
    * 単一画像の描画
    */
-  private drawSingleImage(ctx: CanvasRenderingContext2D): void {
+  private drawSingleImage(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
     if (!this.image) return;
 
     const config = this.getConfig();
     const size = config.size ?? { width: 200, height: 200 };
     const scale = this.animationState?.scale ?? 1;
     const rotation = this.animationState?.rotation ?? config.rotation ?? 0;
-    const { x, y } = config.position;
+    const { x, y } = config.position ?? { x: 0, y: 0 };
     const { width, height } = size;
 
     // 中心を基準に回転・スケール
@@ -175,7 +175,7 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
   /**
    * タイル画像の描画
    */
-  private drawTiledImage(ctx: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number): void {
+  private drawTiledImage(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, canvasWidth: number, canvasHeight: number): void {
     if (!this.image) return;
 
     const config = this.getConfig();
@@ -216,5 +216,21 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
     this.image = null;
     this.animationState = null;
     super.dispose();
+  }
+
+  /**
+   * 画像を設定
+   */
+  setImage(url: string): void {
+    if (!url) {
+      this.image = null;
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      this.image = img;
+    };
+    img.src = url;
   }
 } 
