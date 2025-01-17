@@ -3,44 +3,46 @@ import {
   BackgroundEffectConfig,
   TextEffectConfig,
   WaveformEffectConfig,
-  WatermarkEffectConfig
+  WatermarkEffectConfig,
+  AudioSource
 } from './types';
 
-export function createDefaultBackgroundEffect(): BackgroundEffectConfig {
+export function createDefaultBackgroundEffect(audioSource?: AudioSource): BackgroundEffectConfig {
   return {
     id: crypto.randomUUID(),
     type: EffectType.Background,
-    backgroundType: 'color',
+    backgroundType: 'solid',
     color: '#000000',
     opacity: 1,
     blendMode: 'source-over',
     visible: true,
     startTime: 0,
-    endTime: 0,
+    endTime: audioSource?.duration ?? 0,
     zIndex: 0
   };
 }
 
-export function createDefaultWaveformEffect(): WaveformEffectConfig {
+export function createDefaultWaveformEffect(audioSource?: AudioSource): WaveformEffectConfig {
   return {
     id: crypto.randomUUID(),
     type: EffectType.Waveform,
     waveformType: 'bar',
     color: '#ffffff',
-    position: { x: 0, y: 0 },
-    size: { width: 0.95, height: 0.2 },
     barWidth: 3,
-    barSpacing: 1,
+    barGap: 1,
     sensitivity: 2.0,
     smoothingFactor: 0.5,
     opacity: 1,
     blendMode: 'source-over',
+    visible: true,
+    startTime: 0,
+    endTime: audioSource?.duration ?? 0,
     zIndex: 0,
     mirror: true
   };
 }
 
-export function createDefaultTextEffect(): TextEffectConfig {
+export function createDefaultTextEffect(audioSource?: AudioSource): TextEffectConfig {
   return {
     id: crypto.randomUUID(),
     type: EffectType.Text,
@@ -49,18 +51,18 @@ export function createDefaultTextEffect(): TextEffectConfig {
     fontSize: 48,
     fontWeight: 'bold',
     color: '#ffffff',
-    align: 'center',
     position: { x: 400, y: 300 },
+    alignment: 'center',
     opacity: 1,
     blendMode: 'source-over',
     visible: true,
     startTime: 0,
-    endTime: 0,
+    endTime: audioSource?.duration ?? 0,
     zIndex: 0
   };
 }
 
-export function createDefaultWatermarkEffect(): WatermarkEffectConfig {
+export function createDefaultWatermarkEffect(audioSource?: AudioSource): WatermarkEffectConfig {
   return {
     id: crypto.randomUUID(),
     type: EffectType.Watermark,
@@ -68,12 +70,12 @@ export function createDefaultWatermarkEffect(): WatermarkEffectConfig {
     position: { x: 20, y: 20 },
     size: { width: 100, height: 100 },
     rotation: 0,
-    tiled: false,
+    repeat: false,
     opacity: 0.5,
     blendMode: 'source-over',
     visible: true,
     startTime: 0,
-    endTime: 0,
+    endTime: audioSource?.duration ?? 0,
     zIndex: 0
   };
 } 

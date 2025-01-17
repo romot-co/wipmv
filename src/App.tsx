@@ -22,7 +22,7 @@ import {
 
 import { EffectManager } from './core/EffectManager';
 import { AudioPlaybackService } from './core/AudioPlaybackService';
-import { ProjectService } from './core/ProjectService';
+// import { ProjectService } from './core/ProjectService';
 import { AudioAnalyzerService } from './core/AudioAnalyzerService';
 import { EffectBase } from './core/EffectBase';
 import { BackgroundEffect } from './features/background/BackgroundEffect';
@@ -73,9 +73,46 @@ export const App: React.FC = () => {
 
   // 事前解析データを保持
   const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
-
   const [manager, setManager] = useState<EffectManager | null>(null);
   const [effects, setEffects] = useState<EffectBase[]>([]);
+
+  // デフォルトのエフェクトを作成
+  const createDefaultEffects = useCallback((duration: number) => {
+    const defaultBackground = new BackgroundEffect({
+      ...createDefaultBackgroundEffect(),
+      backgroundType: 'solid',
+      color: '#1a1a1a',
+      opacity: 1,
+      zIndex: 0,
+      startTime: 0,
+      endTime: duration
+    });
+
+    const defaultWaveform = new WaveformEffect({
+      ...createDefaultWaveformEffect(),
+      waveformType: 'bar',
+      barWidth: 4,
+      barGap: 2,
+      color: '#00ff00',
+      sensitivity: 1.2,
+      opacity: 0.8,
+      zIndex: 1,
+      startTime: 0,
+      endTime: duration
+    });
+
+    const defaultWatermark = new WatermarkEffect({
+      ...createDefaultWatermarkEffect(),
+      position: { x: 20, y: 20 },
+      size: { width: 100, height: 30 },
+      opacity: 0.8,
+      zIndex: 2,
+      startTime: 0,
+      endTime: duration
+    });
+
+    return [defaultBackground, defaultWaveform, defaultWatermark];
+  }, []);
 
   // EffectManager初期化時に呼ばれる
   const handleManagerInit = useCallback((newManager: EffectManager) => {
@@ -93,39 +130,25 @@ export const App: React.FC = () => {
     // レンダリングループを開始
     newManager.startPreviewLoop();
 
-    // 既存のエフェクトがあれば再設定
-    effects.forEach(effect => {
-      console.log('既存エフェクトの再設定:', {
-        id: effect.getConfig().id,
-        type: effect.getConfig().type
-      });
-      
-      if (hasSetAudioSource(effect)) {
-        const currentAudioSource = audioService.getAudioSource();
-        if (currentAudioSource) {
+    setManager(newManager);
+
+    // 音声ソースがある場合は初期エフェクトを作成
+    const currentAudioSource = audioService.getAudioSource();
+    if (currentAudioSource) {
+      const initialEffects = createDefaultEffects(currentAudioSource.duration);
+      initialEffects.forEach(effect => {
+        if (hasSetAudioSource(effect)) {
           effect.setAudioSource(currentAudioSource);
         }
-      }
-      newManager.addEffect(effect as EffectBase<EffectConfig>);
-    });
-
-    setManager(newManager);
-    
-    // エフェクト一覧を更新
-    const currentEffects = newManager.getEffects();
-    console.log('初期化後のエフェクト一覧:', {
-      count: currentEffects.length,
-      effects: currentEffects.map(e => ({
-        id: e.getConfig().id,
-        type: e.getConfig().type
-      }))
-    });
-    setEffects(currentEffects);
+        newManager.addEffect(effect as EffectBase<EffectConfig>);
+      });
+      setEffects(initialEffects);
+    }
 
     // エラーをクリア
     clearError('audio');
 
-  }, [audioService, manager, effects, clearError]);
+  }, [audioService, manager, createDefaultEffects, clearError]);
 
   // オーディオ制御フック (UI操作用)
   const {
@@ -138,50 +161,40 @@ export const App: React.FC = () => {
   // オーディオファイルのロード処理
   const handleAudioLoad = useCallback(async (file: File) => {
     try {
-      // AudioPlaybackServiceからAudioContextを取得
+      // 既存のエフェクトをクリア
+      if (manager) {
+        manager.getEffects().forEach(effect => effect.dispose());
+        setEffects([]);
+      }
+
+      // オーディオの読み込みと解析
       const audioContext = audioService.getAudioContext();
       const arrayBuffer = await file.arrayBuffer();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
       // AudioAnalyzerServiceを使用して解析
       const analyzerService = AudioAnalyzerService.getInstance();
-      const analysisResult = await analyzerService.analyzeAudio(audioBuffer);
+      const source = await analyzerService.analyzeAudio(audioBuffer);
+      setAudioSource(source);
+      await audioService.setAudioSource(source);
 
-      // 音声ソースを設定
-      setAudioSource(analysisResult);
-      await audioService.setAudioSource(analysisResult);
-
-      // エラークリア
-      clearError('audio');
-
-      // 新規プロジェクトの作成
-      try {
-        const projectService = ProjectService.getInstance();
-        const projectData = await projectService.createProject('New Project');
-        
-        // 設定復元
-        const newSettings = {
-          width: projectData.videoSettings.width,
-          height: projectData.videoSettings.height,
-          frameRate: projectData.videoSettings.fps,
-          videoBitrate: projectData.videoSettings.bitrate,
-          audioBitrate: 128000
-        };
-        setVideoSettings(newSettings);
-
-        // 既存のManagerがあれば音声ソースを設定
-        if (manager) {
-          manager.setAudioService(audioService);
-        }
-
-      } catch (error) {
-        console.warn('プロジェクトの作成に失敗しました:', error);
+      // マネージャーが既に存在する場合は初期エフェクトを作成
+      if (manager) {
+        const initialEffects = createDefaultEffects(source.duration);
+        initialEffects.forEach(effect => {
+          if (hasSetAudioSource(effect)) {
+            effect.setAudioSource(source);
+          }
+          manager.addEffect(effect as EffectBase<EffectConfig>);
+        });
+        setEffects(initialEffects);
       }
 
+      clearError('audio');
     } catch (error) {
       handleError('audio', error instanceof Error ? error : new Error('音声ファイルの読み込みに失敗しました'));
     }
-  }, [audioService, handleError, clearError, manager]);
+  }, [audioService, manager, createDefaultEffects, handleError, clearError]);
 
   // エフェクト追加
   const handleEffectAdd = useCallback(async (type: EffectType) => {
@@ -194,40 +207,40 @@ export const App: React.FC = () => {
       const currentEffects = manager.getEffects();
       const zIndex = currentEffects.length;
       let effect: EffectBase<EffectConfig>;
-      const currentDuration = audioService.getAudioSource()?.duration || 0;
+      const audioSource = audioService.getAudioSource();
+      const defaultConfig = {
+        startTime: 0,
+        endTime: audioSource?.duration ?? 0,
+        zIndex
+      };
 
       // エフェクトの作成
       switch (type) {
         case EffectType.Background:
           effect = new BackgroundEffect({
             ...createDefaultBackgroundEffect(),
-            zIndex,
-            startTime: 0,
-            endTime: currentDuration
+            ...defaultConfig
           } as BackgroundEffectConfig);
           break;
         case EffectType.Text:
           effect = new TextEffect({
             ...createDefaultTextEffect(),
-            zIndex,
-            startTime: 0,
-            endTime: currentDuration
+            ...defaultConfig
           } as TextEffectConfig);
           break;
         case EffectType.Waveform:
           effect = new WaveformEffect({
             ...createDefaultWaveformEffect(),
-            zIndex,
-            startTime: 0,
-            endTime: currentDuration
+            ...defaultConfig
           } as WaveformEffectConfig);
+          if (audioSource && hasSetAudioSource(effect)) {
+            effect.setAudioSource(audioSource);
+          }
           break;
         case EffectType.Watermark:
           effect = new WatermarkEffect({
             ...createDefaultWatermarkEffect(),
-            zIndex,
-            startTime: 0,
-            endTime: currentDuration
+            ...defaultConfig
           } as WatermarkEffectConfig);
           break;
         default:
@@ -351,15 +364,15 @@ export const App: React.FC = () => {
       <div className="app">
         <Container>
           <Section>
-            {!audioSource ? (
+            <Flex direction="column" gap="4">
               <Card className="upload-section">
                 <AudioUploader
                   onFileSelect={handleAudioLoad}
                   onError={(error) => handleError('audio', error)}
                 />
               </Card>
-            ) : (
-              <Flex direction="column" gap="4">
+
+              {audioSource && (
                 <Box className="main-content">
                   <Card className="preview-section">
                     <PreviewCanvas
@@ -403,25 +416,25 @@ export const App: React.FC = () => {
                       )}
                     </Flex>
                   </Card>
-                </Box>
 
-                <Card className="export-section">
-                  <ExportButton
-                    manager={manager}
-                    onError={(error) => handleError('export', error)}
-                    onProgress={handleExportProgress}
-                    videoSettings={videoSettings}
-                    onSettingsChange={setVideoSettings}
-                    audioSource={audioSource}
-                  />
-                  {exportProgress > 0 && exportProgress < 100 && (
-                    <Box className="export-progress">
-                      エクスポート中... {Math.round(exportProgress)}%
-                    </Box>
-                  )}
-                </Card>
-              </Flex>
-            )}
+                  <Card className="export-section">
+                    <ExportButton
+                      manager={manager}
+                      onError={(error) => handleError('export', error)}
+                      onProgress={handleExportProgress}
+                      videoSettings={videoSettings}
+                      onSettingsChange={setVideoSettings}
+                      audioSource={audioSource}
+                    />
+                    {exportProgress > 0 && exportProgress < 100 && (
+                      <Box className="export-progress">
+                        エクスポート中... {Math.round(exportProgress)}%
+                      </Box>
+                    )}
+                  </Card>
+                </Box>
+              )}
+            </Flex>
           </Section>
         </Container>
       </div>

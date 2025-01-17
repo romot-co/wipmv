@@ -1,5 +1,7 @@
 import React from 'react';
 import { WatermarkEffectConfig } from '../../../core/types';
+import { Flex, Box, Text, Select, Slider, Switch } from '@radix-ui/themes';
+import { ImageUploader } from '../../common/ImageUploader';
 import '../../EffectSettings.css';
 
 interface WatermarkSettingsProps {
@@ -13,133 +15,153 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
 }) => {
   return (
     <div className="effect-settings">
-      <div className="setting-group">
-        <label>画像URL</label>
-        <input
-          type="text"
-          value={config.imageUrl}
-          onChange={(e) => onChange({ imageUrl: e.target.value })}
-        />
-      </div>
-
-      <div className="setting-group">
-        <label>位置</label>
-        <div className="position-inputs">
-          <div>
-            <label>X座標</label>
-            <input
-              type="number"
-              value={config.position.x}
-              onChange={(e) => onChange({
-                position: {
-                  x: Number(e.target.value),
-                  y: config.position.y
-                }
-              })}
-            />
-          </div>
-          <div>
-            <label>Y座標</label>
-            <input
-              type="number"
-              value={config.position.y}
-              onChange={(e) => onChange({
-                position: {
-                  x: config.position.x,
-                  y: Number(e.target.value)
-                }
-              })}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="setting-group">
-        <label>サイズ</label>
-        <div className="size-inputs">
-          <div>
-            <label>幅</label>
-            <input
-              type="number"
-              value={config.size.width}
-              onChange={(e) => onChange({
-                size: {
-                  width: Number(e.target.value),
-                  height: config.size.height
-                }
-              })}
-            />
-          </div>
-          <div>
-            <label>高さ</label>
-            <input
-              type="number"
-              value={config.size.height}
-              onChange={(e) => onChange({
-                size: {
-                  width: config.size.width,
-                  height: Number(e.target.value)
-                }
-              })}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="setting-group">
-        <label>回転角度</label>
-        <div className="range-input">
-          <input
-            type="range"
-            min="0"
-            max="360"
-            value={config.rotation ?? 0}
-            onChange={(e) => onChange({ rotation: Number(e.target.value) })}
+      <Flex direction="column" gap="3">
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            透かし画像
+          </Text>
+          <ImageUploader
+            label=""
+            value={config.imageUrl}
+            onChange={(url) => onChange({ imageUrl: url })}
+            accept="image/*"
           />
-          <span>{config.rotation ?? 0}°</span>
-        </div>
-      </div>
+        </Box>
 
-      <div className="setting-group">
-        <label>繰り返し</label>
-        <div className="checkbox-group">
-          <input
-            type="checkbox"
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            位置
+          </Text>
+          <Flex direction="column" gap="2">
+            <Flex gap="3" align="center">
+              <Text size="2" weight="medium">X座標</Text>
+              <input
+                type="number"
+                value={config.position.x}
+                onChange={(e) => onChange({
+                  position: {
+                    x: Number(e.target.value),
+                    y: config.position.y
+                  }
+                })}
+                className="number-input"
+              />
+            </Flex>
+            <Flex gap="3" align="center">
+              <Text size="2" weight="medium">Y座標</Text>
+              <input
+                type="number"
+                value={config.position.y}
+                onChange={(e) => onChange({
+                  position: {
+                    x: config.position.x,
+                    y: Number(e.target.value)
+                  }
+                })}
+                className="number-input"
+              />
+            </Flex>
+          </Flex>
+        </Box>
+
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            サイズ
+          </Text>
+          <Flex direction="column" gap="2">
+            <Flex gap="3" align="center">
+              <Text size="2" weight="medium">幅</Text>
+              <input
+                type="number"
+                value={config.size.width}
+                onChange={(e) => onChange({
+                  size: {
+                    width: Number(e.target.value),
+                    height: config.size.height
+                  }
+                })}
+                className="number-input"
+              />
+            </Flex>
+            <Flex gap="3" align="center">
+              <Text size="2" weight="medium">高さ</Text>
+              <input
+                type="number"
+                value={config.size.height}
+                onChange={(e) => onChange({
+                  size: {
+                    width: config.size.width,
+                    height: Number(e.target.value)
+                  }
+                })}
+                className="number-input"
+              />
+            </Flex>
+          </Flex>
+        </Box>
+
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            回転角度
+          </Text>
+          <Flex gap="3" align="center">
+            <Slider
+              value={[config.rotation ?? 0]}
+              min={0}
+              max={360}
+              step={1}
+              onValueChange={(value) => onChange({ rotation: value[0] })}
+            />
+            <Text size="2">{config.rotation ?? 0}°</Text>
+          </Flex>
+        </Box>
+
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            繰り返し
+          </Text>
+          <Switch
             checked={config.repeat ?? false}
-            onChange={(e) => onChange({ repeat: e.target.checked })}
+            onCheckedChange={(checked) => onChange({ repeat: checked })}
           />
-        </div>
-      </div>
+        </Box>
 
-      <div className="setting-group">
-        <label>不透明度</label>
-        <div className="range-input">
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.1"
-            value={config.opacity ?? 1}
-            onChange={(e) => onChange({ opacity: Number(e.target.value) })}
-          />
-          <span>{config.opacity ?? 1}</span>
-        </div>
-      </div>
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            不透明度
+          </Text>
+          <Flex gap="3" align="center">
+            <Slider
+              value={[config.opacity ?? 1]}
+              min={0}
+              max={1}
+              step={0.1}
+              onValueChange={(value) => onChange({ opacity: value[0] })}
+            />
+            <Text size="2">{config.opacity ?? 1}</Text>
+          </Flex>
+        </Box>
 
-      <div className="setting-group">
-        <label>ブレンドモード</label>
-        <select
-          value={config.blendMode ?? 'source-over'}
-          onChange={(e) => onChange({ blendMode: e.target.value as GlobalCompositeOperation })}
-        >
-          <option value="source-over">通常</option>
-          <option value="multiply">乗算</option>
-          <option value="screen">スクリーン</option>
-          <option value="overlay">オーバーレイ</option>
-          <option value="darken">暗く</option>
-          <option value="lighten">明るく</option>
-        </select>
-      </div>
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            ブレンドモード
+          </Text>
+          <Select.Root
+            value={config.blendMode ?? 'source-over'}
+            onValueChange={(value) => onChange({ blendMode: value as GlobalCompositeOperation })}
+          >
+            <Select.Trigger />
+            <Select.Content>
+              <Select.Item value="source-over">通常</Select.Item>
+              <Select.Item value="multiply">乗算</Select.Item>
+              <Select.Item value="screen">スクリーン</Select.Item>
+              <Select.Item value="overlay">オーバーレイ</Select.Item>
+              <Select.Item value="darken">暗く</Select.Item>
+              <Select.Item value="lighten">明るく</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        </Box>
+      </Flex>
     </div>
   );
 }; 

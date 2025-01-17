@@ -144,4 +144,42 @@ textarea:focus {
 
 .effect-settings-content::-webkit-scrollbar-thumb:hover {
   background: var(--gray-9);
+}
+
+/* オーディオ設定のスタイル */
+.file-input {
+  width: 100%;
+  padding: var(--space-1);
+  border: 1px dashed var(--gray-6);
+  border-radius: var(--radius-2);
+  background: var(--gray-2);
+  cursor: pointer;
+}
+
+.file-input:hover {
+  border-color: var(--gray-8);
+}
+
+.audio-info {
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  background: var(--gray-3);
+  border-radius: var(--radius-2);
+}
+
+.audio-info p {
+  margin: 0;
+  font-weight: 500;
+  color: var(--gray-11);
+}
+
+.audio-info ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+  color: var(--gray-11);
+}
+
+.audio-info li {
+  margin: var(--space-1) 0;
+  font-size: var(--font-size-1);
 } 

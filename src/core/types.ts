@@ -309,6 +309,7 @@ export interface BackgroundEffectConfig extends BaseEffectConfig {
   imageUrl?: string;
   imageSize?: 'cover' | 'contain' | 'stretch';
   imagePosition?: Position2D;
+  animation?: BackgroundAnimation;
 }
 
 /**
@@ -329,11 +330,10 @@ export interface TextEffectConfig extends BaseEffectConfig {
 /**
  * 波形エフェクト設定
  */
-export interface WaveformAnimation {
-  type: 'scale' | 'rotate' | 'pulse' | 'morph';
-  duration: number;
-  intensity: number;
-  phase: number;
+export interface WaveformAnimation extends BaseAnimation {
+  type: 'fade' | 'scale' | 'sensitivity';
+  from?: number;
+  to?: number;
 }
 
 export interface WaveformEffectConfig extends BaseEffectConfig {
@@ -346,6 +346,7 @@ export interface WaveformEffectConfig extends BaseEffectConfig {
   smoothingFactor?: number;
   mirror?: boolean;
   useColorBands?: boolean;
+  animation?: WaveformAnimation;
 }
 
 /**
@@ -365,6 +366,7 @@ export interface WatermarkEffectConfig extends BaseEffectConfig {
   rotation?: number;
   repeat?: boolean;
   opacity?: number;
+  animation?: WatermarkAnimation;
 }
 
 export type BackgroundAnimation = FadeAnimation | ScaleAnimation | RotateAnimation | ColorAnimation;

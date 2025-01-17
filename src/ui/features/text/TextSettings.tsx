@@ -1,5 +1,6 @@
 import React from 'react';
 import { TextEffectConfig } from '../../../core/types';
+import { Flex, Box, Text, Select, Slider, TextArea } from '@radix-ui/themes';
 import '../../EffectSettings.css';
 
 interface TextSettingsProps {
@@ -13,155 +14,190 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
 }) => {
   return (
     <div className="effect-settings">
-      <div className="setting-group">
-        <label>テキスト</label>
-        <textarea
-          value={config.text}
-          onChange={(e) => onChange({ text: e.target.value })}
-          rows={3}
-        />
-      </div>
-
-      <div className="setting-group">
-        <label>フォント</label>
-        <select
-          value={config.fontFamily}
-          onChange={(e) => onChange({ fontFamily: e.target.value })}
-        >
-          <option value="Arial">Arial</option>
-          <option value="Helvetica">Helvetica</option>
-          <option value="Times New Roman">Times New Roman</option>
-          <option value="Courier New">Courier New</option>
-          <option value="Georgia">Georgia</option>
-          <option value="Meiryo">メイリオ</option>
-          <option value="MS Gothic">ＭＳ ゴシック</option>
-          <option value="MS Mincho">ＭＳ 明朝</option>
-          <option value="Yu Gothic">游ゴシック</option>
-          <option value="Yu Mincho">游明朝</option>
-        </select>
-      </div>
-
-      <div className="setting-group">
-        <label>フォントサイズ</label>
-        <div className="range-input">
-          <input
-            type="range"
-            min="8"
-            max="72"
-            value={config.fontSize}
-            onChange={(e) => onChange({ fontSize: Number(e.target.value) })}
+      <Flex direction="column" gap="3">
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            テキスト
+          </Text>
+          <TextArea
+            value={config.text}
+            onChange={(e) => onChange({ text: e.target.value })}
+            rows={3}
           />
-          <span>{config.fontSize}px</span>
-        </div>
-      </div>
+        </Box>
 
-      <div className="setting-group">
-        <label>フォントの太さ</label>
-        <select
-          value={config.fontWeight}
-          onChange={(e) => onChange({ fontWeight: e.target.value })}
-        >
-          <option value="normal">通常</option>
-          <option value="bold">太字</option>
-          <option value="100">Thin (100)</option>
-          <option value="300">Light (300)</option>
-          <option value="400">Regular (400)</option>
-          <option value="500">Medium (500)</option>
-          <option value="700">Bold (700)</option>
-          <option value="900">Black (900)</option>
-        </select>
-      </div>
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            フォント
+          </Text>
+          <Select.Root
+            value={config.fontFamily}
+            onValueChange={(value) => onChange({ fontFamily: value })}
+          >
+            <Select.Trigger />
+            <Select.Content>
+              <Select.Item value="Arial">Arial</Select.Item>
+              <Select.Item value="Helvetica">Helvetica</Select.Item>
+              <Select.Item value="Times New Roman">Times New Roman</Select.Item>
+              <Select.Item value="Courier New">Courier New</Select.Item>
+              <Select.Item value="Georgia">Georgia</Select.Item>
+              <Select.Item value="Meiryo">メイリオ</Select.Item>
+              <Select.Item value="MS Gothic">ＭＳ ゴシック</Select.Item>
+              <Select.Item value="MS Mincho">ＭＳ 明朝</Select.Item>
+              <Select.Item value="Yu Gothic">游ゴシック</Select.Item>
+              <Select.Item value="Yu Mincho">游明朝</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        </Box>
 
-      <div className="setting-group">
-        <label>テキストカラー</label>
-        <div className="color-picker">
-          <input
-            type="color"
-            value={config.color}
-            onChange={(e) => onChange({ color: e.target.value })}
-          />
-          <input
-            type="text"
-            value={config.color}
-            onChange={(e) => onChange({ color: e.target.value })}
-            pattern="^#[0-9A-Fa-f]{6}$"
-          />
-        </div>
-      </div>
-
-      <div className="setting-group">
-        <label>テキストの位置</label>
-        <div className="position-inputs">
-          <div>
-            <label>X座標</label>
-            <input
-              type="number"
-              value={config.position.x}
-              onChange={(e) => onChange({
-                position: {
-                  x: Number(e.target.value),
-                  y: config.position.y
-                }
-              })}
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            フォントサイズ
+          </Text>
+          <Flex gap="3" align="center">
+            <Slider
+              value={[config.fontSize]}
+              min={8}
+              max={72}
+              step={1}
+              onValueChange={(value) => onChange({ fontSize: value[0] })}
             />
-          </div>
-          <div>
-            <label>Y座標</label>
+            <Text size="2">{config.fontSize}px</Text>
+          </Flex>
+        </Box>
+
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            フォントの太さ
+          </Text>
+          <Select.Root
+            value={config.fontWeight?.toString() ?? 'normal'}
+            onValueChange={(value) => onChange({ fontWeight: value })}
+          >
+            <Select.Trigger />
+            <Select.Content>
+              <Select.Item value="normal">通常</Select.Item>
+              <Select.Item value="bold">太字</Select.Item>
+              <Select.Item value="100">Thin (100)</Select.Item>
+              <Select.Item value="300">Light (300)</Select.Item>
+              <Select.Item value="400">Regular (400)</Select.Item>
+              <Select.Item value="500">Medium (500)</Select.Item>
+              <Select.Item value="700">Bold (700)</Select.Item>
+              <Select.Item value="900">Black (900)</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        </Box>
+
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            テキストカラー
+          </Text>
+          <Flex gap="3" align="center">
             <input
-              type="number"
-              value={config.position.y}
-              onChange={(e) => onChange({
-                position: {
-                  x: config.position.x,
-                  y: Number(e.target.value)
-                }
-              })}
+              type="color"
+              value={config.color}
+              onChange={(e) => onChange({ color: e.target.value })}
+              className="color-picker"
             />
-          </div>
-        </div>
-      </div>
+            <input
+              type="text"
+              value={config.color}
+              onChange={(e) => onChange({ color: e.target.value })}
+              pattern="^#[0-9A-Fa-f]{6}$"
+              className="color-input"
+            />
+          </Flex>
+        </Box>
 
-      <div className="setting-group">
-        <label>テキストの配置</label>
-        <select
-          value={config.alignment ?? 'left'}
-          onChange={(e) => onChange({ alignment: e.target.value as 'left' | 'center' | 'right' })}
-        >
-          <option value="left">左揃え</option>
-          <option value="center">中央揃え</option>
-          <option value="right">右揃え</option>
-        </select>
-      </div>
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            テキストの位置
+          </Text>
+          <Flex direction="column" gap="2">
+            <Flex gap="3" align="center">
+              <Text size="2" weight="medium">X座標</Text>
+              <input
+                type="number"
+                value={config.position.x}
+                onChange={(e) => onChange({
+                  position: {
+                    x: Number(e.target.value),
+                    y: config.position.y
+                  }
+                })}
+                className="number-input"
+              />
+            </Flex>
+            <Flex gap="3" align="center">
+              <Text size="2" weight="medium">Y座標</Text>
+              <input
+                type="number"
+                value={config.position.y}
+                onChange={(e) => onChange({
+                  position: {
+                    x: config.position.x,
+                    y: Number(e.target.value)
+                  }
+                })}
+                className="number-input"
+              />
+            </Flex>
+          </Flex>
+        </Box>
 
-      <div className="setting-group">
-        <label>不透明度</label>
-        <div className="range-input">
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.1"
-            value={config.opacity ?? 1}
-            onChange={(e) => onChange({ opacity: Number(e.target.value) })}
-          />
-          <span>{config.opacity ?? 1}</span>
-        </div>
-      </div>
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            テキストの配置
+          </Text>
+          <Select.Root
+            value={config.alignment ?? 'left'}
+            onValueChange={(value) => onChange({ alignment: value as 'left' | 'center' | 'right' })}
+          >
+            <Select.Trigger />
+            <Select.Content>
+              <Select.Item value="left">左揃え</Select.Item>
+              <Select.Item value="center">中央揃え</Select.Item>
+              <Select.Item value="right">右揃え</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        </Box>
 
-      <div className="setting-group">
-        <label>ブレンドモード</label>
-        <select
-          value={config.blendMode ?? 'source-over'}
-          onChange={(e) => onChange({ blendMode: e.target.value as GlobalCompositeOperation })}
-        >
-          <option value="source-over">通常</option>
-          <option value="multiply">乗算</option>
-          <option value="screen">スクリーン</option>
-          <option value="overlay">オーバーレイ</option>
-          <option value="darken">暗く</option>
-          <option value="lighten">明るく</option>
-        </select>
-      </div>
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            不透明度
+          </Text>
+          <Flex gap="3" align="center">
+            <Slider
+              value={[config.opacity ?? 1]}
+              min={0}
+              max={1}
+              step={0.1}
+              onValueChange={(value) => onChange({ opacity: value[0] })}
+            />
+            <Text size="2">{config.opacity ?? 1}</Text>
+          </Flex>
+        </Box>
+
+        <Box>
+          <Text as="label" size="2" weight="bold" mb="2">
+            ブレンドモード
+          </Text>
+          <Select.Root
+            value={config.blendMode ?? 'source-over'}
+            onValueChange={(value) => onChange({ blendMode: value as GlobalCompositeOperation })}
+          >
+            <Select.Trigger />
+            <Select.Content>
+              <Select.Item value="source-over">通常</Select.Item>
+              <Select.Item value="multiply">乗算</Select.Item>
+              <Select.Item value="screen">スクリーン</Select.Item>
+              <Select.Item value="overlay">オーバーレイ</Select.Item>
+              <Select.Item value="darken">暗く</Select.Item>
+              <Select.Item value="lighten">明るく</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        </Box>
+      </Flex>
     </div>
   );
 }; 

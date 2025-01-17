@@ -1,5 +1,5 @@
 import { EffectBase } from '../../core/EffectBase';
-import { TextEffectConfig } from '../../core/types';
+import { TextEffectConfig, TextAnimation, Position2D } from '../../core/types';
 
 /**
  * テキストエフェクト
@@ -12,7 +12,7 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
     progress: number;
     opacity: number;
     scale: number;
-    position: { x: number; y: number };
+    position: Position2D;
     rotation: number;
     color: string;
   } | null = null;
@@ -20,138 +20,107 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
   constructor(config: TextEffectConfig) {
     super({
       ...config,
-      text: config.text ?? 'テキストを入力',
+      text: config.text ?? '',
       fontFamily: config.fontFamily ?? 'Arial',
       fontSize: config.fontSize ?? 48,
-      fontWeight: config.fontWeight ?? 'bold',
+      fontWeight: config.fontWeight ?? 'normal',
       color: config.color ?? '#ffffff',
-      align: config.align ?? 'center',
-      position: config.position ?? { x: 400, y: 300 },
+      position: config.position ?? { x: 0, y: 0 },
+      alignment: config.alignment ?? 'center',
       opacity: config.opacity ?? 1,
       blendMode: config.blendMode ?? 'source-over'
     });
+
+    // アニメーション状態の初期化
+    if (config.animations && config.animations.length > 0) {
+      this.animationState = {
+        progress: 0,
+        opacity: config.opacity ?? 1,
+        scale: 1,
+        position: { ...config.position },
+        rotation: 0,
+        color: config.color ?? '#ffffff'
+      };
+    }
   }
 
-  /**
-   * 現在時刻に応じて内部状態を更新
-   */
   update(currentTime: number): void {
-    if (!this.isActive(currentTime)) return;
+    if (!this.config.animations || !this.animationState) return;
 
-    const config = this.getConfig();
-    const animation = config.animation;
-    if (!animation) {
-      this.animationState = null;
-      return;
-    }
+    const { startTime = 0, endTime = 0 } = this.config;
+    const duration = endTime - startTime;
 
-    // アニメーションの進行度を計算
-    const startTime = config.startTime ?? 0;
-    const duration = animation.duration;
-    const delay = animation.delay ?? 0;
-    let progress = (currentTime - startTime - delay) / duration;
+    // 進行度を計算（0-1）
+    const progress = Math.max(0, Math.min((currentTime - startTime) / duration, 1));
+    this.animationState.progress = progress;
 
-    // 進行度が範囲外の場合は更新しない
-    if (progress < 0 || progress > 1) {
-      this.animationState = null;
-      return;
-    }
+    // 各アニメーションを適用
+    for (const animation of this.config.animations) {
+      const animationProgress = this.getAnimationProgress(progress, animation);
+      if (animationProgress === null) continue;
 
-    // イージングの適用
-    progress = this.applyEasing(progress, animation.easing);
+      let r: number, g: number, b: number, a: number;
 
-    // アニメーション状態の更新
-    this.animationState = {
-      progress,
-      opacity: config.opacity ?? 1,
-      scale: 1,
-      position: { ...config.position },
-      rotation: 0,
-      color: config.color ?? '#ffffff'
-    };
+      switch (animation.type) {
+        case 'fade':
+          this.animationState.opacity = this.lerp(
+            animation.from ?? 0,
+            animation.to ?? 1,
+            animationProgress
+          );
+          break;
 
-    // アニメーション種別ごとの処理
-    let from: number;
-    let to: number;
-    let fromColor: { r: number; g: number; b: number; a: number };
-    let toColor: { r: number; g: number; b: number; a: number };
-    let r: number;
-    let g: number;
-    let b: number;
-    let a: number;
+        case 'scale':
+          this.animationState.scale = this.lerp(
+            animation.from,
+            animation.to,
+            animationProgress
+          );
+          break;
 
-    switch (animation.type) {
-      case 'fade':
-        from = animation.from ?? 0;
-        to = animation.to ?? 1;
-        this.animationState.opacity = from + (to - from) * progress;
-        break;
+        case 'move':
+          this.animationState.position = {
+            x: this.lerp(animation.from.x, animation.to.x, animationProgress),
+            y: this.lerp(animation.from.y, animation.to.y, animationProgress)
+          };
+          break;
 
-      case 'scale':
-        this.animationState.scale = animation.from + (animation.to - animation.from) * progress;
-        break;
+        case 'rotate':
+          this.animationState.rotation = this.lerp(
+            animation.from,
+            animation.to,
+            animationProgress
+          );
+          break;
 
-      case 'move':
-        this.animationState.position = {
-          x: animation.from.x + (animation.to.x - animation.from.x) * progress,
-          y: animation.from.y + (animation.to.y - animation.from.y) * progress
-        };
-        break;
-
-      case 'rotate':
-        this.animationState.rotation = (animation.from + (animation.to - animation.from) * progress) * Math.PI / 180;
-        break;
-
-      case 'color':
-        ({ from: fromColor, to: toColor } = animation);
-        r = Math.round(fromColor.r + (toColor.r - fromColor.r) * progress);
-        g = Math.round(fromColor.g + (toColor.g - fromColor.g) * progress);
-        b = Math.round(fromColor.b + (toColor.b - fromColor.b) * progress);
-        a = fromColor.a + (toColor.a - fromColor.a) * progress;
-        this.animationState.color = `rgba(${r},${g},${b},${a})`;
-        break;
+        case 'color':
+          r = this.lerp(animation.from.r, animation.to.r, animationProgress);
+          g = this.lerp(animation.from.g, animation.to.g, animationProgress);
+          b = this.lerp(animation.from.b, animation.to.b, animationProgress);
+          a = this.lerp(animation.from.a, animation.to.a, animationProgress);
+          this.animationState.color = `rgba(${r},${g},${b},${a})`;
+          break;
+      }
     }
   }
 
-  /**
-   * テキストを描画
-   */
-  render(ctx: CanvasRenderingContext2D): void {
-    const config = this.getConfig();
-    if (!config.text) return;
+  private getAnimationProgress(globalProgress: number, animation: TextAnimation): number | null {
+    const { duration, delay = 0 } = animation;
+    const startProgress = delay;
+    const endProgress = startProgress + duration;
 
-    ctx.save();
-    try {
-      // 共通の描画設定
-      ctx.globalAlpha = this.animationState?.opacity ?? config.opacity ?? 1;
-      ctx.globalCompositeOperation = config.blendMode ?? 'source-over';
-      ctx.textAlign = config.align ?? 'center';
-      ctx.textBaseline = 'middle';
-
-      // フォント設定
-      ctx.font = `${config.fontWeight} ${config.fontSize}px ${config.fontFamily}`;
-      ctx.fillStyle = this.animationState?.color ?? config.color ?? '#ffffff';
-
-      // 描画位置の計算
-      const position = this.animationState?.position ?? config.position;
-      const scale = this.animationState?.scale ?? 1;
-      const rotation = this.animationState?.rotation ?? 0;
-
-      // 変形の適用
-      ctx.translate(position.x, position.y);
-      if (rotation !== 0) ctx.rotate(rotation);
-      if (scale !== 1) ctx.scale(scale, scale);
-
-      // テキストの描画
-      ctx.fillText(config.text, 0, 0);
-    } finally {
-      ctx.restore();
+    if (globalProgress < startProgress || globalProgress > endProgress) {
+      return null;
     }
+
+    const progress = (globalProgress - startProgress) / duration;
+    return this.applyEasing(progress, animation.easing);
   }
 
-  /**
-   * イージング関数の適用
-   */
+  private lerp(start: number, end: number, progress: number): number {
+    return start + (end - start) * progress;
+  }
+
   private applyEasing(progress: number, easing?: string): number {
     switch (easing) {
       case 'easeIn':
@@ -167,11 +136,45 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
     }
   }
 
-  /**
-   * リソースの解放
-   */
-  override dispose(): void {
-    this.animationState = null;
-    super.dispose();
+  render(ctx: CanvasRenderingContext2D): void {
+    const {
+      text,
+      fontFamily,
+      fontSize,
+      fontWeight,
+      color = '#ffffff',
+      position,
+      alignment = 'center',
+      opacity = 1,
+      blendMode = 'source-over'
+    } = this.config;
+
+    // アニメーション状態の適用
+    const effectiveOpacity = this.animationState?.opacity ?? opacity;
+    const effectiveColor = this.animationState?.color ?? color;
+    const effectivePosition = this.animationState?.position ?? position;
+    const scale = this.animationState?.scale ?? 1;
+    const rotation = this.animationState?.rotation ?? 0;
+
+    ctx.save();
+    ctx.globalAlpha = effectiveOpacity;
+    ctx.globalCompositeOperation = blendMode;
+    ctx.fillStyle = effectiveColor;
+    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+    ctx.textAlign = alignment;
+    ctx.textBaseline = 'middle';
+
+    // 変換の適用
+    ctx.translate(effectivePosition.x, effectivePosition.y);
+    if (rotation !== 0) {
+      ctx.rotate(rotation);
+    }
+    if (scale !== 1) {
+      ctx.scale(scale, scale);
+    }
+
+    // テキストの描画
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
   }
 } 
