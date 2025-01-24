@@ -1,27 +1,123 @@
 import { IndexedDBManager } from './IndexedDBManager';
-import {
-  VideoSettings,
-  ProjectData,
-  AppError,
-  ErrorType,
-  ProjectMetadata
-} from './types';
+import { VideoSettings } from './types/base';
+import { ProjectData, ProjectMetadata } from './types/state';
+import { AppError, ErrorType } from './types/error';
 
 /**
- * プロジェクト管理サービス
- * - プロジェクトデータの永続化
- * - 自動保存
- * - 自動復旧
- * - プロジェクト履歴
+ * プロジェクトデータの永続化を担当するリポジトリのインターフェース
+ */
+export interface ProjectRepository {
+  create(name: string, settings: VideoSettings): Promise<ProjectData>;
+  load(id: string): Promise<ProjectData>;
+  save(project: ProjectData): Promise<void>;
+  delete(id: string): Promise<void>;
+  list(): Promise<ProjectMetadata[]>;
+}
+
+/**
+ * エラーハンドリングのためのユーティリティ関数
+ */
+const withErrorHandling = async <T>(
+  operation: () => Promise<T>,
+  errorType: ErrorType,
+  errorMessage: string
+): Promise<T> => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(errorType, errorMessage);
+  }
+};
+
+/**
+ * IndexedDBを使用したプロジェクトリポジトリの実装
+ */
+export class IndexedDBProjectRepository implements ProjectRepository {
+  private indexedDB: IndexedDBManager;
+
+  constructor() {
+    this.indexedDB = IndexedDBManager.getInstance();
+  }
+
+  async create(name: string, settings: VideoSettings): Promise<ProjectData> {
+    const project: ProjectData = {
+      id: crypto.randomUUID(),
+      name,
+      videoSettings: settings,
+      effects: [],
+      audioBuffer: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    return withErrorHandling(
+      () => this.indexedDB.put('projects', project).then(() => project),
+      ErrorType.ProjectCreateFailed,
+      'プロジェクトの作成に失敗しました'
+    );
+  }
+
+  async load(id: string): Promise<ProjectData> {
+    return withErrorHandling(
+      async () => {
+        const project = await this.indexedDB.get<ProjectData>('projects', id);
+        if (!project) {
+          throw new AppError(
+            ErrorType.ProjectNotFound,
+            'プロジェクトが見つかりません'
+          );
+        }
+        return project;
+      },
+      ErrorType.ProjectLoadFailed,
+      'プロジェクトの読み込みに失敗しました'
+    );
+  }
+
+  async save(project: ProjectData): Promise<void> {
+    project.updatedAt = Date.now();
+    return withErrorHandling(
+      () => this.indexedDB.put('projects', project),
+      ErrorType.ProjectSaveFailed,
+      'プロジェクトの保存に失敗しました'
+    );
+  }
+
+  async delete(id: string): Promise<void> {
+    return withErrorHandling(
+      () => this.indexedDB.delete('projects', id),
+      ErrorType.ProjectDeleteFailed,
+      'プロジェクトの削除に失敗しました'
+    );
+  }
+
+  async list(): Promise<ProjectMetadata[]> {
+    return withErrorHandling(
+      async () => {
+        const projects = await this.indexedDB.getAll<ProjectData>('projects');
+        return projects.map(({ id, name, createdAt, updatedAt }: ProjectData) => ({
+          id,
+          name,
+          createdAt,
+          updatedAt
+        }));
+      },
+      ErrorType.DatabaseOperationFailed,
+      'プロジェクト一覧の取得に失敗しました'
+    );
+  }
+}
+
+/**
+ * プロジェクトデータの永続化を担当するサービス
  */
 export class ProjectService {
   private static instance: ProjectService;
-  private indexedDB: IndexedDBManager;
-  private autoSaveInterval: number | null = null;
-  private currentProject: ProjectData | null = null;
+  private repository: ProjectRepository;
 
   private constructor() {
-    this.indexedDB = IndexedDBManager.getInstance();
+    this.repository = new IndexedDBProjectRepository();
   }
 
   public static getInstance(): ProjectService {
@@ -31,143 +127,23 @@ export class ProjectService {
     return ProjectService.instance;
   }
 
-  /**
-   * プロジェクトの作成
-   */
-  async createProject(name: string, videoSettings: VideoSettings): Promise<ProjectData> {
-    const project: ProjectData = {
-      id: crypto.randomUUID(),
-      name,
-      videoSettings,
-      effects: [],
-      audioBuffer: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    try {
-      await this.indexedDB.put('projects', project);
-      this.currentProject = project;
-      this.startAutoSave();
-      return project;
-    } catch (error) {
-      throw new AppError(
-        ErrorType.ProjectCreateFailed,
-        'プロジェクトの作成に失敗しました'
-      );
-    }
+  async createProject(name: string, settings: VideoSettings): Promise<ProjectData> {
+    return this.repository.create(name, settings);
   }
 
-  /**
-   * プロジェクトの読み込み
-   */
   async loadProject(id: string): Promise<ProjectData> {
-    try {
-      const project = await this.indexedDB.get<ProjectData>('projects', id);
-      if (!project) {
-        throw new AppError(
-          ErrorType.ProjectNotFound,
-          'プロジェクトが見つかりません'
-        );
-      }
-
-      this.currentProject = project;
-      this.startAutoSave();
-      return project;
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError(
-        ErrorType.ProjectLoadFailed,
-        'プロジェクトの読み込みに失敗しました'
-      );
-    }
+    return this.repository.load(id);
   }
 
-  /**
-   * プロジェクトの保存
-   */
   async saveProject(project: ProjectData): Promise<void> {
-    try {
-      project.updatedAt = Date.now();
-      await this.indexedDB.put('projects', project);
-      this.currentProject = project;
-    } catch (error) {
-      throw new AppError(
-        ErrorType.ProjectSaveFailed,
-        'プロジェクトの保存に失敗しました'
-      );
-    }
+    return this.repository.save(project);
   }
 
-  /**
-   * プロジェクトの削除
-   */
   async deleteProject(id: string): Promise<void> {
-    try {
-      await this.indexedDB.delete('projects', id);
-      if (this.currentProject?.id === id) {
-        this.stopAutoSave();
-        this.currentProject = null;
-      }
-    } catch (error) {
-      throw new AppError(
-        ErrorType.ProjectDeleteFailed,
-        'プロジェクトの削除に失敗しました'
-      );
-    }
+    return this.repository.delete(id);
   }
 
-  /**
-   * プロジェクト一覧の取得
-   */
   async listProjects(): Promise<ProjectMetadata[]> {
-    try {
-      const projects = await this.indexedDB.getAll<ProjectData>('projects');
-      return projects.map(({ id, name, createdAt, updatedAt }: ProjectData) => ({
-        id,
-        name,
-        createdAt,
-        updatedAt
-      }));
-    } catch (error) {
-      throw new AppError(
-        ErrorType.DatabaseOperationFailed,
-        'プロジェクト一覧の取得に失敗しました'
-      );
-    }
-  }
-
-  /**
-   * 現在のプロジェクトの取得
-   */
-  getCurrentProject(): ProjectData | null {
-    return this.currentProject;
-  }
-
-  /**
-   * 自動保存の開始
-   */
-  private startAutoSave(): void {
-    if (this.autoSaveInterval) return;
-
-    this.autoSaveInterval = window.setInterval(async () => {
-      if (this.currentProject) {
-        try {
-          await this.saveProject(this.currentProject);
-        } catch (error) {
-          console.error('Auto save failed:', error);
-        }
-      }
-    }, 30000); // 30秒ごとに保存
-  }
-
-  /**
-   * 自動保存の停止
-   */
-  private stopAutoSave(): void {
-    if (this.autoSaveInterval) {
-      window.clearInterval(this.autoSaveInterval);
-      this.autoSaveInterval = null;
-    }
+    return this.repository.list();
   }
 }

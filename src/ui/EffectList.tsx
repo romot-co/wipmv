@@ -1,6 +1,4 @@
-import React from 'react';
-import { EffectBase } from '../core/EffectBase';
-import { EffectType } from '../core/types';
+import React, { memo, useState } from 'react';
 import { Card, Flex, Text, IconButton, Button, DropdownMenu } from '@radix-ui/themes';
 import { 
   ChevronUpIcon, 
@@ -13,34 +11,53 @@ import {
   PlusIcon,
   DragHandleDots2Icon
 } from '@radix-ui/react-icons';
+import { EffectBase, EffectConfig } from '../core/types/core';
+import { EffectType } from '../core/types/effect';
+import { AppError, ErrorType } from '../core/types/error';
 import './EffectList.css';
 
-interface Props {
-  effects: EffectBase[];
-  selectedEffectId?: string;
+/**
+ * エフェクトリストのプロパティ
+ */
+interface EffectListProps {
+  effects: EffectBase<EffectConfig>[];
+  selectedEffectId: string | null;
   onEffectSelect: (id: string) => void;
   onEffectRemove: (id: string) => void;
   onEffectMove: (sourceId: string, targetId: string) => void;
   onEffectAdd: (type: EffectType) => void;
+  onError?: (error: AppError) => void;
   isLoading?: boolean;
   disabled?: boolean;
 }
 
 // エフェクトタイプごとのアイコンとラベル
-const effectTypeInfo = {
-  [EffectType.Background]: { icon: BackpackIcon, label: '背景' },
-  [EffectType.Text]: { icon: TextIcon, label: 'テキスト' },
-  [EffectType.Waveform]: { icon: ActivityLogIcon, label: '波形' },
-  [EffectType.Watermark]: { icon: ImageIcon, label: '透かし' },
+const effectTypeInfo: {
+  [K in 'background' | 'text' | 'waveform' | 'watermark']: { 
+    icon: React.FC; 
+    label: string;
+  }
+} = {
+  'background': { icon: BackpackIcon, label: '背景' },
+  'text': { icon: TextIcon, label: 'テキスト' },
+  'waveform': { icon: ActivityLogIcon, label: '波形' },
+  'watermark': { icon: ImageIcon, label: '透かし' }
 };
 
-export const EffectList: React.FC<Props> = ({
+/**
+ * エフェクトリストコンポーネント
+ * - エフェクトの一覧表示
+ * - エフェクトの追加・削除・移動
+ * - ドラッグ&ドロップによる並び替え
+ */
+export const EffectList = memo<EffectListProps>(({
   effects,
   selectedEffectId,
   onEffectSelect,
   onEffectRemove,
   onEffectMove,
   onEffectAdd,
+  onError,
   isLoading = false,
   disabled = false
 }) => {
@@ -50,24 +67,38 @@ export const EffectList: React.FC<Props> = ({
   );
 
   // ドラッグ&ドロップの状態管理
-  const [draggedId, setDraggedId] = React.useState<string | null>(null);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
 
-  const handleDragStart = (e: React.DragEvent, id: string) => {
-    e.dataTransfer.setData('text/plain', id);
-    setDraggedId(id);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    const sourceId = e.dataTransfer.getData('text/plain');
-    if (sourceId !== targetId) {
-      onEffectMove(sourceId, targetId);
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
+    try {
+      e.dataTransfer.setData('text/plain', id);
+      setDraggedId(id);
+    } catch (error) {
+      onError?.(new AppError(
+        ErrorType.EffectError,
+        'エフェクトのドラッグ開始に失敗しました'
+      ));
     }
-    setDraggedId(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetId: string) => {
+    try {
+      e.preventDefault();
+      const sourceId = e.dataTransfer.getData('text/plain');
+      if (sourceId !== targetId) {
+        onEffectMove(sourceId, targetId);
+      }
+      setDraggedId(null);
+    } catch (error) {
+      onError?.(new AppError(
+        ErrorType.EffectError,
+        'エフェクトの移動に失敗しました'
+      ));
+    }
   };
 
   return (
@@ -133,7 +164,10 @@ export const EffectList: React.FC<Props> = ({
                     variant="ghost"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onEffectMove(config.id, sortedEffects[effects.indexOf(effect) - 1]?.getConfig().id);
+                      const prevEffect = sortedEffects[effects.indexOf(effect) - 1];
+                      if (prevEffect) {
+                        onEffectMove(config.id, prevEffect.getConfig().id);
+                      }
                     }}
                     disabled={isLoading || disabled || effects.indexOf(effect) === 0}
                   >
@@ -144,7 +178,10 @@ export const EffectList: React.FC<Props> = ({
                     variant="ghost"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onEffectMove(config.id, sortedEffects[effects.indexOf(effect) + 1]?.getConfig().id);
+                      const nextEffect = sortedEffects[effects.indexOf(effect) + 1];
+                      if (nextEffect) {
+                        onEffectMove(config.id, nextEffect.getConfig().id);
+                      }
                     }}
                     disabled={isLoading || disabled || effects.indexOf(effect) === effects.length - 1}
                   >
@@ -170,4 +207,6 @@ export const EffectList: React.FC<Props> = ({
       </Flex>
     </Flex>
   );
-}; 
+});
+
+EffectList.displayName = 'EffectList'; 

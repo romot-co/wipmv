@@ -1,26 +1,38 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, memo } from 'react';
 import { Flex, Text } from '@radix-ui/themes';
 import * as Slider from '@radix-ui/react-slider';
 import './EffectTimeSettings.css';
 
+/**
+ * エフェクトの時間設定のプロパティ
+ */
 interface EffectTimeSettingsProps {
-  startTime: number;
-  endTime: number;
-  duration: number;
+  startTime?: number;
+  endTime?: number;
+  duration?: number;
   onTimeChange: (startTime: number, endTime: number) => void;
+  disabled?: boolean;
 }
 
-export const EffectTimeSettings: React.FC<EffectTimeSettingsProps> = ({
-  startTime,
-  endTime,
+/**
+ * エフェクトの時間設定コンポーネント
+ * - 開始時刻と終了時刻の設定
+ * - スライダーとテキスト入力による時間指定
+ * - タイムラインプレビュー表示
+ */
+export const EffectTimeSettings = memo<EffectTimeSettingsProps>(({
+  startTime = 0,
+  endTime = 0,
   duration,
   onTimeChange,
+  disabled = false
 }) => {
-  const isDisabled = duration === 0;
+  const isDisabled = disabled || duration === 0;
 
   useEffect(() => {
-    if (duration > 0 && (startTime === 0 && endTime === 0)) {
-      onTimeChange(0, duration);
+    const effectiveDuration = duration ?? 0;
+    if (effectiveDuration > 0 && (startTime === 0 && endTime === 0)) {
+      onTimeChange(0, effectiveDuration);
     }
   }, [duration, onTimeChange]);
 
@@ -52,7 +64,8 @@ export const EffectTimeSettings: React.FC<EffectTimeSettingsProps> = ({
   const handleEndTimeChange = (value: string) => {
     if (isDisabled) return;
     const newEndTime = parseTime(value);
-    if (isNaN(newEndTime) || newEndTime <= startTime || newEndTime > duration) return;
+    const effectiveDuration = duration ?? 0;
+    if (isNaN(newEndTime) || newEndTime <= startTime || newEndTime > effectiveDuration) return;
     onTimeChange(startTime, newEndTime);
   };
 
@@ -74,7 +87,7 @@ export const EffectTimeSettings: React.FC<EffectTimeSettingsProps> = ({
             <Slider.Root
               value={[startTime]}
               min={0}
-              max={duration}
+              max={duration ?? 0}
               step={0.001}
               disabled={isDisabled}
               onValueChange={([value]) => {
@@ -107,7 +120,7 @@ export const EffectTimeSettings: React.FC<EffectTimeSettingsProps> = ({
             <Slider.Root
               value={[endTime]}
               min={0}
-              max={duration}
+              max={duration ?? 0}
               step={0.001}
               disabled={isDisabled}
               onValueChange={([value]) => {
@@ -138,4 +151,6 @@ export const EffectTimeSettings: React.FC<EffectTimeSettingsProps> = ({
       </Flex>
     </div>
   );
-}; 
+});
+
+EffectTimeSettings.displayName = 'EffectTimeSettings'; 

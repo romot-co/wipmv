@@ -3,14 +3,14 @@ import {
   BackgroundEffectConfig,
   TextEffectConfig,
   WaveformEffectConfig,
-  WatermarkEffectConfig,
-  AudioSource
-} from './types';
+  WatermarkEffectConfig
+} from './types/effect';
+import { AudioSource } from './types/base';
 
 export function createDefaultBackgroundEffect(audioSource?: AudioSource): BackgroundEffectConfig {
   return {
     id: crypto.randomUUID(),
-    type: EffectType.Background,
+    type: 'background',
     backgroundType: 'solid',
     color: '#000000',
     opacity: 1,
@@ -28,7 +28,7 @@ export function createDefaultBackgroundEffect(audioSource?: AudioSource): Backgr
 export function createDefaultWaveformEffect(audioSource?: AudioSource): WaveformEffectConfig {
   return {
     id: crypto.randomUUID(),
-    type: EffectType.Waveform,
+    type: 'waveform',
     waveformType: 'bar',
     displayMode: 'waveform',
     channelMode: 'mono',
@@ -58,11 +58,13 @@ export function createDefaultWaveformEffect(audioSource?: AudioSource): Waveform
 export function createDefaultTextEffect(audioSource?: AudioSource): TextEffectConfig {
   return {
     id: crypto.randomUUID(),
-    type: EffectType.Text,
+    type: 'text',
     text: 'テキストを入力',
-    fontFamily: 'Arial',
-    fontSize: 48,
-    fontWeight: 'bold',
+    font: {
+      family: 'Arial',
+      size: 48,
+      weight: 'bold'
+    },
     color: '#ffffff',
     position: { x: 400, y: 300 },
     size: { width: 200, height: 60 },
@@ -80,7 +82,7 @@ export function createDefaultTextEffect(audioSource?: AudioSource): TextEffectCo
 export function createDefaultWatermarkEffect(audioSource?: AudioSource): WatermarkEffectConfig {
   return {
     id: crypto.randomUUID(),
-    type: EffectType.Watermark,
+    type: 'watermark',
     imageUrl: '/assets/default-watermark.svg',
     position: { x: 20, y: 20 },
     size: { width: 100, height: 100 },

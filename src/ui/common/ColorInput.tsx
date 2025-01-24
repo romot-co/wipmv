@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Flex } from '@radix-ui/themes';
 
+/**
+ * カラー入力のプロパティ
+ */
 interface ColorInputProps {
   value: string;
   onChange: (value: string) => void;
   className?: string;
+  disabled?: boolean;
 }
 
 // カラーコードのバリデーション
@@ -25,10 +29,17 @@ const expandShorthandColor = (color: string): string => {
   return color;
 };
 
-export const ColorInput: React.FC<ColorInputProps> = ({
+/**
+ * カラー入力コンポーネント
+ * - カラーピッカーとテキスト入力の組み合わせ
+ * - #RGB, #RRGGBB, #RGBA, #RRGGBBAA形式をサポート
+ * - バリデーション機能付き
+ */
+export const ColorInput = memo<ColorInputProps>(({
   value,
   onChange,
-  className
+  className,
+  disabled = false
 }) => {
   const [inputValue, setInputValue] = useState(value);
   const [isValid, setIsValid] = useState(true);
@@ -38,6 +49,7 @@ export const ColorInput: React.FC<ColorInputProps> = ({
   }, [value]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
     const newValue = e.target.value;
     setInputValue(newValue);
 
@@ -50,6 +62,7 @@ export const ColorInput: React.FC<ColorInputProps> = ({
   };
 
   const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
     const newValue = e.target.value;
     setInputValue(newValue);
     setIsValid(true);
@@ -63,6 +76,7 @@ export const ColorInput: React.FC<ColorInputProps> = ({
         value={value}
         onChange={handleColorChange}
         className={`color-picker ${className || ''}`}
+        disabled={disabled}
       />
       <input
         type="text"
@@ -70,7 +84,10 @@ export const ColorInput: React.FC<ColorInputProps> = ({
         onChange={handleTextChange}
         className={`color-input ${!isValid ? 'invalid' : ''} ${className || ''}`}
         style={{ borderColor: isValid ? undefined : 'red' }}
+        disabled={disabled}
       />
     </Flex>
   );
-}; 
+});
+
+ColorInput.displayName = 'ColorInput'; 

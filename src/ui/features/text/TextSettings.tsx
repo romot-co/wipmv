@@ -1,5 +1,6 @@
-import React from 'react';
-import { TextEffectConfig } from '../../../core/types';
+import React, { memo } from 'react';
+import { BlendMode } from '../../../core/types/base';
+import { TextEffectConfig } from '../../../core/types/effect';
 import { Flex, Box, Text, Select, Slider, TextArea } from '@radix-ui/themes';
 import { ColorInput } from '../../common/ColorInput';
 import '../../EffectSettings.css';
@@ -7,11 +8,13 @@ import '../../EffectSettings.css';
 interface TextSettingsProps {
   config: TextEffectConfig;
   onChange: (newConfig: Partial<TextEffectConfig>) => void;
+  disabled?: boolean;
 }
 
-export const TextSettings: React.FC<TextSettingsProps> = ({
+export const TextSettings = memo<TextSettingsProps>(({
   config,
-  onChange
+  onChange,
+  disabled
 }) => {
   return (
     <div className="effect-settings">
@@ -24,6 +27,7 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
             value={config.text}
             onChange={(e) => onChange({ text: e.target.value })}
             rows={3}
+            disabled={disabled}
           />
         </Box>
 
@@ -32,8 +36,14 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
             フォント
           </Text>
           <Select.Root
-            value={config.fontFamily}
-            onValueChange={(value) => onChange({ fontFamily: value })}
+            value={config.font.family}
+            onValueChange={(value) => onChange({
+              font: {
+                ...config.font,
+                family: value
+              }
+            })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -57,13 +67,19 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
           </Text>
           <Flex gap="3" align="center">
             <Slider
-              value={[config.fontSize]}
+              value={[config.font.size]}
               min={8}
               max={72}
               step={1}
-              onValueChange={(value) => onChange({ fontSize: value[0] })}
+              onValueChange={(value) => onChange({
+                font: {
+                  ...config.font,
+                  size: value[0]
+                }
+              })}
+              disabled={disabled}
             />
-            <Text size="2">{config.fontSize}px</Text>
+            <Text size="2">{config.font.size}px</Text>
           </Flex>
         </Box>
 
@@ -72,8 +88,14 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
             フォントの太さ
           </Text>
           <Select.Root
-            value={config.fontWeight?.toString() ?? 'normal'}
-            onValueChange={(value) => onChange({ fontWeight: value })}
+            value={config.font.weight?.toString() ?? 'normal'}
+            onValueChange={(value) => onChange({
+              font: {
+                ...config.font,
+                weight: value
+              }
+            })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -96,6 +118,7 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
           <ColorInput
             value={config.color}
             onChange={(value) => onChange({ color: value })}
+            disabled={disabled}
           />
         </Box>
 
@@ -116,6 +139,7 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
                   }
                 })}
                 className="number-input"
+                disabled={disabled}
               />
             </Flex>
             <Flex gap="3" align="center">
@@ -130,6 +154,7 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
                   }
                 })}
                 className="number-input"
+                disabled={disabled}
               />
             </Flex>
           </Flex>
@@ -142,6 +167,7 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
           <Select.Root
             value={config.alignment ?? 'left'}
             onValueChange={(value) => onChange({ alignment: value as 'left' | 'center' | 'right' })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -163,6 +189,7 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
               max={1}
               step={0.1}
               onValueChange={(value) => onChange({ opacity: value[0] })}
+              disabled={disabled}
             />
             <Text size="2">{config.opacity ?? 1}</Text>
           </Flex>
@@ -174,7 +201,8 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
           </Text>
           <Select.Root
             value={config.blendMode ?? 'source-over'}
-            onValueChange={(value) => onChange({ blendMode: value as GlobalCompositeOperation })}
+            onValueChange={(value) => onChange({ blendMode: value as BlendMode })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -190,4 +218,4 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
       </Flex>
     </div>
   );
-}; 
+}); 

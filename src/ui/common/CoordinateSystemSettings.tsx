@@ -1,7 +1,10 @@
-import React from 'react';
-import { CoordinateSystem, Position, Size } from '../../core/types';
+import React, { memo } from 'react';
+import { CoordinateSystem, Position, Size } from '../../core/types/base';
 import { Flex, Box, Text, Select } from '@radix-ui/themes';
 
+/**
+ * 座標系設定のプロパティ
+ */
 interface CoordinateSystemSettingsProps {
   coordinateSystem: CoordinateSystem;
   position: Position;
@@ -9,15 +12,23 @@ interface CoordinateSystemSettingsProps {
   onCoordinateSystemChange: (value: CoordinateSystem) => void;
   onPositionChange: (position: Position) => void;
   onSizeChange: (size: Size) => void;
+  disabled?: boolean;
 }
 
-export const CoordinateSystemSettings: React.FC<CoordinateSystemSettingsProps> = ({
+/**
+ * 座標系設定コンポーネント
+ * - 座標系の選択（相対値/絶対値）
+ * - 位置の設定（X座標/Y座標）
+ * - サイズの設定（幅/高さ）
+ */
+export const CoordinateSystemSettings = memo<CoordinateSystemSettingsProps>(({
   coordinateSystem,
   position,
   size,
   onCoordinateSystemChange,
   onPositionChange,
-  onSizeChange
+  onSizeChange,
+  disabled = false
 }) => {
   return (
     <>
@@ -28,6 +39,7 @@ export const CoordinateSystemSettings: React.FC<CoordinateSystemSettingsProps> =
         <Select.Root
           value={coordinateSystem}
           onValueChange={(value) => onCoordinateSystemChange(value as CoordinateSystem)}
+          disabled={disabled}
         >
           <Select.Trigger />
           <Select.Content>
@@ -55,6 +67,7 @@ export const CoordinateSystemSettings: React.FC<CoordinateSystemSettingsProps> =
               max={coordinateSystem === 'relative' ? 100 : undefined}
               step={coordinateSystem === 'relative' ? 1 : 1}
               className="number-input"
+              disabled={disabled}
             />
           </Flex>
           <Flex gap="3" align="center">
@@ -70,6 +83,7 @@ export const CoordinateSystemSettings: React.FC<CoordinateSystemSettingsProps> =
               max={coordinateSystem === 'relative' ? 100 : undefined}
               step={coordinateSystem === 'relative' ? 1 : 1}
               className="number-input"
+              disabled={disabled}
             />
           </Flex>
         </Flex>
@@ -93,6 +107,7 @@ export const CoordinateSystemSettings: React.FC<CoordinateSystemSettingsProps> =
               max={coordinateSystem === 'relative' ? 100 : undefined}
               step={coordinateSystem === 'relative' ? 1 : 1}
               className="number-input"
+              disabled={disabled}
             />
           </Flex>
           <Flex gap="3" align="center">
@@ -108,10 +123,13 @@ export const CoordinateSystemSettings: React.FC<CoordinateSystemSettingsProps> =
               max={coordinateSystem === 'relative' ? 100 : undefined}
               step={coordinateSystem === 'relative' ? 1 : 1}
               className="number-input"
+              disabled={disabled}
             />
           </Flex>
         </Flex>
       </Box>
     </>
   );
-}; 
+});
+
+CoordinateSystemSettings.displayName = 'CoordinateSystemSettings'; 

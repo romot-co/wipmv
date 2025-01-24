@@ -1,5 +1,6 @@
-import { EffectBase } from '../../core/EffectBase';
-import { WatermarkEffectConfig } from '../../core/types';
+import { EffectBase } from '../../core/types/core';
+import { WatermarkEffectConfig } from '../../core/types/effect';
+import { AnimationController } from '../../core/animation/AnimationController';
 
 /**
  * ウォーターマークエフェクト
@@ -9,12 +10,7 @@ import { WatermarkEffectConfig } from '../../core/types';
  */
 export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
   private image: HTMLImageElement | null = null;
-  private animationState: {
-    progress: number;
-    opacity: number;
-    scale: number;
-    rotation: number;
-  } | null = null;
+  private animationController: AnimationController | null = null;
 
   constructor(config: WatermarkEffectConfig) {
     super({
@@ -27,82 +23,55 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       repeat: config.repeat ?? false
     });
 
-    // アニメーション状態の初期化
+    // アニメーションコントローラーの初期化
     if (config.animation) {
-      this.animationState = {
-        progress: 0,
-        opacity: config.opacity ?? 0.5,
-        scale: 1,
-        rotation: config.rotation ?? 0
-      };
+      this.animationController = new AnimationController(config.animation);
     }
 
     // 画像URLが指定されている場合は読み込みを開始
     if (config.imageUrl) {
-      this.loadImage(config.imageUrl).catch(error => {
+      this.setImage(config.imageUrl).catch(error => {
         console.error('Failed to load watermark image:', error);
       });
     }
   }
 
   /**
-   * 画像の読み込み
+   * 画像を設定
    */
-  private async loadImage(url: string): Promise<void> {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    this.image = img;
+  async setImage(url: string): Promise<void> {
+    if (!url) {
+      this.image = null;
+      return;
+    }
+
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      this.image = img;
+    } catch (error) {
+      console.error('Failed to load watermark image:', error);
+      this.image = null;
+      throw error;
+    }
   }
 
   /**
    * 現在時刻に応じて内部状態を更新
    */
   update(currentTime: number): void {
-    if (this.config.animation && this.animationState) {
-      const { animation } = this.config;
-      const { startTime = 0, endTime = 0 } = this.config;
+    if (this.config.animation && this.animationController) {
+      const { startTime = 0, endTime = Infinity } = this.config;
       const duration = endTime - startTime;
-      
-      // 進行度を計算（0-1）
-      const progress = Math.max(0, Math.min((currentTime - startTime) / duration, 1));
-      this.animationState.progress = progress;
-
-      // アニメーションタイプに応じて値を更新
-      switch (animation.type) {
-        case 'fade':
-          this.animationState.opacity = this.lerp(
-            animation.from ?? 0,
-            animation.to ?? 1,
-            progress
-          );
-          break;
-        case 'scale':
-          this.animationState.scale = this.lerp(
-            animation.from ?? 0.5,
-            animation.to ?? 1.5,
-            progress
-          );
-          break;
-        case 'rotate':
-          this.animationState.rotation = this.lerp(
-            animation.from ?? 0,
-            animation.to ?? Math.PI * 2,
-            progress
-          );
-          break;
-      }
+      this.animationController.update(currentTime, startTime, duration);
     }
-  }
-
-  private lerp(start: number, end: number, progress: number): number {
-    return start + (end - start) * progress;
   }
 
   /**
    * ウォーターマークを描画
    */
-  render(ctx: CanvasRenderingContext2D): void {
+  render(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
     if (!this.image) return;
 
     const { width, height } = ctx.canvas;
@@ -115,10 +84,10 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       repeat = false
     } = this.config;
 
-    // アニメーション状態の適用
-    const effectiveOpacity = this.animationState?.opacity ?? opacity;
-    const scale = this.animationState?.scale ?? 1;
-    const effectiveRotation = this.animationState?.rotation ?? rotation;
+    // アニメーション値の適用
+    const effectiveOpacity = this.animationController?.getValue<number>('opacity') ?? opacity;
+    const effectiveScale = this.animationController?.getValue<number>('scale') ?? 1;
+    const effectiveRotation = this.animationController?.getValue<number>('rotate') ?? rotation;
 
     ctx.save();
     ctx.globalAlpha = effectiveOpacity;
@@ -133,8 +102,8 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       }
     } else {
       // 単一画像として描画
-      const scaledWidth = size.width * scale;
-      const scaledHeight = size.height * scale;
+      const scaledWidth = size.width * effectiveScale;
+      const scaledHeight = size.height * effectiveScale;
       const x = position.x + (size.width - scaledWidth) / 2;
       const y = position.y + (size.height - scaledHeight) / 2;
 
@@ -156,25 +125,8 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
   /**
    * リソースの解放
    */
-  override dispose(): void {
+  dispose(): void {
     this.image = null;
-    this.animationState = null;
-    super.dispose();
-  }
-
-  /**
-   * 画像を設定
-   */
-  setImage(url: string): void {
-    if (!url) {
-      this.image = null;
-      return;
-    }
-
-    const img = new Image();
-    img.onload = () => {
-      this.image = img;
-    };
-    img.src = url;
+    this.animationController = null;
   }
 } 

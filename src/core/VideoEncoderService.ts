@@ -1,7 +1,8 @@
 // src/services/VideoEncoderService.ts
 
 import { MP4Muxer } from './MP4Muxer';
-import { AppError, ErrorType, ErrorMessages, Disposable } from './types';
+import { AppError, ErrorType, ErrorMessages } from './types/error';
+import { Disposable } from './types/base';
 
 export interface EncoderConfig {
   width: number;

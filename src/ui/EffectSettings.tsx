@@ -1,86 +1,132 @@
-import React, { useState, useEffect } from 'react';
-import { EffectBase } from '../core/EffectBase';
-import { 
-  EffectType,
-  EffectConfig,
-} from '../core/types';
-import { EffectTimeSettings } from './EffectTimeSettings';
+import React, { useState, useEffect, memo } from 'react';
 import { Card, Flex, Heading, Text, Switch } from '@radix-ui/themes';
+import { EffectBase } from '../core/types/core';
+import { BackgroundEffectConfig, TextEffectConfig, WaveformEffectConfig, WatermarkEffectConfig } from '../core/types/effect';
+import { AppError, ErrorType } from '../core/types/error';
+import { EffectTimeSettings } from './EffectTimeSettings';
 import { BackgroundSettings } from './features/background/BackgroundSettings';
 import { WatermarkSettings } from './features/watermark/WatermarkSettings';
 import { WaveformSettings } from './features/waveform/WaveformSettings';
 import { TextSettings } from './features/text/TextSettings';
 import './EffectSettings.css';
 
+type EffectConfig = BackgroundEffectConfig | TextEffectConfig | WaveformEffectConfig | WatermarkEffectConfig;
+
+/**
+ * エフェクト設定のプロパティ
+ */
 interface EffectSettingsProps {
   effect: EffectBase<EffectConfig>;
   onUpdate: (config: Partial<EffectConfig>) => void;
-  duration: number;
+  onError?: (error: AppError) => void;
+  duration?: number;
+  disabled?: boolean;
 }
 
-export const EffectSettings: React.FC<EffectSettingsProps> = ({
+/**
+ * エフェクト設定コンポーネント
+ * - エフェクトの時間設定
+ * - エフェクト固有の設定
+ * - 表示/非表示とレイヤー順序の設定
+ */
+export const EffectSettings = memo<EffectSettingsProps>(({
   effect,
   onUpdate,
+  onError,
   duration,
+  disabled = false
 }) => {
   const [config, setConfig] = useState<EffectConfig>(effect.getConfig());
 
   useEffect(() => {
-    const newConfig = effect.getConfig();
-    console.log('エフェクト設定更新:', { effectId: effect.getId(), newConfig });
-    setConfig(newConfig);
-  }, [effect, effect.getConfig]);
+    try {
+      const newConfig = effect.getConfig();
+      console.log('エフェクト設定更新:', { effectId: effect.getId(), newConfig });
+      setConfig(newConfig);
+    } catch (error) {
+      onError?.(new AppError(
+        ErrorType.EffectError,
+        'エフェクト設定の取得に失敗しました'
+      ));
+    }
+  }, [effect, onError]);
 
   const handleTimeChange = (startTime: number, endTime: number) => {
-    const newConfig = {
-      startTime,
-      endTime,
-    };
-    onUpdate(newConfig);
-    setConfig(prev => ({ ...prev, ...newConfig }));
+    try {
+      const newConfig = {
+        startTime,
+        endTime,
+      };
+      onUpdate(newConfig);
+      setConfig(prev => ({ ...prev, ...newConfig }));
+    } catch (error) {
+      onError?.(new AppError(
+        ErrorType.EffectError,
+        '時間設定の更新に失敗しました'
+      ));
+    }
   };
 
   const handleConfigChange = (newConfig: Partial<EffectConfig>) => {
-    onUpdate(newConfig);
-    setConfig(prev => ({ ...prev, ...newConfig } as EffectConfig));
+    try {
+      onUpdate(newConfig);
+      setConfig(prev => ({ ...prev, ...newConfig } as EffectConfig));
+    } catch (error) {
+      onError?.(new AppError(
+        ErrorType.EffectError,
+        'エフェクト設定の更新に失敗しました'
+      ));
+    }
   };
 
   const renderEffectSpecificSettings = () => {
-    switch (config.type) {
-      case EffectType.Background:
-        return (
-          <BackgroundSettings
-            config={config}
-            onChange={handleConfigChange}
-          />
-        );
-
-      case EffectType.Watermark:
-        return (
-          <WatermarkSettings
-            config={config}
-            onChange={handleConfigChange}
-          />
-        );
-
-      case EffectType.Waveform:
-        return (
-          <WaveformSettings
-            config={config}
-            onChange={handleConfigChange}
-          />
-        );
-
-      case EffectType.Text:
-        return (
-          <TextSettings
-            config={config}
-            onChange={handleConfigChange}
-          />
-        );
-
-      default:
-        return null;
+    try {
+      switch (config.type) {
+        case 'background':
+          return (
+            <BackgroundSettings
+              config={config}
+              onChange={handleConfigChange}
+              disabled={disabled}
+            />
+          );
+        case 'text':
+          return (
+            <TextSettings
+              config={config}
+              onChange={handleConfigChange}
+              disabled={disabled}
+            />
+          );
+        case 'waveform':
+          return (
+            <WaveformSettings
+              config={config}
+              onChange={handleConfigChange}
+              disabled={disabled}
+            />
+          );
+        case 'watermark':
+          return (
+            <WatermarkSettings
+              config={config}
+              onChange={handleConfigChange}
+              disabled={disabled}
+            />
+          );
+        default:
+          onError?.(new AppError(
+            ErrorType.EffectError,
+            `未対応のエフェクトタイプです`
+          ));
+          return null;
+      }
+    } catch (error) {
+      onError?.(new AppError(
+        ErrorType.EffectError,
+        'エフェクト固有の設定の描画に失敗しました'
+      ));
+      return null;
     }
   };
 
@@ -94,8 +140,9 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
             <EffectTimeSettings
               startTime={config.startTime ?? 0}
               endTime={config.endTime ?? duration}
-              duration={duration}
+              duration={duration ?? 0}
               onTimeChange={handleTimeChange}
+              disabled={disabled}
             />
           </Flex>
         </Card>
@@ -117,6 +164,7 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
               <Switch
                 checked={config.visible}
                 onCheckedChange={(checked) => handleConfigChange({ visible: checked })}
+                disabled={disabled}
               />
             </Flex>
             <Flex direction="column" gap="1">
@@ -130,6 +178,7 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
                 }
                 min={0}
                 className="rt-TextFieldInput rt-r-size-1"
+                disabled={disabled}
               />
             </Flex>
           </Flex>
@@ -137,4 +186,6 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
       </div>
     </div>
   );
-}; 
+});
+
+EffectSettings.displayName = 'EffectSettings'; 

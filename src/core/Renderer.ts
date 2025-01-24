@@ -5,7 +5,12 @@
  * - 具体的な描画処理は行わず、EffectManagerなど上位ロジックから使われる
  */
 
-import { AppError, ErrorType } from './types';
+import { AppError, ErrorType } from './types/error';
+import { Disposable } from './types/base';
+
+// プレビュー用の最大解像度を定義
+const PREVIEW_MAX_WIDTH = 1280;
+const PREVIEW_MAX_HEIGHT = 720;
 
 export class Renderer {
   private canvas: HTMLCanvasElement;
@@ -13,9 +18,12 @@ export class Renderer {
   private ctx: CanvasRenderingContext2D | null = null;
   private offscreenCtx: CanvasRenderingContext2D | null = null;
   private scale: number = 1;
+  private isPreviewMode: boolean = false;
+  private originalSize: { width: number; height: number } | null = null;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, isPreview: boolean = false) {
     this.canvas = canvas;
+    this.isPreviewMode = isPreview;
     
     // メインキャンバスのコンテキストを取得
     this.ctx = canvas.getContext('2d', {
@@ -51,6 +59,47 @@ export class Renderer {
     this.ctx.imageSmoothingQuality = 'high';
     this.offscreenCtx.imageSmoothingEnabled = true;
     this.offscreenCtx.imageSmoothingQuality = 'high';
+
+    // プレビューモードの場合は解像度を調整
+    if (isPreview) {
+      this.adjustPreviewSize(canvas.width, canvas.height);
+    }
+  }
+
+  /**
+   * プレビュー用の解像度を計算して設定
+   */
+  private adjustPreviewSize(width: number, height: number): void {
+    if (!this.isPreviewMode) return;
+
+    this.originalSize = { width, height };
+    const aspectRatio = width / height;
+    let previewWidth = width;
+    let previewHeight = height;
+
+    if (previewWidth > PREVIEW_MAX_WIDTH) {
+      previewWidth = PREVIEW_MAX_WIDTH;
+      previewHeight = Math.round(PREVIEW_MAX_WIDTH / aspectRatio);
+    }
+
+    if (previewHeight > PREVIEW_MAX_HEIGHT) {
+      previewHeight = PREVIEW_MAX_HEIGHT;
+      previewWidth = Math.round(PREVIEW_MAX_HEIGHT * aspectRatio);
+    }
+
+    this.canvas.width = previewWidth;
+    this.canvas.height = previewHeight;
+    this.offscreenCanvas.width = previewWidth;
+    this.offscreenCanvas.height = previewHeight;
+
+    // スケールを計算
+    this.scale = width / previewWidth;
+
+    console.log('プレビュー解像度を設定:', {
+      original: { width, height },
+      preview: { width: previewWidth, height: previewHeight },
+      scale: this.scale
+    });
   }
 
   /**
@@ -125,7 +174,7 @@ export class Renderer {
    * 元のサイズを取得
    */
   getOriginalSize(): { width: number; height: number } {
-    return {
+    return this.originalSize ?? {
       width: Math.round(this.canvas.width * this.scale),
       height: Math.round(this.canvas.height * this.scale)
     };
@@ -146,5 +195,35 @@ export class Renderer {
    */
   getScale(): number {
     return this.scale;
+  }
+
+  /**
+   * プレビューモードかどうかを取得
+   */
+  isPreview(): boolean {
+    return this.isPreviewMode;
+  }
+
+  /**
+   * キャンバス要素を取得
+   */
+  getCanvas(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
+  /**
+   * リソースの解放
+   */
+  dispose(): void {
+    // キャンバスのクリア
+    this.clear();
+    
+    // コンテキストの参照を解放
+    this.ctx = null;
+    this.offscreenCtx = null;
+    
+    // キャンバス要素の参照を解放
+    this.canvas = null as any;
+    this.offscreenCanvas = null as any;
   }
 }

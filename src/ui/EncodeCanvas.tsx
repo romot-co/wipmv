@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { EffectManager } from '../core/EffectManager';
-import { VideoSettings } from '../core/types';
+import { VideoSettings } from '../core/types/base';
 
 interface EncodeCanvasProps {
   manager: EffectManager;

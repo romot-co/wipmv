@@ -1,14 +1,19 @@
-import React from 'react';
-import { BackgroundEffectConfig } from '../../../core/types';
+import React, { memo } from 'react';
+import { BackgroundEffectConfig } from '../../../core/types/effect';
 import { Flex, Box, Text, Select, Slider } from '@radix-ui/themes';
 import { ImageUploader } from '../../common/ImageUploader';
 import { CoordinateSystemSettings } from '../../common/CoordinateSystemSettings';
 import { ColorInput } from '../../common/ColorInput';
+import { BlendMode } from '../../../core/types/base';
 import '../../EffectSettings.css';
 
+/**
+ * 背景エフェクト設定のプロパティ
+ */
 interface BackgroundSettingsProps {
   config: BackgroundEffectConfig;
   onChange: (newConfig: Partial<BackgroundEffectConfig>) => void;
+  disabled?: boolean;
 }
 
 const defaultPosition = { x: 0, y: 0 };
@@ -16,9 +21,16 @@ const defaultSize = { width: 100, height: 100 };
 const defaultImagePosition = { x: 50, y: 50 };
 const defaultGradientColors: [string, string] = ['#000000', '#ffffff'];
 
-export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
+/**
+ * 背景エフェクト設定コンポーネント
+ * - 背景の種類（単色/グラデーション/画像）
+ * - 色や画像の設定
+ * - 位置やサイズの調整
+ */
+export const BackgroundSettings = memo<BackgroundSettingsProps>(({
   config,
-  onChange
+  onChange,
+  disabled = false
 }) => {
   return (
     <div className="effect-settings">
@@ -30,6 +42,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
           onCoordinateSystemChange={(value) => onChange({ coordinateSystem: value })}
           onPositionChange={(position) => onChange({ position })}
           onSizeChange={(size) => onChange({ size })}
+          disabled={disabled}
         />
 
         <Box>
@@ -39,6 +52,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
           <Select.Root
             value={config.backgroundType || 'solid'}
             onValueChange={(value) => onChange({ backgroundType: value as BackgroundEffectConfig['backgroundType'] })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -57,6 +71,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
             <ColorInput
               value={config.color || '#000000'}
               onChange={(value) => onChange({ color: value })}
+              disabled={disabled}
             />
           </Box>
         )}
@@ -74,6 +89,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                   colors[0] = value;
                   onChange({ gradientColors: colors as [string, string] });
                 }}
+                disabled={disabled}
               />
             </Box>
 
@@ -88,6 +104,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                   colors[1] = value;
                   onChange({ gradientColors: colors as [string, string] });
                 }}
+                disabled={disabled}
               />
             </Box>
 
@@ -96,15 +113,15 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                 グラデーション方向
               </Text>
               <Select.Root
-                value={String(config.gradientDirection || 0)}
-                onValueChange={(value) => onChange({ gradientDirection: Number(value) })}
+                value={config.gradientDirection || 'horizontal'}
+                onValueChange={(value) => onChange({ gradientDirection: value as 'horizontal' | 'vertical' | 'radial' })}
+                disabled={disabled}
               >
                 <Select.Trigger />
                 <Select.Content>
-                  <Select.Item value="0">水平</Select.Item>
-                  <Select.Item value="90">垂直</Select.Item>
-                  <Select.Item value="45">斜め（右上）</Select.Item>
-                  <Select.Item value="135">斜め（右下）</Select.Item>
+                  <Select.Item value="horizontal">水平</Select.Item>
+                  <Select.Item value="vertical">垂直</Select.Item>
+                  <Select.Item value="radial">放射状</Select.Item>
                 </Select.Content>
               </Select.Root>
             </Box>
@@ -122,6 +139,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                 value={config.imageUrl || ''}
                 onChange={(url) => onChange({ imageUrl: url })}
                 accept="image/*"
+                disabled={disabled}
               />
             </Box>
 
@@ -132,6 +150,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
               <Select.Root
                 value={config.imageSize || 'cover'}
                 onValueChange={(value) => onChange({ imageSize: value as 'cover' | 'contain' | 'stretch' })}
+                disabled={disabled}
               >
                 <Select.Trigger />
                 <Select.Content>
@@ -159,6 +178,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                       }
                     })}
                     className="number-input"
+                    disabled={disabled}
                   />
                 </Flex>
                 <Flex gap="3" align="center">
@@ -173,6 +193,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                       }
                     })}
                     className="number-input"
+                    disabled={disabled}
                   />
                 </Flex>
               </Flex>
@@ -191,6 +212,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
               max={1}
               step={0.1}
               onValueChange={(value) => onChange({ opacity: value[0] })}
+              disabled={disabled}
             />
             <Text size="2">{config.opacity || 1}</Text>
           </Flex>
@@ -202,7 +224,8 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
           </Text>
           <Select.Root
             value={config.blendMode || 'source-over'}
-            onValueChange={(value) => onChange({ blendMode: value as GlobalCompositeOperation })}
+            onValueChange={(value) => onChange({ blendMode: value as BlendMode })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -218,4 +241,6 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
       </Flex>
     </div>
   );
-}; 
+});
+
+BackgroundSettings.displayName = 'BackgroundSettings'; 

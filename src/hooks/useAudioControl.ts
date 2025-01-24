@@ -6,11 +6,12 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { AudioPlaybackService } from '../core/AudioPlaybackService';
-import { AppError, ErrorType } from '../core/types';
+import { AppError, ErrorType } from '../core/types/error';
 import { useApp } from '../contexts/AppContext';
+import { AppContextType } from '../core/types/app';
 
 export function useAudioControl(audioService: AudioPlaybackService) {
-  const { audioState, setAudioState, handleError } = useApp();
+  const { audioState, dispatch } = useApp() as AppContextType;
 
   // RAF用のref
   const rafIdRef = useRef<number | null>(null);
@@ -29,14 +30,17 @@ export function useAudioControl(audioService: AudioPlaybackService) {
 
     lastUpdateTimeRef.current = now;
     const playbackState = audioService.getPlaybackState();
-    setAudioState({
-      isPlaying: playbackState.isPlaying,
-      currentTime: Math.round(playbackState.currentTime * 1000) / 1000, // 小数点以下3桁に正規化
-      duration: Math.round(playbackState.duration * 1000) / 1000 // 小数点以下3桁に正規化
+    dispatch({
+      type: 'SET_AUDIO',
+      payload: {
+        isPlaying: playbackState.isPlaying,
+        currentTime: Math.round(playbackState.currentTime * 1000) / 1000, // 小数点以下3桁に正規化
+        duration: Math.round(playbackState.duration * 1000) / 1000 // 小数点以下3桁に正規化
+      }
     });
     
     rafIdRef.current = requestAnimationFrame(updateTime);
-  }, [audioService, setAudioState]);
+  }, [audioService, dispatch]);
 
   /**
    * play
@@ -45,9 +49,12 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     try {
       await audioService.play();
       const playbackState = audioService.getPlaybackState();
-      setAudioState({
-        isPlaying: true,
-        duration: Math.round(playbackState.duration * 1000) / 1000 // 小数点以下3桁に正規化
+      dispatch({
+        type: 'SET_AUDIO',
+        payload: {
+          isPlaying: true,
+          duration: Math.round(playbackState.duration * 1000) / 1000 // 小数点以下3桁に正規化
+        }
       });
 
       // 再生開始時にRAFを開始
@@ -57,10 +64,17 @@ export function useAudioControl(audioService: AudioPlaybackService) {
       }
     } catch (err) {
       const error = err instanceof AppError ? err : new AppError(ErrorType.AudioPlaybackFailed, '再生に失敗しました');
-      handleError('audio', error);
+      dispatch({
+        type: 'HANDLE_ERROR',
+        payload: {
+          error: error,
+          errorType: ErrorType.AudioPlaybackFailed,
+          message: '再生に失敗しました'
+        }
+      });
       throw error;
     }
-  }, [audioService, setAudioState, handleError, updateTime]);
+  }, [audioService, dispatch, updateTime]);
 
   /**
    * pause
@@ -68,7 +82,12 @@ export function useAudioControl(audioService: AudioPlaybackService) {
   const pause = useCallback(async () => {
     try {
       await audioService.pause();
-      setAudioState({ isPlaying: false });
+      dispatch({
+        type: 'SET_AUDIO',
+        payload: {
+          isPlaying: false
+        }
+      });
 
       // 一時停止時にRAFを停止
       if (rafIdRef.current !== null) {
@@ -77,10 +96,17 @@ export function useAudioControl(audioService: AudioPlaybackService) {
       }
     } catch (err) {
       const error = err instanceof AppError ? err : new AppError(ErrorType.AudioPlaybackFailed, '一時停止に失敗しました');
-      handleError('audio', error);
+      dispatch({
+        type: 'HANDLE_ERROR',
+        payload: {
+          error: error,
+          errorType: ErrorType.AudioPlaybackFailed,
+          message: '一時停止に失敗しました'
+        }
+      });
       throw error;
     }
-  }, [audioService, setAudioState, handleError]);
+  }, [audioService, dispatch]);
 
   /**
    * stop
@@ -89,9 +115,12 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     try {
       await audioService.pause(); // 一時停止
       await audioService.seek(0); // 先頭にシーク
-      setAudioState({ 
-        isPlaying: false, 
-        currentTime: 0 
+      dispatch({
+        type: 'SET_AUDIO',
+        payload: {
+          isPlaying: false,
+          currentTime: 0
+        }
       });
 
       // 停止時にRAFを停止
@@ -101,10 +130,17 @@ export function useAudioControl(audioService: AudioPlaybackService) {
       }
     } catch (err) {
       const error = err instanceof AppError ? err : new AppError(ErrorType.AudioPlaybackFailed, '停止に失敗しました');
-      handleError('audio', error);
+      dispatch({
+        type: 'HANDLE_ERROR',
+        payload: {
+          error: error,
+          errorType: ErrorType.AudioPlaybackFailed,
+          message: '停止に失敗しました'
+        }
+      });
       throw error;
     }
-  }, [audioService, setAudioState, handleError]);
+  }, [audioService, dispatch]);
 
   /**
    * seek
@@ -114,16 +150,26 @@ export function useAudioControl(audioService: AudioPlaybackService) {
       try {
         await audioService.seek(time);
         const playbackState = audioService.getPlaybackState();
-        setAudioState({
-          currentTime: Math.round(playbackState.currentTime * 1000) / 1000 // 小数点以下3桁に正規化
+        dispatch({
+          type: 'SET_AUDIO',
+          payload: {
+            currentTime: Math.round(playbackState.currentTime * 1000) / 1000 // 小数点以下3桁に正規化
+          }
         });
       } catch (err) {
         const error = err instanceof AppError ? err : new AppError(ErrorType.AudioPlaybackFailed, 'シークに失敗しました');
-        handleError('audio', error);
+        dispatch({
+          type: 'HANDLE_ERROR',
+          payload: {
+            error: error,
+            errorType: ErrorType.AudioPlaybackFailed,
+            message: 'シークに失敗しました'
+          }
+        });
         throw error;
       }
     },
-    [audioService, setAudioState, handleError]
+    [audioService, dispatch]
   );
 
   // 音量設定
@@ -131,14 +177,26 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     (volume: number) => {
       try {
         audioService.setVolume(volume);
-        setAudioState({ volume });
+        dispatch({
+          type: 'SET_AUDIO',
+          payload: {
+            volume
+          }
+        });
       } catch (err) {
         const error = err instanceof AppError ? err : new AppError(ErrorType.AudioPlaybackFailed, '音量設定に失敗しました');
-        handleError('audio', error);
+        dispatch({
+          type: 'HANDLE_ERROR',
+          payload: {
+            error: error,
+            errorType: ErrorType.AudioPlaybackFailed,
+            message: '音量設定に失敗しました'
+          }
+        });
         throw error;
       }
     },
-    [audioService, setAudioState, handleError]
+    [audioService, dispatch]
   );
 
   // ループ設定
@@ -146,14 +204,26 @@ export function useAudioControl(audioService: AudioPlaybackService) {
     (loop: boolean) => {
       try {
         audioService.setLoop(loop);
-        setAudioState({ loop });
+        dispatch({
+          type: 'SET_AUDIO',
+          payload: {
+            loop
+          }
+        });
       } catch (err) {
         const error = err instanceof AppError ? err : new AppError(ErrorType.AudioPlaybackFailed, 'ループ設定に失敗しました');
-        handleError('audio', error);
+        dispatch({
+          type: 'HANDLE_ERROR',
+          payload: {
+            error: error,
+            errorType: ErrorType.AudioPlaybackFailed,
+            message: 'ループ設定に失敗しました'
+          }
+        });
         throw error;
       }
     },
-    [audioService, setAudioState, handleError]
+    [audioService, dispatch]
   );
 
   // クリーンアップ

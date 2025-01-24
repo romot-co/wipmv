@@ -1,21 +1,33 @@
-import React from 'react';
-import { WatermarkEffectConfig } from '../../../core/types';
+import React, { memo } from 'react';
+import { WatermarkEffectConfig } from '../../../core/types/effect';
+import { BlendMode } from '../../../core/types/base';
 import { Flex, Box, Text, Select, Slider, Switch } from '@radix-ui/themes';
 import { ImageUploader } from '../../common/ImageUploader';
 import { CoordinateSystemSettings } from '../../common/CoordinateSystemSettings';
 import '../../EffectSettings.css';
 
+/**
+ * 透かしエフェクト設定のプロパティ
+ */
 interface WatermarkSettingsProps {
   config: WatermarkEffectConfig;
   onChange: (newConfig: Partial<WatermarkEffectConfig>) => void;
+  disabled?: boolean;
 }
 
 const defaultPosition = { x: 0, y: 0 };
 const defaultSize = { width: 100, height: 100 };
 
-export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
+/**
+ * 透かしエフェクト設定コンポーネント
+ * - 画像の選択とプレビュー
+ * - 位置とサイズの調整
+ * - 回転と繰り返しの設定
+ */
+export const WatermarkSettings = memo<WatermarkSettingsProps>(({
   config,
-  onChange
+  onChange,
+  disabled = false
 }) => {
   return (
     <div className="effect-settings">
@@ -27,6 +39,7 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
           onCoordinateSystemChange={(value) => onChange({ coordinateSystem: value })}
           onPositionChange={(position) => onChange({ position })}
           onSizeChange={(size) => onChange({ size })}
+          disabled={disabled}
         />
 
         <Box>
@@ -38,6 +51,7 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
             value={config.imageUrl || ''}
             onChange={(url) => onChange({ imageUrl: url })}
             accept="image/*"
+            disabled={disabled}
           />
         </Box>
 
@@ -52,6 +66,7 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
               max={360}
               step={1}
               onValueChange={(value) => onChange({ rotation: value[0] })}
+              disabled={disabled}
             />
             <Text size="2">{config.rotation || 0}°</Text>
           </Flex>
@@ -64,6 +79,7 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
           <Switch
             checked={config.repeat || false}
             onCheckedChange={(checked) => onChange({ repeat: checked })}
+            disabled={disabled}
           />
         </Box>
 
@@ -78,6 +94,7 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
               max={1}
               step={0.1}
               onValueChange={(value) => onChange({ opacity: value[0] })}
+              disabled={disabled}
             />
             <Text size="2">{config.opacity || 1}</Text>
           </Flex>
@@ -89,7 +106,8 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
           </Text>
           <Select.Root
             value={config.blendMode || 'source-over'}
-            onValueChange={(value) => onChange({ blendMode: value as GlobalCompositeOperation })}
+            onValueChange={(value) => onChange({ blendMode: value as BlendMode })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -105,4 +123,6 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
       </Flex>
     </div>
   );
-}; 
+});
+
+WatermarkSettings.displayName = 'WatermarkSettings'; 

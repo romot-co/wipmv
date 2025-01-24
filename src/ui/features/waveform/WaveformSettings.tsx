@@ -1,13 +1,18 @@
-import React from 'react';
-import { WaveformEffectConfig } from '../../../core/types';
+import React, { memo } from 'react';
+import { WaveformEffectConfig } from '../../../core/types/effect';
+import { BlendMode } from '../../../core/types/base';
 import { Flex, Box, Text, Select, Slider, Switch } from '@radix-ui/themes';
 import { CoordinateSystemSettings } from '../../common/CoordinateSystemSettings';
 import { ColorInput } from '../../common/ColorInput';
 import '../../EffectSettings.css';
 
+/**
+ * 波形エフェクト設定のプロパティ
+ */
 interface WaveformSettingsProps {
   config: WaveformEffectConfig;
   onChange: (newConfig: Partial<WaveformEffectConfig>) => void;
+  disabled?: boolean;
 }
 
 const defaultMirror = { vertical: false, horizontal: false };
@@ -21,9 +26,17 @@ const defaultColorBands = {
 const defaultPosition = { x: 0, y: 0 };
 const defaultSize = { width: 100, height: 100 };
 
-export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
+/**
+ * 波形エフェクト設定コンポーネント
+ * - 波形の表示モード（波形/周波数）
+ * - チャンネルモード（モノラル/ステレオ）
+ * - 波形タイプ（バー/ライン/サークル）
+ * - ミラー効果と色の設定
+ */
+export const WaveformSettings = memo<WaveformSettingsProps>(({
   config,
-  onChange
+  onChange,
+  disabled = false
 }) => {
   return (
     <div className="effect-settings">
@@ -35,6 +48,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
           onCoordinateSystemChange={(value) => onChange({ coordinateSystem: value })}
           onPositionChange={(position) => onChange({ position })}
           onSizeChange={(size) => onChange({ size })}
+          disabled={disabled}
         />
 
         <Box>
@@ -44,6 +58,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
           <Select.Root
             value={config.displayMode || 'waveform'}
             onValueChange={(value) => onChange({ displayMode: value as 'waveform' | 'frequency' })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -60,6 +75,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
           <Select.Root
             value={config.channelMode || 'mono'}
             onValueChange={(value) => onChange({ channelMode: value as 'mono' | 'stereo' | 'leftOnly' | 'rightOnly' })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -78,6 +94,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
           <Select.Root
             value={config.waveformType || 'bar'}
             onValueChange={(value) => onChange({ waveformType: value as 'bar' | 'line' | 'circle' })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -96,25 +113,27 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
             <Flex gap="3" align="center">
               <Text size="2" weight="medium">垂直</Text>
               <Switch
-                checked={config.mirror.vertical}
+                checked={config.mirror?.vertical ?? false}
                 onCheckedChange={(checked) => onChange({
                   mirror: {
-                    ...config.mirror,
+                    ...(config.mirror || defaultMirror),
                     vertical: checked
                   }
                 })}
+                disabled={disabled}
               />
             </Flex>
             <Flex gap="3" align="center">
               <Text size="2" weight="medium">水平</Text>
               <Switch
-                checked={config.mirror.horizontal}
+                checked={config.mirror?.horizontal ?? false}
                 onCheckedChange={(checked) => onChange({
                   mirror: {
-                    ...config.mirror,
+                    ...(config.mirror || defaultMirror),
                     horizontal: checked
                   }
                 })}
+                disabled={disabled}
               />
             </Flex>
           </Flex>
@@ -133,6 +152,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
                   colorBands: checked ? defaultColorBands : undefined
                 });
               }}
+              disabled={disabled}
             />
             {config.useColorBands && config.colorBands && (
               <>
@@ -145,6 +165,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
                         newRanges[index] = { ...band, color: value };
                         onChange({ colorBands: { ranges: newRanges } });
                       }}
+                      disabled={disabled}
                     />
                     <Flex gap="2">
                       <input
@@ -159,6 +180,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
                         max={1}
                         step={0.1}
                         className="number-input"
+                        disabled={disabled}
                       />
                       <input
                         type="number"
@@ -172,6 +194,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
                         max={1}
                         step={0.1}
                         className="number-input"
+                        disabled={disabled}
                       />
                     </Flex>
                     <button
@@ -180,6 +203,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
                         newRanges.splice(index, 1);
                         onChange({ colorBands: { ranges: newRanges } });
                       }}
+                      disabled={disabled}
                     >
                       削除
                     </button>
@@ -190,6 +214,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
                     const newRanges = [...config.colorBands!.ranges, { min: 0, max: 1, color: '#ffffff' }];
                     onChange({ colorBands: { ranges: newRanges } });
                   }}
+                  disabled={disabled}
                 >
                   バンドを追加
                 </button>
@@ -212,6 +237,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
                 min={0}
                 step={0.1}
                 className="number-input"
+                disabled={disabled}
               />
             </Flex>
             <Flex gap="3" align="center">
@@ -223,6 +249,7 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
                 min={0}
                 step={0.1}
                 className="number-input"
+                disabled={disabled}
               />
             </Flex>
           </Flex>
@@ -234,13 +261,14 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
           </Text>
           <Flex gap="3" align="center">
             <Slider
-              value={[config.barWidth]}
+              value={[config.barWidth || 1]}
               min={1}
               max={50}
               step={1}
               onValueChange={(value) => onChange({ barWidth: value[0] })}
+              disabled={disabled}
             />
-            <Text size="2">{config.barWidth}px</Text>
+            <Text size="2">{config.barWidth || 1}px</Text>
           </Flex>
         </Box>
 
@@ -250,13 +278,14 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
           </Text>
           <Flex gap="3" align="center">
             <Slider
-              value={[config.barGap]}
+              value={[config.barGap || 1]}
               min={0}
-              max={20}
+              max={50}
               step={1}
               onValueChange={(value) => onChange({ barGap: value[0] })}
+              disabled={disabled}
             />
-            <Text size="2">{config.barGap}px</Text>
+            <Text size="2">{config.barGap || 1}px</Text>
           </Flex>
         </Box>
 
@@ -303,13 +332,14 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
           </Text>
           <Flex gap="3" align="center">
             <Slider
-              value={[config.opacity ?? 1]}
+              value={[config.opacity || 1]}
               min={0}
               max={1}
               step={0.1}
               onValueChange={(value) => onChange({ opacity: value[0] })}
+              disabled={disabled}
             />
-            <Text size="2">{config.opacity ?? 1}</Text>
+            <Text size="2">{config.opacity || 1}</Text>
           </Flex>
         </Box>
 
@@ -318,8 +348,9 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
             ブレンドモード
           </Text>
           <Select.Root
-            value={config.blendMode ?? 'source-over'}
-            onValueChange={(value) => onChange({ blendMode: value as GlobalCompositeOperation })}
+            value={config.blendMode || 'source-over'}
+            onValueChange={(value) => onChange({ blendMode: value as BlendMode })}
+            disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
@@ -335,4 +366,6 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
       </Flex>
     </div>
   );
-}; 
+});
+
+WaveformSettings.displayName = 'WaveformSettings'; 

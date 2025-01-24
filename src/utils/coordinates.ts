@@ -6,7 +6,7 @@
  * - リサイズ時の更新処理
  */
 
-import { Position, Size, CoordinateSystem } from '../core/types';
+import { Position, Size, CoordinateSystem } from '../core/types/base';
 
 /**
  * 座標を変換

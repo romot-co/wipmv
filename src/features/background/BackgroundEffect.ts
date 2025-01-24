@@ -1,5 +1,7 @@
-import { EffectBase } from '../../core/EffectBase';
-import { BackgroundEffectConfig } from '../../core/types';
+import { EffectBase } from '../../core/types/core';
+import { BackgroundEffectConfig } from '../../core/types/effect';
+import { AnimationController } from '../../core/animation/AnimationController';
+import { Color } from '../../core/types/base';
 
 /**
  * 背景エフェクト
@@ -10,12 +12,7 @@ import { BackgroundEffectConfig } from '../../core/types';
  */
 export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
   private image: HTMLImageElement | null = null;
-  private animationState: {
-    progress: number;
-    opacity: number;
-    scale: number;
-    color: string;
-  } | null = null;
+  private animationController: AnimationController | null = null;
 
   constructor(config: BackgroundEffectConfig) {
     super({
@@ -26,14 +23,9 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
       blendMode: config.blendMode ?? 'source-over'
     });
 
-    // アニメーション状態の初期化
+    // アニメーションコントローラーの初期化
     if (config.animation) {
-      this.animationState = {
-        progress: 0,
-        opacity: config.opacity ?? 1,
-        scale: 1,
-        color: config.color ?? '#000000'
-      };
+      this.animationController = new AnimationController(config.animation);
     }
   }
 
@@ -41,52 +33,17 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
    * 現在時刻に応じて内部状態を更新
    */
   update(currentTime: number): void {
-    if (this.config.animation && this.animationState) {
-      const { animation } = this.config;
-      const { startTime = 0, endTime = 0 } = this.config;
+    if (this.config.animation && this.animationController) {
+      const { startTime = 0, endTime = Infinity } = this.config;
       const duration = endTime - startTime;
-      
-      // 進行度を計算（0-1）
-      const progress = Math.max(0, Math.min((currentTime - startTime) / duration, 1));
-      this.animationState.progress = progress;
-
-      // アニメーションタイプに応じて値を更新
-      switch (animation.type) {
-        case 'fade':
-          this.animationState.opacity = this.lerp(
-            animation.from ?? 0,
-            animation.to ?? 1,
-            progress
-          );
-          break;
-        case 'scale':
-          this.animationState.scale = this.lerp(
-            animation.from ?? 0.5,
-            animation.to ?? 1.5,
-            progress
-          );
-          break;
-        case 'color':
-          if (animation.from && animation.to) {
-            const r = this.lerp(animation.from.r, animation.to.r, progress);
-            const g = this.lerp(animation.from.g, animation.to.g, progress);
-            const b = this.lerp(animation.from.b, animation.to.b, progress);
-            const a = this.lerp(animation.from.a, animation.to.a, progress);
-            this.animationState.color = `rgba(${r},${g},${b},${a})`;
-          }
-          break;
-      }
+      this.animationController.update(currentTime, startTime, duration);
     }
-  }
-
-  private lerp(start: number, end: number, progress: number): number {
-    return start + (end - start) * progress;
   }
 
   /**
    * 背景を描画
    */
-  render(ctx: CanvasRenderingContext2D): void {
+  render(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
     const { width, height } = ctx.canvas;
     const {
       backgroundType = 'solid',
@@ -97,10 +54,10 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
       blendMode = 'source-over'
     } = this.config;
 
-    // アニメーション状態の適用
-    const effectiveOpacity = this.animationState?.opacity ?? opacity;
-    const effectiveColor = this.animationState?.color ?? color;
-    const scale = this.animationState?.scale ?? 1;
+    // アニメーション値の適用
+    const effectiveOpacity = this.animationController?.getValue<number>('opacity') ?? opacity;
+    const effectiveColor = this.animationController?.getValue<Color>('color') ?? color;
+    const scale = this.animationController?.getValue<number>('scale') ?? 1;
 
     ctx.save();
     ctx.globalAlpha = effectiveOpacity;
@@ -115,7 +72,7 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
 
     switch (backgroundType) {
       case 'solid':
-        ctx.fillStyle = effectiveColor;
+        ctx.fillStyle = this.colorToString(effectiveColor);
         ctx.fillRect(0, 0, width, height);
         break;
 
@@ -169,25 +126,40 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
   /**
    * 画像を設定
    */
-  setImage(url: string): void {
+  async setImage(url: string): Promise<void> {
     if (!url) {
       this.image = null;
       return;
     }
 
-    const img = new Image();
-    img.onload = () => {
-      this.image = img;
-    };
-    img.src = url;
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        this.image = img;
+        resolve();
+      };
+      img.onerror = (error) => {
+        reject(new Error('Failed to load image: ' + error));
+      };
+      img.src = url;
+    });
+  }
+
+  /**
+   * 色情報を文字列に変換
+   */
+  private colorToString(color: Color | string): string {
+    if (typeof color === 'string') {
+      return color;
+    }
+    return `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
   }
 
   /**
    * リソースの解放
    */
-  override dispose(): void {
+  dispose(): void {
     this.image = null;
-    this.animationState = null;
-    super.dispose();
+    this.animationController = null;
   }
 } 
