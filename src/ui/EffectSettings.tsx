@@ -26,8 +26,10 @@ export const EffectSettings: React.FC<EffectSettingsProps> = ({
   const [config, setConfig] = useState<EffectConfig>(effect.getConfig());
 
   useEffect(() => {
-    setConfig(effect.getConfig());
-  }, [effect]);
+    const newConfig = effect.getConfig();
+    console.log('エフェクト設定更新:', { effectId: effect.getId(), newConfig });
+    setConfig(newConfig);
+  }, [effect, effect.getConfig]);
 
   const handleTimeChange = (startTime: number, endTime: number) => {
     const newConfig = {

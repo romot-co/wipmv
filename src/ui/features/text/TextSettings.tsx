@@ -1,6 +1,7 @@
 import React from 'react';
 import { TextEffectConfig } from '../../../core/types';
 import { Flex, Box, Text, Select, Slider, TextArea } from '@radix-ui/themes';
+import { ColorInput } from '../../common/ColorInput';
 import '../../EffectSettings.css';
 
 interface TextSettingsProps {
@@ -92,21 +93,10 @@ export const TextSettings: React.FC<TextSettingsProps> = ({
           <Text as="label" size="2" weight="bold" mb="2">
             テキストカラー
           </Text>
-          <Flex gap="3" align="center">
-            <input
-              type="color"
-              value={config.color}
-              onChange={(e) => onChange({ color: e.target.value })}
-              className="color-picker"
-            />
-            <input
-              type="text"
-              value={config.color}
-              onChange={(e) => onChange({ color: e.target.value })}
-              pattern="^#[0-9A-Fa-f]{6}$"
-              className="color-input"
-            />
-          </Flex>
+          <ColorInput
+            value={config.color}
+            onChange={(value) => onChange({ color: value })}
+          />
         </Box>
 
         <Box>

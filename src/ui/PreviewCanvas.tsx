@@ -1,130 +1,90 @@
-import React, { useEffect, useRef, memo, useCallback } from 'react';
+import React, { useEffect, useRef, memo, useMemo } from 'react';
 import { EffectManager } from '../core/EffectManager';
+
+// プレビュー用の最大解像度を定義
+const PREVIEW_MAX_WIDTH = 1280;
+const PREVIEW_MAX_HEIGHT = 720;
 
 // PreviewCanvas が受け取るpropsをシンプルにする
 interface PreviewCanvasProps {
-  onManagerInit: (manager: EffectManager) => void;
-  videoSettings: {
-    width: number;
-    height: number;
-    frameRate: number;
-    videoBitrate: number;
-    audioBitrate: number;
-  };
+  manager: EffectManager;
+  width: number;
+  height: number;
 }
 
 /**
  * プレビューキャンバス
- * - Canvasを初期化し、EffectManagerをインスタンス化
+ * - Canvasを初期化し、EffectManagerと連携
  * - リサイズ処理のみ担当
+ * - プレビュー時は固定解像度（1280x720）を使用し、CSSでスケーリング
  */
-export const PreviewCanvas = memo(({
-  onManagerInit,
-  videoSettings,
-}: PreviewCanvasProps) => {
+export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
+  manager,
+  width,
+  height
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const managerRef = useRef<EffectManager | null>(null);
-  const isInitializedRef = useRef(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  // レンダラーの更新処理
-  const updateRenderer = useCallback(() => {
-    const canvas = canvasRef.current;
-    const manager = managerRef.current;
-    if (!canvas || !manager) return;
+  // プレビュー用の解像度を計算
+  const { previewWidth, previewHeight } = useMemo(() => {
+    const aspectRatio = width / height;
+    let previewWidth = width;
+    let previewHeight = height;
 
-    console.log('PreviewCanvas: レンダラー更新', {
-      width: videoSettings.width,
-      height: videoSettings.height
+    if (previewWidth > PREVIEW_MAX_WIDTH) {
+      previewWidth = PREVIEW_MAX_WIDTH;
+      previewHeight = Math.round(PREVIEW_MAX_WIDTH / aspectRatio);
+    }
+
+    if (previewHeight > PREVIEW_MAX_HEIGHT) {
+      previewHeight = PREVIEW_MAX_HEIGHT;
+      previewWidth = Math.round(PREVIEW_MAX_HEIGHT * aspectRatio);
+    }
+
+    console.log('プレビュー解像度を計算:', {
+      originalWidth: width,
+      originalHeight: height,
+      previewWidth,
+      previewHeight
     });
 
-    // キャンバスサイズの設定
-    canvas.width = videoSettings.width;
-    canvas.height = videoSettings.height;
+    return { previewWidth, previewHeight };
+  }, [width, height]);
 
-    // 強制的に再レンダリング
-    requestAnimationFrame(() => {
-      if (managerRef.current) {
-        managerRef.current.startPreviewLoop();
-      }
-    });
-  }, [videoSettings.width, videoSettings.height]);
-
-  // 初期化処理
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || isInitializedRef.current) return;
+    if (!canvas) return;
 
-    console.log('PreviewCanvas: EffectManager初期化開始');
-    const manager = new EffectManager();
-    manager.setPreviewCanvas(canvas);
-    managerRef.current = manager;
-    isInitializedRef.current = true;
-
-    // 初期サイズを設定
-    updateRenderer();
+    console.log('プレビューキャンバスの初期化開始');
     
-    // マネージャーを親コンポーネントに通知
-    onManagerInit(manager);
-    console.log('PreviewCanvas: EffectManager初期化完了');
+    // キャンバスサイズを設定
+    canvas.width = previewWidth;
+    canvas.height = previewHeight;
 
-    // クリーンアップ
+    // CSSでアスペクト比を維持しながら表示
+    canvas.style.width = '100%';
+    canvas.style.height = 'auto';
+    canvas.style.imageRendering = 'pixelated';
+
+    // マネージャーにキャンバスを設定
+    manager.setPreviewCanvas(canvas);
+
+    console.log('プレビューキャンバスの初期化完了:', {
+      width: canvas.width,
+      height: canvas.height
+    });
+
     return () => {
-      console.log('PreviewCanvas: クリーンアップ開始');
-      if (managerRef.current) {
-        managerRef.current.stopPreviewLoop();
-        managerRef.current.dispose();
-        managerRef.current = null;
-        isInitializedRef.current = false;
-      }
-      console.log('PreviewCanvas: クリーンアップ完了');
+      console.log('プレビューキャンバスのクリーンアップ');
+      manager.clearPreviewCanvas();
     };
-  }, []); // 依存配列を空にして、初期化を1回だけ行う
-
-  // サイズ更新処理
-  useEffect(() => {
-    if (!isInitializedRef.current) return;
-    updateRenderer();
-  }, [updateRenderer]);
-
-  // アスペクト比を計算
-  const aspectRatio = videoSettings.width / videoSettings.height;
+  }, [manager, previewWidth, previewHeight]);
 
   return (
-    <div 
-      ref={containerRef}
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          paddingBottom: `${(1 / aspectRatio) * 100}%`,
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        <canvas 
-          ref={canvasRef}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',
-          }}
-        />
-      </div>
+    <div className="preview-canvas-container">
+      <canvas ref={canvasRef} />
     </div>
   );
-});
+};
 
 PreviewCanvas.displayName = 'PreviewCanvas';

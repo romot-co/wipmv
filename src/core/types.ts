@@ -17,7 +17,8 @@ export interface VideoSettings {
  * どんな情報をまとめて持つか
  */
 export interface AudioSource {
-  buffer: AudioBuffer;
+  file: File | null;
+  buffer: AudioBuffer | null;
   duration: number;
   sampleRate: number;
   numberOfChannels: number;
@@ -192,17 +193,6 @@ export interface TextEffectConfig extends BaseEffectConfig {
 }
 
 /**
- * オーディオソース
- */
-export interface AudioSource {
-  file?: File;
-  buffer: AudioBuffer;
-  duration: number;
-  sampleRate: number;
-  numberOfChannels: number;
-}
-
-/**
  * オーディオの再生状態
  */
 export interface AudioPlaybackState {
@@ -239,6 +229,7 @@ export enum ErrorType {
   AudioDecodeFailed = 'AudioDecodeFailed',
   AudioPlaybackFailed = 'AudioPlaybackFailed',
   AudioAnalysisFailed = 'AudioAnalysisFailed',
+  AudioAnalysisCancelled = 'AudioAnalysisCancelled',
   
   // プロジェクト関連
   ProjectServiceError = 'ProjectServiceError',
@@ -254,9 +245,10 @@ export enum ErrorType {
   DatabaseOperationFailed = 'DatabaseOperationFailed',
   
   // エクスポート関連
-  ExportInitFailed = 'ExportInitFailed',
-  ExportRenderFailed = 'ExportRenderFailed',
-  ExportEncodeFailed = 'ExportEncodeFailed',
+  EXPORT_INIT_FAILED = 'EXPORT_INIT_FAILED',
+  EXPORT_RENDER_FAILED = 'EXPORT_RENDER_FAILED',
+  EXPORT_ENCODE_FAILED = 'EXPORT_ENCODE_FAILED',
+  EXPORT_CANCELLED = 'EXPORT_CANCELLED',
   
   // 再生エラー
   PlaybackError = 'PlaybackError',
@@ -265,7 +257,11 @@ export enum ErrorType {
   ExportFailed = 'ExportFailed',
   
   // 未知のエラー
-  UnknownError = 'UnknownError'
+  UnknownError = 'UnknownError',
+  
+  // レンダラー関連
+  RENDERER_INIT_FAILED = 'RENDERER_INIT_FAILED',
+  RENDERER_ERROR = 'RENDERER_ERROR',
 }
 
 /**
@@ -283,6 +279,7 @@ export const ErrorMessages: Record<ErrorType, string> = {
   AudioDecodeFailed: '音声ファイルのデコードに失敗しました',
   AudioPlaybackFailed: '音声の再生に失敗しました',
   AudioAnalysisFailed: '音声の解析に失敗しました',
+  AudioAnalysisCancelled: '音声解析がキャンセルされました',
   
   // プロジェクト関連
   ProjectServiceError: 'プロジェクト操作でエラーが発生しました',
@@ -298,9 +295,10 @@ export const ErrorMessages: Record<ErrorType, string> = {
   DatabaseOperationFailed: 'データベース操作に失敗しました',
   
   // エクスポート関連
-  ExportInitFailed: 'エクスポートの初期化に失敗しました',
-  ExportRenderFailed: 'エクスポートのレンダリングに失敗しました',
-  ExportEncodeFailed: 'エクスポートのエンコードに失敗しました',
+  EXPORT_INIT_FAILED: 'エクスポートの初期化に失敗しました',
+  EXPORT_RENDER_FAILED: 'エクスポートのレンダリングに失敗しました',
+  EXPORT_ENCODE_FAILED: 'エクスポートのエンコードに失敗しました',
+  EXPORT_CANCELLED: 'エクスポートがキャンセルされました',
   
   // 再生エラー
   PlaybackError: '再生中にエラーが発生しました',
@@ -309,7 +307,11 @@ export const ErrorMessages: Record<ErrorType, string> = {
   ExportFailed: 'エクスポートに失敗しました',
   
   // 未知のエラー
-  UnknownError: '未知のエラーが発生しました'
+  UnknownError: '未知のエラーが発生しました',
+  
+  // レンダラー関連
+  RENDERER_INIT_FAILED: 'レンダラーの初期化に失敗しました',
+  RENDERER_ERROR: 'レンダラーでエラーが発生しました',
 };
 
 /**
@@ -419,3 +421,18 @@ export interface WatermarkEffectConfig extends BaseEffectConfig {
 }
 
 export type BackgroundAnimation = FadeAnimation | ScaleAnimation | RotateAnimation | ColorAnimation;
+
+export interface HasAudioSource {
+  getAudioSource(): AudioSource;
+  setAudioSource(source: AudioSource): void;
+}
+
+export interface UseProjectResult {
+  state: {
+    currentProject: ProjectData | null;
+    isLoading: boolean;
+  };
+  createProject: (name: string, videoSettings: VideoSettings) => Promise<ProjectData>;
+  saveProject: () => Promise<void>;
+  updateVideoSettings: (settings: VideoSettings) => Promise<void>;
+}

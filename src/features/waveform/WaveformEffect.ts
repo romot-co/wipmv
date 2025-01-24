@@ -10,8 +10,7 @@ import { WaveformAnimation } from '../../core/types';
  * - ステレオチャンネルの分割表示をサポート
  */
 export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
-  private audioSource: AudioSource | null = null;
-  private currentWaveformData: Float32Array[] | null = null;
+  protected currentWaveformData: Float32Array[] | null = null;
   private currentFrequencyData: Float32Array[] | null = null;
   private animationState: {
     progress: number;
@@ -86,10 +85,15 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
    * 音声ソースを設定
    */
   setAudioSource(source: AudioSource): void {
+    if (!source.waveformData) {
+      console.warn('波形エフェクト: 波形データが存在しません');
+      return;
+    }
     this.audioSource = source;
     console.log('波形エフェクト: 音声ソース設定完了', {
       hasWaveformData: !!source.waveformData,
-      hasFrequencyData: !!source.frequencyData
+      hasFrequencyData: !!source.frequencyData,
+      channels: source.waveformData.length
     });
   }
 
@@ -97,7 +101,10 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
    * 現在時刻に応じて内部状態を更新
    */
   update(currentTime: number): void {
-    if (!this.audioSource?.waveformData) return;
+    if (!this.audioSource?.waveformData) {
+      console.warn('波形エフェクト: 波形データが存在しないため更新をスキップします');
+      return;
+    }
 
     // アニメーションの更新
     if (this.config.animation && this.animationState) {
@@ -152,39 +159,64 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     const endIndex = Math.min(startIndex + windowSize, totalFrames);
 
     // チャンネルモードに応じてデータを準備
-    switch (this.config.channelMode) {
-      case 'mono':
-        // 全チャンネルの平均を取る
-        this.currentWaveformData = [this.averageChannels(this.audioSource.waveformData, startIndex, endIndex)];
-        if (this.audioSource.frequencyData) {
-          this.currentFrequencyData = [this.averageChannels(this.audioSource.frequencyData, startIndex, endIndex)];
-        }
-        break;
-      case 'leftOnly':
-        this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
-        if (this.audioSource.frequencyData) {
-          this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
-        }
-        break;
-      case 'rightOnly':
-        if (this.audioSource.waveformData.length > 1) {
-          this.currentWaveformData = [this.processData(this.audioSource.waveformData[1].slice(startIndex, endIndex))];
+    try {
+      switch (this.config.channelMode) {
+        case 'mono':
+          // 全チャンネルの平均を取る
+          this.currentWaveformData = [this.averageChannels(this.audioSource.waveformData, startIndex, endIndex)];
           if (this.audioSource.frequencyData) {
-            this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[1].slice(startIndex, endIndex))];
+            this.currentFrequencyData = [this.averageChannels(this.audioSource.frequencyData, startIndex, endIndex)];
           }
-        }
-        break;
-      case 'stereo':
-        this.currentWaveformData = this.audioSource.waveformData.map(channel => 
-          this.processData(channel.slice(startIndex, endIndex))
-        );
-        if (this.audioSource.frequencyData) {
-          this.currentFrequencyData = this.audioSource.frequencyData.map(channel =>
+          break;
+        case 'leftOnly':
+          this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
+          if (this.audioSource.frequencyData) {
+            this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
+          }
+          break;
+        case 'rightOnly':
+          if (this.audioSource.waveformData.length > 1) {
+            this.currentWaveformData = [this.processData(this.audioSource.waveformData[1].slice(startIndex, endIndex))];
+            if (this.audioSource.frequencyData) {
+              this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[1].slice(startIndex, endIndex))];
+            }
+          } else {
+            // 右チャンネルがない場合は左チャンネルを使用
+            console.log('右チャンネルが存在しないため、左チャンネルを使用します');
+            this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
+            if (this.audioSource.frequencyData) {
+              this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
+            }
+          }
+          break;
+        case 'stereo':
+          // ステレオモードでは両方のチャンネルを個別に処理
+          this.currentWaveformData = this.audioSource.waveformData.map(channel => 
             this.processData(channel.slice(startIndex, endIndex))
           );
-        }
-        break;
+          if (this.audioSource.frequencyData) {
+            this.currentFrequencyData = this.audioSource.frequencyData.map(channel =>
+              this.processData(channel.slice(startIndex, endIndex))
+            );
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('波形データの更新中にエラーが発生しました:', error);
+      this.currentWaveformData = null;
+      this.currentFrequencyData = null;
+      return;
     }
+
+    // デバッグログ
+    console.log('波形データ更新:', {
+      channelMode: this.config.channelMode,
+      channels: this.currentWaveformData?.length,
+      samplesPerChannel: this.currentWaveformData?.[0]?.length,
+      startIndex,
+      endIndex,
+      windowSize
+    });
   }
 
   private averageChannels(data: Float32Array[] | Uint8Array[], start: number, end: number): Float32Array {
@@ -234,13 +266,19 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
    * 波形データを取得
    */
   private getChannelData(displayMode: 'waveform' | 'frequency'): { left: Float32Array | null; right: Float32Array | null } {
-    if (!this.audioSource) return { left: null, right: null };
+    if (!this.audioSource) {
+      console.warn('波形エフェクト: 音声ソースが存在しません');
+      return { left: null, right: null };
+    }
 
     const data = displayMode === 'waveform' 
       ? this.currentWaveformData 
       : this.currentFrequencyData;
 
-    if (!data || data.length === 0) return { left: null, right: null };
+    if (!data || data.length === 0) {
+      console.warn('波形エフェクト: 表示データが存在しません', { displayMode });
+      return { left: null, right: null };
+    }
 
     // 周波数データの場合は正規化
     if (displayMode === 'frequency') {
@@ -264,7 +302,10 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
    * 波形を描画
    */
   render(ctx: CanvasRenderingContext2D): void {
-    if (!this.currentWaveformData && !this.currentFrequencyData) return;
+    if (!this.currentWaveformData && !this.currentFrequencyData) {
+      console.warn('波形エフェクト: 描画データが存在しません');
+      return;
+    }
 
     const { width, height } = ctx.canvas;
     const {
@@ -304,48 +345,15 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
           mirror,
           sensitivity: effectiveSensitivity,
           color: effectiveColor,
-          scale: effectiveScale
+          scale: effectiveScale,
+          isSecondChannel: false
         });
         break;
 
       case 'stereo':
+        // ステレオ: 画面を上下に分割して両チャンネルを表示
         if (right) {
-          // ステレオ: 画面を上下に分割
-          const halfHeight = height / 2;
-          
           // 左チャンネル (上半分)
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(0, 0, width, halfHeight);
-          ctx.clip();
-          this.renderChannel(ctx, left, width, halfHeight, {
-            waveformType,
-            barWidth,
-            barGap,
-            mirror,
-            sensitivity: effectiveSensitivity,
-            color: effectiveColor,
-            scale: effectiveScale
-          });
-          ctx.restore();
-
-          // 右チャンネル (下半分)
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(0, halfHeight, width, halfHeight);
-          ctx.clip();
-          this.renderChannel(ctx, right, width, halfHeight, {
-            waveformType,
-            barWidth,
-            barGap,
-            mirror,
-            sensitivity: effectiveSensitivity,
-            color: effectiveColor,
-            scale: effectiveScale
-          });
-          ctx.restore();
-        } else {
-          // 右チャンネルがない場合はモノラルとして描画
           this.renderChannel(ctx, left, width, height, {
             waveformType,
             barWidth,
@@ -353,7 +361,33 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
             mirror,
             sensitivity: effectiveSensitivity,
             color: effectiveColor,
-            scale: effectiveScale
+            scale: effectiveScale,
+            isSecondChannel: false
+          });
+
+          // 右チャンネル (下半分)
+          this.renderChannel(ctx, right, width, height, {
+            waveformType,
+            barWidth,
+            barGap,
+            mirror,
+            sensitivity: effectiveSensitivity,
+            color: effectiveColor,
+            scale: effectiveScale,
+            isSecondChannel: true
+          });
+        } else {
+          // 右チャンネルがない場合はモノラルとして描画
+          console.log('ステレオモードですが右チャンネルがないためモノラルとして描画します');
+          this.renderChannel(ctx, left, width, height, {
+            waveformType,
+            barWidth,
+            barGap,
+            mirror,
+            sensitivity: effectiveSensitivity,
+            color: effectiveColor,
+            scale: effectiveScale,
+            isSecondChannel: false
           });
         }
         break;
@@ -367,7 +401,8 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
           mirror,
           sensitivity: effectiveSensitivity,
           color: effectiveColor,
-          scale: effectiveScale
+          scale: effectiveScale,
+          isSecondChannel: false
         });
         break;
 
@@ -380,7 +415,8 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
           mirror,
           sensitivity: effectiveSensitivity,
           color: effectiveColor,
-          scale: effectiveScale
+          scale: effectiveScale,
+          isSecondChannel: true
         });
         break;
     }
@@ -406,9 +442,10 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
       sensitivity: number;
       color: string;
       scale: number;
+      isSecondChannel?: boolean;  // 2番目のチャンネルかどうか
     }
   ): void {
-    const { waveformType, barWidth, barGap, mirror, sensitivity, color, scale } = options;
+    const { waveformType, barWidth, barGap, mirror, sensitivity, color, scale, isSecondChannel } = options;
 
     // スケール変換のための保存
     ctx.save();
@@ -422,17 +459,62 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
       ctx.translate(-centerX, -centerY);
     }
 
-    // 波形タイプに応じて描画
-    switch (waveformType) {
-      case 'bar':
-        this.renderBars(ctx, data, width, height, barWidth, barGap, mirror, sensitivity, color);
-        break;
-      case 'line':
-        this.renderLine(ctx, data, width, height, mirror, sensitivity, color);
-        break;
-      case 'circle':
-        this.renderCircle(ctx, data, width, height, sensitivity, color);
-        break;
+    // ステレオ表示時のチャンネル分離
+    if (this.config.channelMode === 'stereo') {
+      const channelHeight = height / 2;
+      const yOffset = isSecondChannel ? channelHeight : 0;
+
+      // チャンネル境界線の描画
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, channelHeight);
+      ctx.lineTo(width, channelHeight);
+      ctx.stroke();
+
+      // チャンネルラベルの描画
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(isSecondChannel ? 'Right' : 'Left', 10, yOffset + 20);
+
+      // クリッピング領域の設定
+      ctx.beginPath();
+      ctx.rect(0, yOffset, width, channelHeight);
+      ctx.clip();
+
+      // 波形タイプに応じて描画
+      switch (waveformType) {
+        case 'bar':
+          this.renderBars(ctx, data, width, channelHeight, barWidth, barGap, mirror, sensitivity, color);
+          break;
+        case 'line':
+          this.renderLine(ctx, data, width, channelHeight, mirror, sensitivity, color);
+          break;
+        case 'circle':
+          // サークル表示はステレオモードでは特別な処理
+          const circleSize = Math.min(width, channelHeight) * 0.8;
+          const circleX = width / 2;
+          const circleY = yOffset + channelHeight / 2;
+          ctx.translate(circleX, circleY);
+          ctx.scale(circleSize / Math.min(width, height), circleSize / Math.min(width, height));
+          ctx.translate(-circleX, -circleY);
+          this.renderCircle(ctx, data, width, channelHeight, sensitivity, color);
+          break;
+      }
+    } else {
+      // モノラル表示時は通常通り描画
+      switch (waveformType) {
+        case 'bar':
+          this.renderBars(ctx, data, width, height, barWidth, barGap, mirror, sensitivity, color);
+          break;
+        case 'line':
+          this.renderLine(ctx, data, width, height, mirror, sensitivity, color);
+          break;
+        case 'circle':
+          this.renderCircle(ctx, data, width, height, sensitivity, color);
+          break;
+      }
     }
 
     // 状態を復元

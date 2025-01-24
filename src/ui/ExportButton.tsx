@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { Button, Dialog, Flex, Text } from '@radix-ui/themes';
 import { EncodeSettings } from './EncodeSettings';
 import { EffectManager } from '../core/EffectManager';
-import { AudioSource } from '../core/types';
+import { AudioSource, VideoSettings } from '../core/types';
 import { VideoEncoderService } from '../core/VideoEncoderService';
 import { Cross2Icon, GearIcon } from '@radix-ui/react-icons';
 import { Renderer } from '../core/Renderer';
@@ -17,16 +17,10 @@ import { Renderer } from '../core/Renderer';
  * - audioSource:     AudioPlaybackService 等から取得した AudioSource (解析済み)
  */
 interface ExportButtonProps {
-  manager: EffectManager | null;
+  manager: EffectManager;
   onError: (error: Error) => void;
   onProgress?: (progress: number) => void;
-  videoSettings: {
-    width: number;
-    height: number;
-    frameRate: number;
-    videoBitrate: number;
-    audioBitrate: number;
-  };
+  videoSettings: VideoSettings;
   onSettingsChange: (settings: {
     width: number;
     height: number;
@@ -34,7 +28,10 @@ interface ExportButtonProps {
     videoBitrate: number;
     audioBitrate: number;
   }) => void;
-  audioSource?: AudioSource;
+  audioSource: AudioSource | null | undefined;
+  onExportStart?: () => void;
+  onExportComplete?: () => void;
+  onExportError?: (error: Error) => void;
 }
 
 /**
@@ -48,25 +45,24 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
   onProgress,
   videoSettings,
   onSettingsChange,
-  audioSource
+  audioSource,
+  onExportStart,
+  onExportComplete,
+  onExportError
 }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
 
-  // キャンセルが指示されたかを示すフラグ
-  const cancelRef = useRef<boolean>(false);
+  const cancelRef = useRef(false);
 
-  /**
-   * エクスポートメイン処理
-   */
   const handleExport = useCallback(async () => {
     if (!manager) {
-      onError(new Error('EffectManager が存在しません。'));
+      onError?.(new Error('EffectManager が存在しません。'));
       return;
     }
-    if (!audioSource || !audioSource.buffer) {
-      onError(new Error('有効な AudioSource がセットされていないため、エクスポートできません。'));
+    if (!audioSource?.buffer) {
+      onError?.(new Error('有効な AudioSource がセットされていないため、エクスポートできません。'));
       return;
     }
 
@@ -74,31 +70,29 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       setIsExporting(true);
       setExportProgress(0);
       cancelRef.current = false;
+      onExportStart?.();
 
-      // エンコードサービス初期化
+      // エンコーダーを初期化
       const encoder = new VideoEncoderService({
         width: videoSettings.width,
         height: videoSettings.height,
         frameRate: videoSettings.frameRate,
         videoBitrate: videoSettings.videoBitrate,
         audioBitrate: videoSettings.audioBitrate,
-        sampleRate: audioSource.sampleRate,
-        channels: audioSource.numberOfChannels
+        sampleRate: audioSource.buffer.sampleRate,
+        channels: audioSource.buffer.numberOfChannels
       });
+
       await encoder.initialize();
 
-      // 仕様として、全フレームを順次描画→エンコード
-      // 音声の総フレーム数を計算
-      const totalFrames = Math.ceil(audioSource.duration * videoSettings.frameRate);
+      // エクスポート用のキャンバスを作成
+      const canvas = manager.createExportCanvas({
+        width: videoSettings.width,
+        height: videoSettings.height
+      });
 
-      // Export 前に EffectManager でリアルタイム描画ループ停止（必要に応じて）
-      manager.stopPreviewLoop();
-
-      // エクスポート用のレンダラーを作成
-      const canvas = document.createElement('canvas');
-      canvas.width = videoSettings.width;
-      canvas.height = videoSettings.height;
-      const renderer = new Renderer(canvas);
+      // フレーム数を計算
+      const totalFrames = Math.ceil(audioSource.buffer.duration * videoSettings.frameRate);
 
       // フレームごとに描画＋エンコード
       for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
@@ -109,61 +103,46 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         // 現在時刻を計算
         const currentTime = frameIndex / videoSettings.frameRate;
 
-        // キャンバスをクリア
-        renderer.clear();
-
-        // エフェクトの更新と描画（オフスクリーンに描画）
-        manager.updateAll(currentTime);
-        manager.renderAll(renderer.getOffscreenContext());
-
-        // オフスクリーンの内容をメインキャンバスに転送
-        renderer.drawToMain();
+        // フレームをレンダリング
+        manager.renderExportFrame(canvas, currentTime);
 
         // 1フレーム分の映像エンコード
-        await encoder.encodeVideoFrame(renderer.getCanvas(), frameIndex);
-
-        // 1フレーム分の音声エンコード
-        await encoder.encodeAudioBuffer(audioSource.buffer, frameIndex);
+        await encoder.encodeVideoFrame(canvas, frameIndex);
 
         // 進捗更新
-        const p = (frameIndex / totalFrames) * 100;
-        setExportProgress(p);
-        if (onProgress) {
-          onProgress(p);
-        }
+        const progress = (frameIndex + 1) / totalFrames * 100;
+        setExportProgress(progress);
+        onProgress?.(progress);
       }
 
-      // エンコード完了処理
-      const result = await encoder.finalize();
-      
-      // ダウンロード処理
-      const blob = new Blob([result], { type: 'video/mp4' });
+      // 音声をエンコード
+      await encoder.encodeAudioBuffer(audioSource.buffer, 0);
+
+      // エンコードを完了
+      const mp4Binary = await encoder.finalize();
+      const blob = new Blob([mp4Binary], { type: 'video/mp4' });
       const url = URL.createObjectURL(blob);
+
+      // ダウンロードリンクを作成
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'exported_video.mp4';
-      document.body.appendChild(a);
+      a.download = 'output.mp4';
       a.click();
-      document.body.removeChild(a);
+
       URL.revokeObjectURL(url);
-
-      // クリーンアップ
-      canvas.width = 0;
-      canvas.height = 0;
-      encoder.dispose();
-
-    } catch (error) {
+      onExportComplete?.();
+    } catch (error: unknown) {
       console.error('エクスポートエラー:', error);
-      onError(error instanceof Error ? error : new Error('エクスポートに失敗しました'));
+      if (error instanceof Error) {
+        onExportError?.(error);
+      } else {
+        onExportError?.(new Error('不明なエラーが発生しました'));
+      }
     } finally {
       setIsExporting(false);
       setExportProgress(0);
-      // プレビューを再開
-      if (manager) {
-        manager.startPreviewLoop();
-      }
     }
-  }, [manager, onError, videoSettings, audioSource, onProgress]);
+  }, [manager, videoSettings, audioSource, onExportStart, onExportComplete, onExportError, onProgress, onError]);
 
   /**
    * エクスポートキャンセル処理

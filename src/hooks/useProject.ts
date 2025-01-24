@@ -5,235 +5,189 @@
  * - 自動保存機能
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { ProjectService } from '../core/ProjectService';
-import {
-  ProjectData,
-  ProjectMetadata,
-  EffectConfig,
-  VideoSettings,
+import { 
+  ProjectData, 
+  VideoSettings, 
   AppError,
-  ErrorType
+  ErrorType,
+  ProjectMetadata
 } from '../core/types';
+import { useApp } from '../contexts/AppContext';
 
-interface ProjectState {
-  currentProject: ProjectData | null;
-  isLoading: boolean;
-  error: Error | null;
-}
-
-interface UseProjectResult {
-  state: ProjectState;
+export interface UseProjectResult {
+  state: {
+    currentProject: ProjectData | null;
+    lastSaved: number | null;
+    isLoading: boolean;
+  };
   createProject: (name: string, videoSettings: VideoSettings) => Promise<ProjectData>;
   loadProject: (id: string) => Promise<ProjectData>;
   saveProject: () => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   listProjects: () => Promise<ProjectMetadata[]>;
-  addEffect: (effect: EffectConfig) => Promise<void>;
-  updateEffect: (id: string, config: Partial<EffectConfig>) => Promise<void>;
-  deleteEffect: (id: string) => Promise<void>;
-  moveEffect: (fromId: string, toId: string) => Promise<void>;
   updateVideoSettings: (settings: VideoSettings) => Promise<void>;
 }
 
 export function useProject(): UseProjectResult {
-  const [state, setState] = useState<ProjectState>({
-    currentProject: null,
-    isLoading: false,
-    error: null
-  });
+  const { 
+    projectState,
+    setProjectState,
+    setProgressState,
+    handleError
+  } = useApp();
 
   const service = ProjectService.getInstance();
 
   const createProject = useCallback(async (name: string, videoSettings: VideoSettings) => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setProgressState({ isLoading: true, message: 'プロジェクトを作成中...' });
     try {
       const project = await service.createProject(name, videoSettings);
-      setState(prev => ({ ...prev, currentProject: project, isLoading: false }));
+      setProjectState({ 
+        currentProject: project,
+        lastSaved: Date.now()
+      });
       return project;
     } catch (error) {
-      const appError = error instanceof AppError ? error : new AppError(ErrorType.ProjectCreateFailed, '');
-      setState(prev => ({ ...prev, error: appError, isLoading: false }));
+      const appError = error instanceof AppError ? error : new AppError(
+        ErrorType.ProjectCreateFailed,
+        'プロジェクトの作成に失敗しました',
+        error
+      );
+      handleError('project', appError);
       throw appError;
+    } finally {
+      setProgressState({ isLoading: false, message: null });
     }
-  }, [service]);
+  }, [service, setProjectState, setProgressState, handleError]);
 
   const loadProject = useCallback(async (id: string) => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setProgressState({ isLoading: true, message: 'プロジェクトを読み込み中...' });
     try {
       const project = await service.loadProject(id);
-      setState(prev => ({ ...prev, currentProject: project, isLoading: false }));
+      setProjectState({ 
+        currentProject: project,
+        lastSaved: Date.now()
+      });
       return project;
     } catch (error) {
-      const appError = error instanceof AppError ? error : new AppError(ErrorType.ProjectLoadFailed, '');
-      setState(prev => ({ ...prev, error: appError, isLoading: false }));
+      const appError = error instanceof AppError ? error : new AppError(
+        ErrorType.ProjectLoadFailed,
+        'プロジェクトの読み込みに失敗しました',
+        error
+      );
+      handleError('project', appError);
       throw appError;
+    } finally {
+      setProgressState({ isLoading: false, message: null });
     }
-  }, [service]);
+  }, [service, setProjectState, setProgressState, handleError]);
 
   const saveProject = useCallback(async () => {
-    if (!state.currentProject) {
-      throw new AppError(ErrorType.ProjectNotFound, 'プロジェクトが選択されていません');
+    if (!projectState.currentProject) {
+      throw new AppError(
+        ErrorType.ProjectNotFound,
+        'プロジェクトが選択されていません'
+      );
     }
 
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setProgressState({ isSaving: true, message: 'プロジェクトを保存中...' });
     try {
-      await service.saveProject(state.currentProject);
-      setState(prev => ({ ...prev, isLoading: false }));
+      await service.saveProject(projectState.currentProject);
+      setProjectState({ lastSaved: Date.now() });
     } catch (error) {
-      const appError = error instanceof AppError ? error : new AppError(ErrorType.ProjectSaveFailed, '');
-      setState(prev => ({ ...prev, error: appError, isLoading: false }));
+      const appError = error instanceof AppError ? error : new AppError(
+        ErrorType.ProjectSaveFailed,
+        'プロジェクトの保存に失敗しました',
+        error
+      );
+      handleError('project', appError);
       throw appError;
+    } finally {
+      setProgressState({ isSaving: false, message: null });
     }
-  }, [service, state.currentProject]);
+  }, [service, projectState.currentProject, setProjectState, setProgressState, handleError]);
 
   const deleteProject = useCallback(async (id: string) => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setProgressState({ isLoading: true, message: 'プロジェクトを削除中...' });
     try {
       await service.deleteProject(id);
-      setState(prev => ({
-        ...prev,
-        currentProject: state.currentProject?.id === id ? null : state.currentProject,
-        isLoading: false
-      }));
+      if (projectState.currentProject?.id === id) {
+        setProjectState({ 
+          currentProject: null,
+          lastSaved: null
+        });
+      }
     } catch (error) {
-      const appError = error instanceof AppError ? error : new AppError(ErrorType.ProjectDeleteFailed, '');
-      setState(prev => ({ ...prev, error: appError, isLoading: false }));
+      const appError = error instanceof AppError ? error : new AppError(
+        ErrorType.ProjectDeleteFailed,
+        'プロジェクトの削除に失敗しました',
+        error
+      );
+      handleError('project', appError);
       throw appError;
+    } finally {
+      setProgressState({ isLoading: false, message: null });
     }
-  }, [service, state.currentProject]);
+  }, [service, projectState.currentProject, setProjectState, setProgressState, handleError]);
 
   const listProjects = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setProgressState({ isLoading: true, message: 'プロジェクト一覧を取得中...' });
     try {
       const projects = await service.listProjects();
-      setState(prev => ({ ...prev, isLoading: false }));
+      setProjectState({ projectList: projects });
       return projects;
     } catch (error) {
-      const appError = error instanceof AppError ? error : new AppError(ErrorType.DatabaseOperationFailed, '');
-      setState(prev => ({ ...prev, error: appError, isLoading: false }));
+      const appError = error instanceof AppError ? error : new AppError(
+        ErrorType.DatabaseOperationFailed,
+        'プロジェクト一覧の取得に失敗しました',
+        error
+      );
+      handleError('project', appError);
       throw appError;
+    } finally {
+      setProgressState({ isLoading: false, message: null });
     }
-  }, [service]);
-
-  const addEffect = useCallback(async (effect: EffectConfig) => {
-    if (!state.currentProject) {
-      throw new AppError(ErrorType.ProjectNotFound, 'プロジェクトが選択されていません');
-    }
-
-    const updatedProject = {
-      ...state.currentProject,
-      effects: [...state.currentProject.effects, effect]
-    };
-
-    await service.saveProject(updatedProject);
-    setState(prev => ({ ...prev, currentProject: updatedProject }));
-  }, [service, state.currentProject]);
-
-  const updateEffect = useCallback(async (id: string, config: Partial<EffectConfig>) => {
-    if (!state.currentProject) {
-      throw new AppError(ErrorType.ProjectNotFound, 'プロジェクトが選択されていません');
-    }
-
-    const index = state.currentProject.effects.findIndex(e => e.id === id);
-    if (index === -1) {
-      throw new AppError(ErrorType.EffectNotFound, 'エフェクトが見つかりません');
-    }
-
-    const effects = [...state.currentProject.effects];
-    const currentEffect = effects[index];
-
-    // 型を保持したまま更新
-    effects[index] = {
-      ...currentEffect,
-      ...config,
-      type: currentEffect.type // typeは変更不可
-    } as EffectConfig;
-
-    const updatedProject = {
-      ...state.currentProject,
-      effects
-    };
-
-    await service.saveProject(updatedProject);
-    setState(prev => ({ ...prev, currentProject: updatedProject }));
-  }, [service, state.currentProject]);
-
-  const deleteEffect = useCallback(async (id: string) => {
-    if (!state.currentProject) {
-      throw new AppError(ErrorType.ProjectNotFound, 'プロジェクトが選択されていません');
-    }
-
-    const index = state.currentProject.effects.findIndex(e => e.id === id);
-    if (index === -1) {
-      throw new AppError(ErrorType.EffectNotFound, 'エフェクトが見つかりません');
-    }
-
-    const effects = state.currentProject.effects.filter(e => e.id !== id);
-    const updatedProject = {
-      ...state.currentProject,
-      effects
-    };
-
-    await service.saveProject(updatedProject);
-    setState(prev => ({ ...prev, currentProject: updatedProject }));
-  }, [service, state.currentProject]);
-
-  const moveEffect = useCallback(async (fromId: string, toId: string) => {
-    if (!state.currentProject) {
-      throw new AppError(ErrorType.ProjectNotFound, 'プロジェクトが選択されていません');
-    }
-
-    const fromIndex = state.currentProject.effects.findIndex(e => e.id === fromId);
-    const toIndex = state.currentProject.effects.findIndex(e => e.id === toId);
-
-    if (fromIndex === -1 || toIndex === -1) {
-      throw new AppError(ErrorType.EffectNotFound, 'エフェクトが見つかりません');
-    }
-
-    const effects = [...state.currentProject.effects];
-    const [effect] = effects.splice(fromIndex, 1);
-    effects.splice(toIndex, 0, effect);
-
-    // zIndexの更新
-    effects.forEach((effect, index) => {
-      effect.zIndex = index;
-    });
-
-    const updatedProject = {
-      ...state.currentProject,
-      effects
-    };
-
-    await service.saveProject(updatedProject);
-    setState(prev => ({ ...prev, currentProject: updatedProject }));
-  }, [service, state.currentProject]);
+  }, [service, setProjectState, setProgressState, handleError]);
 
   const updateVideoSettings = useCallback(async (settings: VideoSettings) => {
-    if (!state.currentProject) {
-      throw new AppError(ErrorType.ProjectNotFound, 'プロジェクトが選択されていません');
+    if (!projectState.currentProject) {
+      throw new AppError(
+        ErrorType.ProjectNotFound,
+        'プロジェクトが選択されていません'
+      );
     }
 
-    const updatedProject = {
-      ...state.currentProject,
-      videoSettings: settings
-    };
-
-    await service.saveProject(updatedProject);
-    setState(prev => ({ ...prev, currentProject: updatedProject }));
-  }, [service, state.currentProject]);
+    try {
+      const updatedProject = {
+        ...projectState.currentProject,
+        videoSettings: settings,
+        updatedAt: Date.now()
+      };
+      await service.saveProject(updatedProject);
+      setProjectState({ 
+        currentProject: updatedProject,
+        lastSaved: Date.now()
+      });
+    } catch (error) {
+      const appError = error instanceof AppError ? error : new AppError(
+        ErrorType.ProjectSaveFailed,
+        '動画設定の更新に失敗しました',
+        error
+      );
+      handleError('project', appError);
+      throw appError;
+    }
+  }, [service, projectState.currentProject, setProjectState, handleError]);
 
   return {
-    state,
+    state: projectState,
     createProject,
     loadProject,
     saveProject,
     deleteProject,
     listProjects,
-    addEffect,
-    updateEffect,
-    deleteEffect,
-    moveEffect,
     updateVideoSettings
   };
 } 

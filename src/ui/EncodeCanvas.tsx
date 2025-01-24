@@ -1,41 +1,38 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { EffectManager } from '../core/EffectManager';
+import { VideoSettings } from '../core/types';
 
 interface EncodeCanvasProps {
-  width: number;
-  height: number;
-  onInit?: (manager: EffectManager) => void;
+  manager: EffectManager;
+  videoSettings: VideoSettings;
+  currentTime: number;
+  onFrame: (canvas: HTMLCanvasElement) => void;
 }
 
-export const EncodeCanvas: React.FC<EncodeCanvasProps> = ({
-  width,
-  height,
-  onInit,
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
+/**
+ * エンコード用キャンバス
+ * - エクスポート時の1フレームをレンダリング
+ * - プレビューとは別のキャンバスを使用
+ */
+export function EncodeCanvas({ manager, videoSettings, currentTime, onFrame }: EncodeCanvasProps) {
   useEffect(() => {
-    if (!canvasRef.current) return;
+    console.log('EncodeCanvas: フレームのレンダリング開始', { currentTime });
 
-    // エフェクトマネージャーを初期化
-    const manager = new EffectManager();
-    manager.setPreviewCanvas(canvasRef.current);
+    // エクスポート用の一時キャンバスを作成
+    const canvas = manager.createExportCanvas({
+      width: videoSettings.width,
+      height: videoSettings.height
+    });
 
-    // 外部に EffectManager を渡す
-    onInit?.(manager);
+    // フレームをレンダリング
+    manager.renderExportFrame(canvas, currentTime);
 
-    return () => {
-      // クリーンアップ
-      manager.dispose();
-    };
-  }, [width, height, onInit]);
+    // レンダリング結果を親コンポーネントに通知
+    onFrame(canvas);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      style={{ display: 'none' }} // DOMには存在するが非表示
-    />
-  );
-}; 
+    console.log('EncodeCanvas: フレームのレンダリング完了');
+  }, [manager, videoSettings.width, videoSettings.height, currentTime, onFrame]);
+
+  // 実際のDOMには表示しない（非表示のワーキングキャンバス）
+  return null;
+} 

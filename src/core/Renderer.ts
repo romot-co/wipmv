@@ -1,133 +1,150 @@
 /**
  * Renderer
  * - Canvas描画の基本機能を提供 (2Dコンテキスト取得、OffscreenCanvasサポート、サイズ変更、ダブルバッファリング)
+ * - プレビュー用とエクスポート用で異なる解像度を扱う
  * - 具体的な描画処理は行わず、EffectManagerなど上位ロジックから使われる
  */
 
-export class Renderer {
-  private readonly ctx: CanvasRenderingContext2D | null;
-  private offscreen: OffscreenCanvas | HTMLCanvasElement;
-  private offscreenCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-  private isOffscreenSupported: boolean;
+import { AppError, ErrorType } from './types';
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
-    // メインCanvasの2Dコンテキストを取得
-    this.ctx = canvas.getContext('2d');
+export class Renderer {
+  private canvas: HTMLCanvasElement;
+  private offscreenCanvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D | null = null;
+  private offscreenCtx: CanvasRenderingContext2D | null = null;
+  private scale: number = 1;
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    
+    // メインキャンバスのコンテキストを取得
+    this.ctx = canvas.getContext('2d', {
+      alpha: true,
+      willReadFrequently: false
+    });
     if (!this.ctx) {
-      throw new Error('Failed to get 2D context for main canvas');
+      throw new AppError(
+        ErrorType.RENDERER_INIT_FAILED,
+        'Failed to get canvas context'
+      );
     }
 
-    // OffscreenCanvasサポートチェック
-    this.isOffscreenSupported = typeof OffscreenCanvas !== 'undefined';
+    // オフスクリーンキャンバスを作成
+    this.offscreenCanvas = document.createElement('canvas');
+    this.offscreenCanvas.width = canvas.width;
+    this.offscreenCanvas.height = canvas.height;
+    
+    // オフスクリーンのコンテキストを取得
+    this.offscreenCtx = this.offscreenCanvas.getContext('2d', {
+      alpha: true,
+      willReadFrequently: false
+    });
+    if (!this.offscreenCtx) {
+      throw new AppError(
+        ErrorType.RENDERER_INIT_FAILED,
+        'Failed to get offscreen context'
+      );
+    }
 
-    if (this.isOffscreenSupported) {
-      // オフスクリーンキャンバス生成
-      this.offscreen = new OffscreenCanvas(canvas.width, canvas.height);
-      this.offscreenCtx = this.offscreen.getContext('2d');
+    // 描画設定
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.imageSmoothingQuality = 'high';
+    this.offscreenCtx.imageSmoothingEnabled = true;
+    this.offscreenCtx.imageSmoothingQuality = 'high';
+  }
 
-      if (!this.offscreenCtx) {
-        // 取得失敗した場合は fallback
-        this.isOffscreenSupported = false;
-        console.warn('Failed to get offscreen context, falling back to main canvas.');
-        this.offscreen = canvas;
-        this.offscreenCtx = this.ctx;
-      }
+  /**
+   * スケールを設定
+   */
+  setScale(scale: number): void {
+    this.scale = scale;
+    
+    // スケールに応じてオフスクリーンキャンバスのサイズを調整
+    this.offscreenCanvas.width = Math.round(this.canvas.width * scale);
+    this.offscreenCanvas.height = Math.round(this.canvas.height * scale);
+    
+    // 描画設定を再適用
+    if (this.offscreenCtx) {
+      this.offscreenCtx.imageSmoothingEnabled = true;
+      this.offscreenCtx.imageSmoothingQuality = 'high';
+    }
+  }
+
+  /**
+   * オフスクリーンコンテキストを取得
+   */
+  getOffscreenContext(): CanvasRenderingContext2D {
+    if (!this.offscreenCtx) {
+      throw new AppError(
+        ErrorType.RENDERER_ERROR,
+        'Offscreen context is not available'
+      );
+    }
+    return this.offscreenCtx;
+  }
+
+  /**
+   * オフスクリーンの内容をメインキャンバスに転送
+   */
+  drawToMain(): void {
+    if (!this.ctx || !this.offscreenCtx) return;
+
+    // メインキャンバスをクリア
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // スケールを考慮して描画
+    if (this.scale !== 1) {
+      this.ctx.save();
+      this.ctx.scale(1 / this.scale, 1 / this.scale);
+      this.ctx.drawImage(
+        this.offscreenCanvas,
+        0, 0,
+        this.offscreenCanvas.width,
+        this.offscreenCanvas.height
+      );
+      this.ctx.restore();
     } else {
-      // OffscreenCanvas非対応ブラウザならメインキャンバスを使う
-      console.warn('OffscreenCanvas not supported, using main canvas directly.');
-      this.offscreen = canvas;
-      this.offscreenCtx = this.ctx;
+      this.ctx.drawImage(this.offscreenCanvas, 0, 0);
     }
   }
 
   /**
    * キャンバスをクリア
-   * - オフスクリーン＆メインキャンバスの両方をクリア
    */
   clear(): void {
-    if (!this.ctx || !this.offscreenCtx) return;
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.offscreenCtx.clearRect(0, 0, this.offscreen.width, this.offscreen.height);
-  }
-
-  /**
-   * オフスクリーンコンテキストを取得
-   * - ここに描画すれば、drawToMain() でメインキャンバスに反映可能
-   */
-  getOffscreenContext(): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
-    return this.offscreenCtx || this.ctx!;
-  }
-
-  /**
-   * メインキャンバスの2Dコンテキストを取得
-   * - 必要に応じて直接描画したい場合など
-   */
-  getMainContext(): CanvasRenderingContext2D {
-    return this.ctx!;
-  }
-
-  /**
-   * オフスクリーンの内容をメインキャンバスへ drawImage
-   * - ダブルバッファリングでちらつきを抑える
-   */
-  drawToMain(): void {
-    if (!this.ctx || !this.offscreenCtx) return;
-
-    // OffscreenCanvasの内容をメインCanvasに転写
-    if (this.isOffscreenSupported && this.offscreen instanceof OffscreenCanvas) {
-      this.ctx.drawImage(this.offscreen, 0, 0);
-    } else {
-      // サポート外ならそもそもオフスクリーン＝メインキャンバスなので何もしない
+    if (this.offscreenCtx) {
+      this.offscreenCtx.clearRect(
+        0, 0,
+        this.offscreenCanvas.width,
+        this.offscreenCanvas.height
+      );
     }
   }
 
   /**
-   * キャンバスのサイズを変更
-   * - メインキャンバスとオフスクリーンの両方を合わせる
+   * 元のサイズを取得
    */
-  setSize(width: number, height: number): void {
-    // メインCanvasのリサイズ
-    this.canvas.width = width;
-    this.canvas.height = height;
-
-    // オフスクリーンCanvasもリサイズ
-    if (this.isOffscreenSupported) {
-      const newOffscreen = new OffscreenCanvas(width, height);
-      const newCtx = newOffscreen.getContext('2d');
-      if (newCtx) {
-        this.offscreen = newOffscreen;
-        this.offscreenCtx = newCtx;
-      } else {
-        // fallback
-        this.isOffscreenSupported = false;
-        console.warn('Failed to get offscreen context after resize, falling back to main canvas.');
-        this.offscreen = this.canvas;
-        this.offscreenCtx = this.ctx;
-      }
-    }
-  }
-
-  /**
-   * 現在のキャンバスサイズを取得
-   */
-  getSize(): { width: number; height: number } {
+  getOriginalSize(): { width: number; height: number } {
     return {
-      width: this.canvas.width,
-      height: this.canvas.height,
+      width: Math.round(this.canvas.width * this.scale),
+      height: Math.round(this.canvas.height * this.scale)
     };
   }
 
   /**
-   * OffscreenCanvasが利用できるか
+   * 現在のサイズを取得
    */
-  isOffscreenCanvasSupported(): boolean {
-    return this.isOffscreenSupported;
+  getCurrentSize(): { width: number; height: number } {
+    return {
+      width: this.canvas.width,
+      height: this.canvas.height
+    };
   }
 
   /**
-   * 現在のキャンバスを取得
+   * スケール値を取得
    */
-  public getCanvas(): HTMLCanvasElement {
-    return this.canvas;
+  getScale(): number {
+    return this.scale;
   }
 }

@@ -22,7 +22,7 @@ export const EffectTimeSettings: React.FC<EffectTimeSettingsProps> = ({
     if (duration > 0 && (startTime === 0 && endTime === 0)) {
       onTimeChange(0, duration);
     }
-  }, [duration, startTime, endTime, onTimeChange]);
+  }, [duration, onTimeChange]);
 
   const formatTime = (seconds: number): string => {
     if (isDisabled) return '0:00.000';

@@ -9,10 +9,11 @@ import { AudioUploader } from './ui/AudioUploader';
 import { useAudioControl } from './hooks/useAudioControl';
 import { useApp } from './contexts/AppContext';
 import { ErrorBoundary, CustomErrorFallback } from './ErrorBoundary';
-import { useProject } from './hooks/useProject';
+import { useProject, UseProjectResult } from './hooks/useProject';
 import { EffectManager } from './core/EffectManager';
 import { EffectBase } from './core/EffectBase';
 import { AudioPlaybackService } from './core/AudioPlaybackService';
+import { AudioAnalyzerService } from './core/AudioAnalyzerService';
 import { 
   EffectType,
   AudioSource,
@@ -46,40 +47,48 @@ function hasSetAudioSource(effect: unknown): effect is WithAudioSource {
 }
 
 export const App: React.FC = () => {
-  const { handleError } = useApp();
-  const [effects, setEffects] = useState<EffectBase<EffectConfig>[]>([]);
-  const [selectedEffectIndex, setSelectedEffectIndex] = useState<number | null>(null);
-  const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
+  const { 
+    handleError, 
+    effectState, 
+    addEffect: addContextEffect,
+    removeEffect: removeContextEffect,
+    updateEffect: updateContextEffect,
+    moveEffect: moveContextEffect,
+    selectEffect: selectContextEffect
+  } = useApp();
 
-  // エフェクトマネージャー
-  const manager = useMemo(() => new EffectManager(), []);
-  
   // オーディオ再生サービス
-  const audioService = useMemo(() => AudioPlaybackService.getInstance(), []);
+  const audioService = useMemo(() => {
+    console.log('App: AudioPlaybackService初期化');
+    return AudioPlaybackService.getInstance();
+  }, []);
+  
+  // オーディオ解析サービス
+  const analyzerService = useMemo(() => {
+    console.log('App: AudioAnalyzerService初期化');
+    const service = AudioAnalyzerService.getInstance();
+    service.setAudioService(audioService);
+    return service;
+  }, [audioService]);
+  
+  // エフェクトマネージャー
+  const manager = useMemo(() => {
+    console.log('App: EffectManager初期化');
+    const manager = new EffectManager();
+    manager.setAudioService(audioService);
+    return manager;
+  }, [audioService]);
+
+  // オーディオ制御
+  const audioControl = useAudioControl(audioService);
 
   // プロジェクト管理
   const {
     state,
     createProject,
     saveProject,
-    deleteProject: deleteProjectEffect,
-    moveEffect: moveProjectEffect,
-    addEffect: addProjectEffect,
-    updateEffect: updateProjectEffect,
     updateVideoSettings
-  } = useProject() as {
-    state: { currentProject: ProjectData | null; isLoading: boolean };
-    createProject: (name: string, videoSettings: VideoSettings) => Promise<ProjectData>;
-    saveProject: () => Promise<void>;
-    deleteProject: (id: string) => Promise<void>;
-    moveEffect: (fromId: string, toId: string) => Promise<void>;
-    addEffect: (effect: EffectConfig) => Promise<void>;
-    updateEffect: (id: string, config: Partial<EffectConfig>) => Promise<void>;
-    updateVideoSettings: (settings: VideoSettings) => Promise<void>;
-  };
-
-  // オーディオ制御
-  const audioControl = useAudioControl(audioService);
+  } = useProject() as UseProjectResult;
 
   // 動画設定
   const [videoSettings, setVideoSettings] = useState<VideoSettings>({
@@ -90,183 +99,157 @@ export const App: React.FC = () => {
     audioBitrate: 128000
   });
 
-  // エフェクトの変更を自動保存
+  // エフェクト操作
+  const effectOperations = useMemo(() => ({
+    // エフェクトの追加
+    async addEffectAndSave(effect: EffectBase<EffectConfig>) {
+      console.log('エフェクト追加開始');
+      
+      // エフェクトマネージャーに追加
+      manager.addEffect(effect);
+      
+      // AppContextに追加
+      addContextEffect(effect);
+      
+      // プロジェクトを保存
+      await saveProject();
+      
+      console.log('エフェクト追加完了');
+    },
+
+    // エフェクトの削除
+    async removeEffectAndSave(id: string) {
+      console.log('エフェクト削除開始:', { id });
+      
+      // エフェクトマネージャーから削除
+      manager.removeEffect(id);
+      
+      // AppContextから削除
+      removeContextEffect(id);
+      
+      // プロジェクトを保存
+      await saveProject();
+      
+      console.log('エフェクト削除完了');
+    },
+
+    // エフェクトの移動
+    async moveEffectAndSave(sourceId: string, targetId: string) {
+      console.log('エフェクト移動開始:', { sourceId, targetId });
+      
+      // エフェクトマネージャーで移動
+      manager.moveEffect(sourceId, targetId);
+      
+      // AppContextで移動
+      moveContextEffect(sourceId, targetId);
+      
+      // プロジェクトを保存
+      await saveProject();
+      
+      console.log('エフェクト移動完了');
+    },
+
+    // エフェクトの更新
+    async updateEffectAndSave(id: string, newConfig: Partial<EffectConfig>) {
+      console.log('エフェクト更新開始:', { id });
+      
+      // エフェクトマネージャーで更新
+      manager.updateEffectConfig(id, newConfig);
+      
+      // AppContextで更新
+      updateContextEffect(id, newConfig);
+      
+      // プロジェクトを保存
+      await saveProject();
+      
+      console.log('エフェクト更新完了');
+    }
+  }), [
+    manager,
+    effectState.effects,
+    addContextEffect,
+    removeContextEffect,
+    moveContextEffect,
+    updateContextEffect,
+    saveProject
+  ]);
+
+  // エフェクトマネージャーの初期化
   useEffect(() => {
-    if (state.currentProject && effects.length > 0) {
-      saveProject().catch(error => {
-        handleError('project', error instanceof Error ? error : new Error('プロジェクトの保存に失敗しました'));
-      });
-    }
-  }, [effects, state.currentProject, saveProject, handleError]);
+    if (!manager || !effectState.effects.length) return;
 
-  // 動画設定の変更を同期
-  useEffect(() => {
-    if (state.currentProject) {
-      updateVideoSettings(videoSettings).catch(error => {
-        handleError('project', error instanceof Error ? error : new Error('動画設定の更新に失敗しました'));
-      });
-    }
-  }, [videoSettings, state.currentProject]);
-
-  // エフェクトの変更を同期
-  useEffect(() => {
-    if (state.currentProject && effects.length > 0) {
-      effects.forEach((effect) => {
-        updateProjectEffect(effect.getId(), effect.getConfig()).catch(error => {
-          handleError('effect', error instanceof Error ? error : new Error('エフェクトの更新に失敗しました'));
-        });
-      });
-    }
-  }, [effects, state.currentProject]);
-
-  // エフェクト設定の更新
-  const handleEffectUpdate = useCallback(<T extends EffectConfig>(id: string, newConfig: Partial<T>) => {
-    if (!manager || !state.currentProject) return;
-    try {
-      const effect = manager.getEffect(id);
-      if (effect) {
-        effect.updateConfig(newConfig);
-
-        // 画像URLが変更された場合は画像を設定
-        if ('imageUrl' in newConfig && typeof newConfig.imageUrl === 'string') {
-          if ('setImage' in effect && typeof effect.setImage === 'function') {
-            effect.setImage(newConfig.imageUrl);
-          }
-        }
-
-        const updatedEffects = manager.getEffects();
-        setEffects(updatedEffects);
-
-        // プロジェクトの更新
-        updateProjectEffect(id, effect.getConfig()).catch(error => {
-          handleError('effect', error instanceof Error ? error : new Error('エフェクトの更新に失敗しました'));
-        });
-      }
-    } catch (error) {
-      handleError('effect', error instanceof Error ? error : new Error('エフェクトの更新に失敗しました'));
-    }
-  }, [manager, state.currentProject, updateProjectEffect, handleError]);
+    console.log('App: 既存エフェクトの復元開始');
+    effectState.effects.forEach(effect => {
+      manager.addEffect(effect);
+    });
+    console.log('App: 既存エフェクトの復元完了');
+  }, [manager, effectState.effects]);
 
   // 動画設定の更新
   const handleVideoSettingsUpdate = useCallback((newSettings: VideoSettings) => {
     setVideoSettings(newSettings);
     if (state.currentProject) {
-      updateVideoSettings(newSettings).catch(error => {
-        handleError('project', error instanceof Error ? error : new Error('動画設定の更新に失敗しました'));
-      });
+      // 設定の更新と保存
+      updateVideoSettings(newSettings)
+        .then(() => saveProject())
+        .catch((error: unknown) => {
+          handleError('project', error instanceof Error ? error : new Error('動画設定の更新に失敗しました'));
+        });
     }
-  }, [state.currentProject, updateVideoSettings, handleError]);
+  }, [state.currentProject, updateVideoSettings, saveProject, handleError]);
 
   // エフェクト追加
   const handleAddEffect = useCallback(async (type: EffectType) => {
     try {
-      if (!state.currentProject || state.isLoading) {
-        throw new Error('プロジェクトの初期化が完了していません');
-      }
-
       // エフェクトを作成
       const effect = createEffectByType(type, {});
       
-      // 音声ソースを設定
-      if (audioSource && hasSetAudioSource(effect)) {
-        effect.setAudioSource(audioSource);
-      }
-
-      // マネージャーに追加
-      manager.addEffect(effect);
-      
-      // プロジェクトにも追加
-      await addProjectEffect(effect.getConfig());
-      
-      // 状態を更新
-      setEffects(prev => [...prev, effect]);
+      // エフェクトを追加
+      await effectOperations.addEffectAndSave(effect);
       
       // 選択状態にする
-      setSelectedEffectIndex(effects.length);
-
-      // プロジェクトの保存
-      await saveProject();
+      selectContextEffect(effect.getId());
     } catch (error) {
       handleError('effect', error instanceof Error ? error : new Error('エフェクトの追加に失敗しました'));
     }
-  }, [manager, audioSource, addProjectEffect, state.currentProject, effects, state.isLoading, saveProject]);
+  }, [effectOperations, selectContextEffect, handleError]);
 
-  // エフェクト削除時の処理を修正
+  // エフェクト削除時の処理
   const handleEffectDelete = useCallback(async (id: string) => {
     if (!manager) return;
-
-    const index = effects.findIndex(e => e.getId() === id);
-    if (index === -1) return;
-
     try {
-      manager.removeEffect(id);
-      setEffects(prev => prev.filter(e => e.getId() !== id));
-
-      // プロジェクトからも削除
-      await deleteProjectEffect(id);
-      await saveProject();
+      await effectOperations.removeEffectAndSave(id);
     } catch (error) {
       handleError('effect', error instanceof Error ? error : new Error('エフェクトの削除に失敗しました'));
     }
-  }, [manager, effects, deleteProjectEffect, saveProject, handleError]);
+  }, [manager, effectOperations, handleError]);
 
-  // エフェクト移動時の処理を修正
-  const handleEffectMove = useCallback(async (id: string, direction: 'up' | 'down') => {
+  // エフェクト移動時の処理
+  const handleEffectMove = useCallback(async (sourceId: string, targetId: string) => {
     if (!manager) return;
-
     try {
-      const currentEffects = [...effects];
-      const currentIndex = currentEffects.findIndex(e => e.getId() === id);
-      if (currentIndex === -1) return;
-
-      const newIndex = direction === 'up' 
-        ? Math.max(0, currentIndex - 1)
-        : Math.min(currentEffects.length - 1, currentIndex + 1);
-
-      if (currentIndex === newIndex) return;
-
-      // 配列内で要素を移動
-      const [movedEffect] = currentEffects.splice(currentIndex, 1);
-      currentEffects.splice(newIndex, 0, movedEffect);
-
-      // zIndexを更新
-      currentEffects.forEach((effect, index) => {
-        effect.updateConfig({ zIndex: index });
-      });
-
-      setEffects(currentEffects);
-      
-      // プロジェクトの順序も更新
-      const targetId = currentEffects[newIndex].getId();
-      await moveProjectEffect(id, targetId);
-      await saveProject();
+      await effectOperations.moveEffectAndSave(sourceId, targetId);
     } catch (error) {
       handleError('effect', error instanceof Error ? error : new Error('エフェクトの移動に失敗しました'));
     }
-  }, [manager, effects, moveProjectEffect, saveProject, handleError]);
+  }, [manager, effectOperations, handleError]);
+
+  // エフェクト設定の更新
+  const handleEffectUpdate = useCallback(<T extends EffectConfig>(id: string, newConfig: Partial<T>) => {
+    if (!manager) return;
+    try {
+      effectOperations.updateEffectAndSave(id, newConfig).catch(error => {
+        handleError('effect', error instanceof Error ? error : new Error('エフェクトの更新に失敗しました'));
+      });
+    } catch (error) {
+      handleError('effect', error instanceof Error ? error : new Error('エフェクトの更新に失敗しました'));
+    }
+  }, [manager, effectOperations, handleError]);
 
   // 選択中のエフェクトを取得
   const selectedEffect = useMemo(() => {
-    if (selectedEffectIndex === null || selectedEffectIndex >= effects.length) return null;
-    return effects[selectedEffectIndex];
-  }, [selectedEffectIndex, effects]);
-
-  // プレビューキャンバスのマネージャー初期化
-  const handleManagerInit = useCallback((manager: EffectManager) => {
-    console.log('App: マネージャー初期化開始');
-    manager.setAudioService(audioService);
-    
-    // 既存のエフェクトを復元
-    if (effects.length > 0) {
-      console.log('App: 既存エフェクトの復元開始');
-      effects.forEach(effect => {
-        manager.addEffect(effect);
-      });
-      console.log('App: 既存エフェクトの復元完了');
-    }
-    
-    console.log('App: マネージャー初期化完了');
-  }, [audioService, effects]);
+    return effectState.selectedEffect;
+  }, [effectState.selectedEffect]);
 
   // オーディオアップローダーのコールバック
   const handleAudioFileSelect = useCallback(async (file: File) => {
@@ -275,8 +258,8 @@ export const App: React.FC = () => {
       const buffer = await file.arrayBuffer();
       console.log('オーディオバッファー取得完了:', { bufferSize: buffer.byteLength });
 
-      const audioContext = new AudioContext();
-      const audioBuffer = await audioContext.decodeAudioData(buffer);
+      // AudioPlaybackServiceを使用してデコード
+      const audioBuffer = await audioService.decodeAudioData(buffer);
       console.log('オーディオデコード完了:', { 
         duration: audioBuffer.duration,
         sampleRate: audioBuffer.sampleRate,
@@ -293,7 +276,9 @@ export const App: React.FC = () => {
 
       // AudioSourceの設定
       console.log('AudioSource設定開始');
-      setAudioSource(source);
+      if (selectedEffect && hasSetAudioSource(selectedEffect)) {
+        selectedEffect.setAudioSource(source);
+      }
       await audioService.setAudioSource(source);
       console.log('AudioSource設定完了');
 
@@ -352,14 +337,16 @@ export const App: React.FC = () => {
 
         if (state.currentProject.effects.length > 0) {
           console.log('エフェクト復元開始:', { effectsCount: state.currentProject.effects.length });
-          const restoredEffects = state.currentProject.effects.map(config => {
+          const restoredEffects = state.currentProject.effects.map((config: EffectConfig) => {
             const effect = createEffectFromConfig(config);
             if (hasSetAudioSource(effect)) {
               effect.setAudioSource(source);
             }
             return effect;
           });
-          setEffects(restoredEffects);
+          if (restoredEffects.length > 0) {
+            selectContextEffect(restoredEffects[0].getId());
+          }
           console.log('エフェクト復元完了');
         }
         console.log('既存プロジェクト更新完了');
@@ -368,7 +355,29 @@ export const App: React.FC = () => {
       console.error('オーディオファイル処理エラー:', error);
       handleError('audio', error instanceof Error ? error : new Error('音声ファイルの読み込みに失敗しました'));
     }
-  }, [audioService, state.currentProject, state.isLoading, createProject, videoSettings, handleError]);
+  }, [audioService, state.currentProject, state.isLoading, createProject, videoSettings, handleError, selectedEffect, effectOperations, selectContextEffect]);
+
+  // アンマウント時のクリーンアップ
+  useEffect(() => {
+    // ブラウザ終了時のクリーンアップ
+    const handleBeforeUnload = () => {
+      console.log('アプリケーション終了: リソースの解放開始');
+      analyzerService.dispose();
+      audioService.dispose();
+      console.log('アプリケーション終了: リソースの解放完了');
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // コンポーネントのアンマウント時のクリーンアップ
+    return () => {
+      console.log('App.tsxアンマウント: リソースの解放開始');
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      analyzerService.dispose();
+      audioService.dispose();
+      console.log('App.tsxアンマウント: リソースの解放完了');
+    };
+  }, [analyzerService, audioService]);
 
   return (
     <ErrorBoundary fallback={CustomErrorFallback}>
@@ -383,12 +392,13 @@ export const App: React.FC = () => {
                 />
               </Card>
 
-              {audioSource && (
+              {selectedEffect && (
                 <Box className="main-content">
                   <Card className="preview-section">
                     <PreviewCanvas
-                      onManagerInit={handleManagerInit}
-                      videoSettings={videoSettings}
+                      manager={manager}
+                      width={videoSettings.width}
+                      height={videoSettings.height}
                     />
                     <Box className="controls-section">
                       <PlaybackControls
@@ -409,11 +419,11 @@ export const App: React.FC = () => {
                   <Card className="effects-panel">
                     <Flex direction="column" gap="4">
                       <EffectList
-                        effects={effects}
-                        selectedEffectId={selectedEffect?.getId()}
+                        effects={effectState.effects}
+                        selectedEffectId={selectedEffect.getId()}
                         onEffectSelect={(id) => {
-                          const index = effects.findIndex(e => e.getId() === id);
-                          setSelectedEffectIndex(index);
+                          const effect = effectState.effects.find(e => e.getId() === id);
+                          selectContextEffect(effect ? effect.getId() : null);
                         }}
                         onEffectAdd={handleAddEffect}
                         onEffectRemove={handleEffectDelete}
@@ -439,7 +449,7 @@ export const App: React.FC = () => {
                       onError={(error) => handleError('export', error)}
                       videoSettings={videoSettings}
                       onSettingsChange={handleVideoSettingsUpdate}
-                      audioSource={audioSource}
+                      audioSource={selectedEffect ? selectedEffect.getAudioSource() : null}
                     />
                   </Card>
                 </Box>

@@ -5,10 +5,18 @@
  * - 再生状態の管理（再生/一時停止/シーク/ループ）
  */
 
-import { AudioSource, AppError, ErrorType } from './types';
+import { AppError, ErrorType, AudioSource } from './types';
 
+/**
+ * オーディオ再生サービス
+ * - シングルトンパターンで実装
+ * - AudioContextの管理
+ * - 再生/一時停止/停止の制御
+ * - 音量/ループの設定
+ * - 再生位置の取得/設定
+ */
 export class AudioPlaybackService {
-  private static instance: AudioPlaybackService;
+  private static instance: AudioPlaybackService | null = null;
   private audioContext: AudioContext | null = null;
   private audioBuffer: AudioBuffer | null = null;
   private sourceNode: AudioBufferSourceNode | null = null;
@@ -32,11 +40,22 @@ export class AudioPlaybackService {
     return AudioPlaybackService.instance;
   }
 
-  public getAudioContext(): AudioContext {
+  // AudioContextの生成を一元化
+  private initAudioContext(): AudioContext {
     if (!this.audioContext) {
+      console.log('AudioContext: 初期化開始');
       this.audioContext = new AudioContext();
+      this.gainNode = this.audioContext.createGain();
+      this.gainNode.connect(this.audioContext.destination);
+      this.gainNode.gain.value = this.volume;
+      console.log('AudioContext: 初期化完了');
     }
     return this.audioContext;
+  }
+
+  // 外部からのAudioContext取得用
+  public getAudioContext(): AudioContext {
+    return this.initAudioContext();
   }
 
   public async setAudioSource(source: AudioSource): Promise<void> {
@@ -65,9 +84,6 @@ export class AudioPlaybackService {
         'AudioContext is not initialized'
       );
     }
-    this.gainNode = this.audioContext.createGain();
-    this.gainNode.connect(this.audioContext.destination);
-    this.gainNode.gain.value = this.volume;
 
     console.log('AudioSource設定完了:', {
       hasWaveformData: !!source.waveformData,
@@ -197,32 +213,46 @@ export class AudioPlaybackService {
   }
 
   public dispose(): void {
+    console.log('AudioPlaybackService: リソースの解放開始');
+    
+    // 再生を停止
     this.stop();
+    
+    // sourceNodeの解放
+    if (this.sourceNode) {
+      this.sourceNode.stop();
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
+    }
+    
+    // gainNodeの解放
+    if (this.gainNode) {
+      this.gainNode.disconnect();
+      this.gainNode = null;
+    }
+    
+    // AudioContextの解放
     if (this.audioContext) {
       this.audioContext.close();
       this.audioContext = null;
     }
+    
     this.audioBuffer = null;
     this.audioSource = null;
-    this.gainNode = null;
-  }
-
-  // オーディオコンテキストの初期化
-  private initAudioContext() {
-    if (!this.audioContext) {
-      this.audioContext = new AudioContext();
-      this.gainNode = this.audioContext.createGain();
-      this.gainNode.connect(this.audioContext.destination);
-    }
+    AudioPlaybackService.instance = null;
+    
+    console.log('AudioPlaybackService: リソースの解放完了');
   }
 
   // オーディオソースの初期化
   private initAudioSource() {
     if (!this.audioContext || !this.audioBuffer) return;
 
+    // 既存のsourceNodeを解放
     if (this.sourceNode) {
       this.sourceNode.stop();
       this.sourceNode.disconnect();
+      this.sourceNode = null;
     }
 
     this.sourceNode = this.audioContext.createBufferSource();
@@ -256,6 +286,30 @@ export class AudioPlaybackService {
       if (!this.loop && this.currentTime >= this.getDuration()) {
         this.stop();
       }
+    }
+  }
+
+  public async decodeAudioData(buffer: ArrayBuffer): Promise<AudioBuffer> {
+    console.log('オーディオデコード開始');
+    
+    // AudioContextの初期化
+    const audioContext = this.initAudioContext();
+
+    try {
+      const audioBuffer = await audioContext.decodeAudioData(buffer);
+      console.log('オーディオデコード完了:', {
+        duration: audioBuffer.duration,
+        sampleRate: audioBuffer.sampleRate,
+        numberOfChannels: audioBuffer.numberOfChannels
+      });
+      return audioBuffer;
+    } catch (error) {
+      console.error('オーディオデコードエラー:', error);
+      throw new AppError(
+        ErrorType.AudioDecodeFailed,
+        error instanceof Error ? error.message : 'オーディオデコードに失敗しました',
+        error
+      );
     }
   }
 }

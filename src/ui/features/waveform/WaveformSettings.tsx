@@ -2,6 +2,7 @@ import React from 'react';
 import { WaveformEffectConfig } from '../../../core/types';
 import { Flex, Box, Text, Select, Slider, Switch } from '@radix-ui/themes';
 import { CoordinateSystemSettings } from '../../common/CoordinateSystemSettings';
+import { ColorInput } from '../../common/ColorInput';
 import '../../EffectSettings.css';
 
 interface WaveformSettingsProps {
@@ -137,15 +138,13 @@ export const WaveformSettings: React.FC<WaveformSettingsProps> = ({
               <>
                 {config.colorBands.ranges.map((band, index) => (
                   <Flex key={index} gap="3" align="center">
-                    <input
-                      type="color"
+                    <ColorInput
                       value={band.color}
-                      onChange={(e) => {
+                      onChange={(value) => {
                         const newRanges = [...config.colorBands!.ranges];
-                        newRanges[index] = { ...band, color: e.target.value };
+                        newRanges[index] = { ...band, color: value };
                         onChange({ colorBands: { ranges: newRanges } });
                       }}
-                      className="color-picker"
                     />
                     <Flex gap="2">
                       <input

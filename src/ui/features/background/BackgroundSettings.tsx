@@ -3,6 +3,7 @@ import { BackgroundEffectConfig } from '../../../core/types';
 import { Flex, Box, Text, Select, Slider } from '@radix-ui/themes';
 import { ImageUploader } from '../../common/ImageUploader';
 import { CoordinateSystemSettings } from '../../common/CoordinateSystemSettings';
+import { ColorInput } from '../../common/ColorInput';
 import '../../EffectSettings.css';
 
 interface BackgroundSettingsProps {
@@ -53,21 +54,10 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
             <Text as="label" size="2" weight="bold" mb="2">
               背景色
             </Text>
-            <Flex gap="3" align="center">
-              <input
-                type="color"
-                value={config.color || '#000000'}
-                onChange={(e) => onChange({ color: e.target.value })}
-                className="color-picker"
-              />
-              <input
-                type="text"
-                value={config.color || '#000000'}
-                onChange={(e) => onChange({ color: e.target.value })}
-                pattern="^#[0-9A-Fa-f]{6}$"
-                className="color-input"
-              />
-            </Flex>
+            <ColorInput
+              value={config.color || '#000000'}
+              onChange={(value) => onChange({ color: value })}
+            />
           </Box>
         )}
 
@@ -77,58 +67,28 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
               <Text as="label" size="2" weight="bold" mb="2">
                 グラデーション開始色
               </Text>
-              <Flex gap="3" align="center">
-                <input
-                  type="color"
-                  value={(config.gradientColors || defaultGradientColors)[0]}
-                  onChange={(e) => {
-                    const colors = [...(config.gradientColors || defaultGradientColors)];
-                    colors[0] = e.target.value;
-                    onChange({ gradientColors: colors as [string, string] });
-                  }}
-                  className="color-picker"
-                />
-                <input
-                  type="text"
-                  value={(config.gradientColors || defaultGradientColors)[0]}
-                  onChange={(e) => {
-                    const colors = [...(config.gradientColors || defaultGradientColors)];
-                    colors[0] = e.target.value;
-                    onChange({ gradientColors: colors as [string, string] });
-                  }}
-                  pattern="^#[0-9A-Fa-f]{6}$"
-                  className="color-input"
-                />
-              </Flex>
+              <ColorInput
+                value={(config.gradientColors || defaultGradientColors)[0]}
+                onChange={(value) => {
+                  const colors = [...(config.gradientColors || defaultGradientColors)];
+                  colors[0] = value;
+                  onChange({ gradientColors: colors as [string, string] });
+                }}
+              />
             </Box>
 
             <Box>
               <Text as="label" size="2" weight="bold" mb="2">
                 グラデーション終了色
               </Text>
-              <Flex gap="3" align="center">
-                <input
-                  type="color"
-                  value={(config.gradientColors || defaultGradientColors)[1]}
-                  onChange={(e) => {
-                    const colors = [...(config.gradientColors || defaultGradientColors)];
-                    colors[1] = e.target.value;
-                    onChange({ gradientColors: colors as [string, string] });
-                  }}
-                  className="color-picker"
-                />
-                <input
-                  type="text"
-                  value={(config.gradientColors || defaultGradientColors)[1]}
-                  onChange={(e) => {
-                    const colors = [...(config.gradientColors || defaultGradientColors)];
-                    colors[1] = e.target.value;
-                    onChange({ gradientColors: colors as [string, string] });
-                  }}
-                  pattern="^#[0-9A-Fa-f]{6}$"
-                  className="color-input"
-                />
-              </Flex>
+              <ColorInput
+                value={(config.gradientColors || defaultGradientColors)[1]}
+                onChange={(value) => {
+                  const colors = [...(config.gradientColors || defaultGradientColors)];
+                  colors[1] = value;
+                  onChange({ gradientColors: colors as [string, string] });
+                }}
+              />
             </Box>
 
             <Box>

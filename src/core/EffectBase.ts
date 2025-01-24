@@ -1,12 +1,13 @@
-import { BaseEffectConfig } from './types';
+import { BaseEffectConfig, EffectConfig, HasAudioSource, AudioSource } from './types';
 
 /**
  * エフェクトの基底クラス
  * - 全エフェクトの共通インターフェースを定義
  * - 更新と描画のライフサイクルを規定
  */
-export abstract class EffectBase<T extends BaseEffectConfig = BaseEffectConfig> {
+export abstract class EffectBase<T extends BaseEffectConfig = BaseEffectConfig> implements HasAudioSource {
   protected config: T;
+  protected audioSource: AudioSource | null = null;
 
   constructor(config: T) {
     this.config = config;
@@ -56,5 +57,16 @@ export abstract class EffectBase<T extends BaseEffectConfig = BaseEffectConfig> 
    */
   dispose(): void {
     // 継承先で必要に応じてオーバーライド
+  }
+
+  getAudioSource(): AudioSource {
+    if (!this.audioSource) {
+      throw new Error('AudioSource is not set');
+    }
+    return this.audioSource;
+  }
+
+  setAudioSource(source: AudioSource): void {
+    this.audioSource = source;
   }
 } 
