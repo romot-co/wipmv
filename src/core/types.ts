@@ -7,8 +7,9 @@
 export interface VideoSettings {
   width: number;
   height: number;
-  fps: number;
-  bitrate: number;
+  frameRate: number;  // fpsと同じ
+  videoBitrate: number;  // bitrateと同じ
+  audioBitrate: number;
 }
 
 /**
@@ -51,26 +52,52 @@ export interface BaseAnimation {
 /**
  * エフェクトの基本設定
  */
+export type BlendMode = GlobalCompositeOperation;
+
 export interface BaseEffectConfig {
   id: string;
   type: EffectType;
+  visible?: boolean;
+  zIndex?: number;
+  position: Position;
+  size: Size;
+  coordinateSystem?: CoordinateSystem;
+  opacity?: number;
+  blendMode?: BlendMode;
   startTime?: number;
   endTime?: number;
-  zIndex?: number;
-  visible?: boolean;
-  opacity?: number;
-  blendMode?: GlobalCompositeOperation;
+  animation?: BaseAnimation;
 }
 
 /**
  * 全エフェクトの設定の共通型
  */
-export type EffectConfig = BaseEffectConfig & (
-  | BackgroundEffectConfig
-  | TextEffectConfig
-  | WaveformEffectConfig
-  | WatermarkEffectConfig
-);
+export type EffectConfig = 
+  | BackgroundEffectConfig 
+  | TextEffectConfig 
+  | WaveformEffectConfig 
+  | WatermarkEffectConfig;
+
+/**
+ * 座標系
+ */
+export type CoordinateSystem = 'relative' | 'absolute';
+
+/**
+ * 座標
+ */
+export interface Position {
+  x: number;
+  y: number;
+}
+
+/**
+ * サイズ
+ */
+export interface Size {
+  width: number;
+  height: number;
+}
 
 /**
  * 共通型定義
@@ -135,14 +162,34 @@ export interface Color {
 }
 
 /**
- * テキストアニメーション
+ * テキストアニメーション設定
  */
 export type TextAnimation = 
-  | { type: 'fade'; duration: number; delay?: number; easing?: string; from?: number; to?: number }
-  | { type: 'scale'; duration: number; delay?: number; easing?: string; from: number; to: number }
-  | { type: 'move'; duration: number; delay?: number; easing?: string; from: Position2D; to: Position2D }
-  | { type: 'rotate'; duration: number; delay?: number; easing?: string; from: number; to: number }
-  | { type: 'color'; duration: number; delay?: number; easing?: string; from: Color; to: Color };
+  | { type: 'fade'; duration: number; delay?: number; easing?: EasingType; from?: number; to?: number }
+  | { type: 'scale'; duration: number; delay?: number; easing?: EasingType; from: number; to: number }
+  | { type: 'move'; duration: number; delay?: number; easing?: EasingType; from: Position; to: Position }
+  | { type: 'rotate'; duration: number; delay?: number; easing?: EasingType; from: number; to: number }
+  | { type: 'color'; duration: number; delay?: number; easing?: EasingType; from: string; to: string };
+
+/**
+ * テキストエフェクト設定
+ */
+export interface TextEffectConfig extends BaseEffectConfig {
+  type: EffectType.Text;
+  text: string;
+  font?: {
+    family: string;
+    size: number;
+    weight?: number | string;
+  };
+  fontFamily: string;
+  fontSize: number;
+  fontWeight?: number | string;
+  color: string;
+  position: Position;
+  alignment?: 'left' | 'center' | 'right';
+  animation?: TextAnimation;
+}
 
 /**
  * オーディオソース
@@ -275,16 +322,28 @@ export interface Disposable {
 /**
  * プロジェクトデータ
  */
-export interface ProjectData extends ProjectMetadata {
-  version: string;
+export interface ProjectData {
+  id: string;
+  name: string;
   videoSettings: VideoSettings;
   effects: EffectConfig[];
-  audioInfo?: {
-    fileName: string;
-    duration: number;
-    sampleRate: number;
-    numberOfChannels: number;
-  };
+  audioBuffer: AudioBuffer | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * アプリケーションエラー
+ */
+export class AppError extends Error {
+  constructor(
+    public readonly type: ErrorType,
+    message: string,
+    public readonly cause?: unknown
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
 }
 
 /**
@@ -293,8 +352,8 @@ export interface ProjectData extends ProjectMetadata {
 export interface ProjectMetadata {
   id: string;
   name: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /**
@@ -305,48 +364,42 @@ export interface BackgroundEffectConfig extends BaseEffectConfig {
   backgroundType: 'solid' | 'gradient' | 'image';
   color?: string;
   gradientColors?: [string, string];
-  gradientDirection?: 'horizontal' | 'vertical' | 'radial';
+  gradientDirection?: number;
   imageUrl?: string;
   imageSize?: 'cover' | 'contain' | 'stretch';
-  imagePosition?: Position2D;
-  animation?: BackgroundAnimation;
-}
-
-/**
- * テキストエフェクト設定
- */
-export interface TextEffectConfig extends BaseEffectConfig {
-  type: EffectType.Text;
-  text: string;
-  fontFamily: string;
-  fontSize: number;
-  fontWeight?: number | string;
-  color: string;
-  position: Position2D;
-  alignment?: 'left' | 'center' | 'right';
-  animations?: TextAnimation[];
+  imagePosition?: Position;
 }
 
 /**
  * 波形エフェクト設定
  */
 export interface WaveformAnimation extends BaseAnimation {
-  type: 'fade' | 'scale' | 'sensitivity';
-  from?: number;
-  to?: number;
+  type: 'fade' | 'scale' | 'sensitivity' | 'color';
+  from?: number | string;
+  to?: number | string;
 }
 
 export interface WaveformEffectConfig extends BaseEffectConfig {
   type: EffectType.Waveform;
+  displayMode: 'waveform' | 'frequency';
   waveformType: 'bar' | 'line' | 'circle';
   barWidth: number;
   barGap: number;
   sensitivity: number;
   color: string;
-  smoothingFactor?: number;
-  mirror?: boolean;
+  smoothingFactor: number;
+  mirror: { vertical: boolean; horizontal: boolean };
+  channelMode: 'mono' | 'stereo' | 'leftOnly' | 'rightOnly';
+  windowSeconds: number;
+  samplesPerSecond: number;
   useColorBands?: boolean;
-  animation?: WaveformAnimation;
+  colorBands?: {
+    ranges: Array<{
+      min: number;
+      max: number;
+      color: string;
+    }>;
+  };
 }
 
 /**
@@ -360,27 +413,9 @@ export interface WatermarkAnimation extends BaseAnimation {
 
 export interface WatermarkEffectConfig extends BaseEffectConfig {
   type: EffectType.Watermark;
-  imageUrl: string;
-  position: Position2D;
-  size: Size2D;
+  imageUrl?: string;
   rotation?: number;
   repeat?: boolean;
-  opacity?: number;
-  animation?: WatermarkAnimation;
 }
 
 export type BackgroundAnimation = FadeAnimation | ScaleAnimation | RotateAnimation | ColorAnimation;
-
-/**
- * アプリケーション固有のエラー
- */
-export class AppError extends Error {
-  constructor(
-    public readonly type: ErrorType,
-    message: string,
-    public readonly cause?: unknown
-  ) {
-    super(message);
-    this.name = 'AppError';
-  }
-}

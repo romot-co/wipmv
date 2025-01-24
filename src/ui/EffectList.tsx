@@ -21,6 +21,8 @@ interface Props {
   onEffectRemove: (id: string) => void;
   onEffectMove: (id: string, direction: 'up' | 'down') => void;
   onEffectAdd: (type: EffectType) => void;
+  isLoading?: boolean;
+  disabled?: boolean;
 }
 
 // エフェクトタイプごとのアイコンとラベル
@@ -37,7 +39,9 @@ export const EffectList: React.FC<Props> = ({
   onEffectSelect,
   onEffectRemove,
   onEffectMove,
-  onEffectAdd
+  onEffectAdd,
+  isLoading = false,
+  disabled = false
 }) => {
   // エフェクトリストをz-indexの降順でソート
   const sortedEffects = [...effects].sort((a, b) => 
@@ -48,7 +52,12 @@ export const EffectList: React.FC<Props> = ({
     <Flex direction="column" gap="3" className="effect-list-container">
       <DropdownMenu.Root>
         <DropdownMenu.Trigger>
-          <Button size="2" variant="soft" className="add-effect-button">
+          <Button 
+            size="2" 
+            variant="soft" 
+            className="add-effect-button"
+            disabled={isLoading || disabled}
+          >
             <PlusIcon />
             エフェクトを追加
           </Button>
@@ -58,6 +67,7 @@ export const EffectList: React.FC<Props> = ({
             <DropdownMenu.Item 
               key={type}
               onClick={() => onEffectAdd(type as EffectType)}
+              disabled={isLoading || disabled}
             >
               <Flex gap="2" align="center">
                 <info.icon />
@@ -69,7 +79,7 @@ export const EffectList: React.FC<Props> = ({
       </DropdownMenu.Root>
 
       <Flex direction="column" gap="2" className="effect-list">
-        {sortedEffects.map((effect, index) => {
+        {sortedEffects.map(effect => {
           const config = effect.getConfig();
           const TypeIcon = effectTypeInfo[config.type].icon;
           const isSelected = config.id === selectedEffectId;
@@ -97,7 +107,7 @@ export const EffectList: React.FC<Props> = ({
                       e.stopPropagation();
                       onEffectMove(config.id, 'up');
                     }}
-                    disabled={index === 0}
+                    disabled={isLoading || disabled || effects.indexOf(effect) === 0}
                   >
                     <ChevronUpIcon />
                   </IconButton>
@@ -108,7 +118,7 @@ export const EffectList: React.FC<Props> = ({
                       e.stopPropagation();
                       onEffectMove(config.id, 'down');
                     }}
-                    disabled={index === sortedEffects.length - 1}
+                    disabled={isLoading || disabled || effects.indexOf(effect) === effects.length - 1}
                   >
                     <ChevronDownIcon />
                   </IconButton>
@@ -120,6 +130,7 @@ export const EffectList: React.FC<Props> = ({
                       e.stopPropagation();
                       onEffectRemove(config.id);
                     }}
+                    disabled={isLoading || disabled}
                   >
                     <Cross2Icon />
                   </IconButton>

@@ -2,12 +2,18 @@ import React from 'react';
 import { BackgroundEffectConfig } from '../../../core/types';
 import { Flex, Box, Text, Select, Slider } from '@radix-ui/themes';
 import { ImageUploader } from '../../common/ImageUploader';
+import { CoordinateSystemSettings } from '../../common/CoordinateSystemSettings';
 import '../../EffectSettings.css';
 
 interface BackgroundSettingsProps {
   config: BackgroundEffectConfig;
   onChange: (newConfig: Partial<BackgroundEffectConfig>) => void;
 }
+
+const defaultPosition = { x: 0, y: 0 };
+const defaultSize = { width: 100, height: 100 };
+const defaultImagePosition = { x: 50, y: 50 };
+const defaultGradientColors: [string, string] = ['#000000', '#ffffff'];
 
 export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
   config,
@@ -16,12 +22,21 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
   return (
     <div className="effect-settings">
       <Flex direction="column" gap="3">
+        <CoordinateSystemSettings
+          coordinateSystem={config.coordinateSystem || 'relative'}
+          position={config.position || defaultPosition}
+          size={config.size || defaultSize}
+          onCoordinateSystemChange={(value) => onChange({ coordinateSystem: value })}
+          onPositionChange={(position) => onChange({ position })}
+          onSizeChange={(size) => onChange({ size })}
+        />
+
         <Box>
           <Text as="label" size="2" weight="bold" mb="2">
             背景種類
           </Text>
           <Select.Root
-            value={config.backgroundType}
+            value={config.backgroundType || 'solid'}
             onValueChange={(value) => onChange({ backgroundType: value as BackgroundEffectConfig['backgroundType'] })}
           >
             <Select.Trigger />
@@ -33,7 +48,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
           </Select.Root>
         </Box>
 
-        {config.backgroundType === 'solid' && (
+        {(config.backgroundType || 'solid') === 'solid' && (
           <Box>
             <Text as="label" size="2" weight="bold" mb="2">
               背景色
@@ -41,13 +56,13 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
             <Flex gap="3" align="center">
               <input
                 type="color"
-                value={config.color ?? '#000000'}
+                value={config.color || '#000000'}
                 onChange={(e) => onChange({ color: e.target.value })}
                 className="color-picker"
               />
               <input
                 type="text"
-                value={config.color ?? '#000000'}
+                value={config.color || '#000000'}
                 onChange={(e) => onChange({ color: e.target.value })}
                 pattern="^#[0-9A-Fa-f]{6}$"
                 className="color-input"
@@ -56,7 +71,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
           </Box>
         )}
 
-        {config.backgroundType === 'gradient' && (
+        {(config.backgroundType || 'solid') === 'gradient' && (
           <>
             <Box>
               <Text as="label" size="2" weight="bold" mb="2">
@@ -65,9 +80,9 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
               <Flex gap="3" align="center">
                 <input
                   type="color"
-                  value={config.gradientColors?.[0] ?? '#000000'}
+                  value={(config.gradientColors || defaultGradientColors)[0]}
                   onChange={(e) => {
-                    const colors = [...(config.gradientColors ?? ['#000000', '#ffffff'])];
+                    const colors = [...(config.gradientColors || defaultGradientColors)];
                     colors[0] = e.target.value;
                     onChange({ gradientColors: colors as [string, string] });
                   }}
@@ -75,9 +90,9 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                 />
                 <input
                   type="text"
-                  value={config.gradientColors?.[0] ?? '#000000'}
+                  value={(config.gradientColors || defaultGradientColors)[0]}
                   onChange={(e) => {
-                    const colors = [...(config.gradientColors ?? ['#000000', '#ffffff'])];
+                    const colors = [...(config.gradientColors || defaultGradientColors)];
                     colors[0] = e.target.value;
                     onChange({ gradientColors: colors as [string, string] });
                   }}
@@ -94,9 +109,9 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
               <Flex gap="3" align="center">
                 <input
                   type="color"
-                  value={config.gradientColors?.[1] ?? '#ffffff'}
+                  value={(config.gradientColors || defaultGradientColors)[1]}
                   onChange={(e) => {
-                    const colors = [...(config.gradientColors ?? ['#000000', '#ffffff'])];
+                    const colors = [...(config.gradientColors || defaultGradientColors)];
                     colors[1] = e.target.value;
                     onChange({ gradientColors: colors as [string, string] });
                   }}
@@ -104,9 +119,9 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                 />
                 <input
                   type="text"
-                  value={config.gradientColors?.[1] ?? '#ffffff'}
+                  value={(config.gradientColors || defaultGradientColors)[1]}
                   onChange={(e) => {
-                    const colors = [...(config.gradientColors ?? ['#000000', '#ffffff'])];
+                    const colors = [...(config.gradientColors || defaultGradientColors)];
                     colors[1] = e.target.value;
                     onChange({ gradientColors: colors as [string, string] });
                   }}
@@ -121,21 +136,22 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                 グラデーション方向
               </Text>
               <Select.Root
-                value={config.gradientDirection ?? 'horizontal'}
-                onValueChange={(value) => onChange({ gradientDirection: value as 'horizontal' | 'vertical' | 'radial' })}
+                value={String(config.gradientDirection || 0)}
+                onValueChange={(value) => onChange({ gradientDirection: Number(value) })}
               >
                 <Select.Trigger />
                 <Select.Content>
-                  <Select.Item value="horizontal">水平</Select.Item>
-                  <Select.Item value="vertical">垂直</Select.Item>
-                  <Select.Item value="radial">放射状</Select.Item>
+                  <Select.Item value="0">水平</Select.Item>
+                  <Select.Item value="90">垂直</Select.Item>
+                  <Select.Item value="45">斜め（右上）</Select.Item>
+                  <Select.Item value="135">斜め（右下）</Select.Item>
                 </Select.Content>
               </Select.Root>
             </Box>
           </>
         )}
 
-        {config.backgroundType === 'image' && (
+        {(config.backgroundType || 'solid') === 'image' && (
           <>
             <Box>
               <Text as="label" size="2" weight="bold" mb="2">
@@ -143,7 +159,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
               </Text>
               <ImageUploader
                 label=""
-                value={config.imageUrl ?? ''}
+                value={config.imageUrl || ''}
                 onChange={(url) => onChange({ imageUrl: url })}
                 accept="image/*"
               />
@@ -154,7 +170,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                 画像サイズ
               </Text>
               <Select.Root
-                value={config.imageSize ?? 'cover'}
+                value={config.imageSize || 'cover'}
                 onValueChange={(value) => onChange({ imageSize: value as 'cover' | 'contain' | 'stretch' })}
               >
                 <Select.Trigger />
@@ -175,11 +191,11 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                   <Text size="2" weight="medium">X座標</Text>
                   <input
                     type="number"
-                    value={config.imagePosition?.x ?? 0}
+                    value={(config.imagePosition || defaultImagePosition).x}
                     onChange={(e) => onChange({
                       imagePosition: {
                         x: Number(e.target.value),
-                        y: config.imagePosition?.y ?? 0
+                        y: (config.imagePosition || defaultImagePosition).y
                       }
                     })}
                     className="number-input"
@@ -189,10 +205,10 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
                   <Text size="2" weight="medium">Y座標</Text>
                   <input
                     type="number"
-                    value={config.imagePosition?.y ?? 0}
+                    value={(config.imagePosition || defaultImagePosition).y}
                     onChange={(e) => onChange({
                       imagePosition: {
-                        x: config.imagePosition?.x ?? 0,
+                        x: (config.imagePosition || defaultImagePosition).x,
                         y: Number(e.target.value)
                       }
                     })}
@@ -210,13 +226,13 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
           </Text>
           <Flex gap="3" align="center">
             <Slider
-              value={[config.opacity ?? 1]}
+              value={[config.opacity || 1]}
               min={0}
               max={1}
               step={0.1}
               onValueChange={(value) => onChange({ opacity: value[0] })}
             />
-            <Text size="2">{config.opacity ?? 1}</Text>
+            <Text size="2">{config.opacity || 1}</Text>
           </Flex>
         </Box>
 
@@ -225,7 +241,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
             ブレンドモード
           </Text>
           <Select.Root
-            value={config.blendMode ?? 'source-over'}
+            value={config.blendMode || 'source-over'}
             onValueChange={(value) => onChange({ blendMode: value as GlobalCompositeOperation })}
           >
             <Select.Trigger />

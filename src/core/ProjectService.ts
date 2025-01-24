@@ -1,22 +1,27 @@
-import { v4 as uuidv4 } from 'uuid';
 import { IndexedDBManager } from './IndexedDBManager';
-import { ProjectData, ProjectMetadata, ErrorType, AppError } from './types';
+import {
+  VideoSettings,
+  ProjectData,
+  AppError,
+  ErrorType,
+  ProjectMetadata
+} from './types';
 
 /**
- * プロジェクトデータの永続化を管理するサービス
+ * プロジェクト管理サービス
+ * - プロジェクトデータの永続化
  * - 自動保存
- * - 自動復帰
+ * - 自動復旧
  * - プロジェクト履歴
  */
 export class ProjectService {
   private static instance: ProjectService;
-  private dbManager: IndexedDBManager;
+  private indexedDB: IndexedDBManager;
+  private autoSaveInterval: number | null = null;
   private currentProject: ProjectData | null = null;
-  private autoSaveTimer: number | null = null;
-  private readonly AUTO_SAVE_INTERVAL = 5000; // 5秒ごとに自動保存
 
   private constructor() {
-    this.dbManager = IndexedDBManager.getInstance();
+    this.indexedDB = IndexedDBManager.getInstance();
   }
 
   public static getInstance(): ProjectService {
@@ -26,167 +31,143 @@ export class ProjectService {
     return ProjectService.instance;
   }
 
-  public async initialize(): Promise<void> {
-    try {
-      await this.dbManager.initialize();
-      await this.autoRestore();
-    } catch (error) {
-      throw new AppError(
-        ErrorType.ProjectServiceError,
-        'Failed to initialize ProjectService',
-        error
-      );
-    }
-  }
-
   /**
-   * 最後に編集していたプロジェクトを自動復帰
+   * プロジェクトの作成
    */
-  private async autoRestore(): Promise<void> {
-    try {
-      const projects = await this.dbManager.listProjects();
-      if (projects.length > 0) {
-        // 最後に更新されたプロジェクトを取得
-        const latestProject = projects.sort(
-          (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()
-        )[0];
-        this.currentProject = await this.loadProject(latestProject.id);
-      }
-    } catch (error) {
-      console.warn('Failed to auto-restore project:', error);
-    }
-  }
-
-  /**
-   * 自動保存を開始
-   */
-  private startAutoSave(): void {
-    if (this.autoSaveTimer !== null) return;
-
-    this.autoSaveTimer = window.setInterval(() => {
-      if (this.currentProject) {
-        this.saveProject(this.currentProject).catch(console.error);
-      }
-    }, this.AUTO_SAVE_INTERVAL);
-  }
-
-  /**
-   * 自動保存を停止
-   */
-  private stopAutoSave(): void {
-    if (this.autoSaveTimer !== null) {
-      clearInterval(this.autoSaveTimer);
-      this.autoSaveTimer = null;
-    }
-  }
-
-  public async createProject(name: string): Promise<ProjectData> {
-    const now = new Date();
+  async createProject(name: string, videoSettings: VideoSettings): Promise<ProjectData> {
     const project: ProjectData = {
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       name,
-      createdAt: now,
-      updatedAt: now,
-      version: '1.0.0',
-      videoSettings: {
-        width: 960,
-        height: 540,
-        fps: 30,
-        bitrate: 5000000
-      },
-      effects: []
+      videoSettings,
+      effects: [],
+      audioBuffer: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
 
     try {
-      await this.dbManager.saveProject(project);
+      await this.indexedDB.put('projects', project);
       this.currentProject = project;
       this.startAutoSave();
       return project;
     } catch (error) {
       throw new AppError(
-        ErrorType.ProjectServiceError,
-        'Failed to create project',
-        error
+        ErrorType.ProjectCreateFailed,
+        'プロジェクトの作成に失敗しました'
       );
     }
   }
 
-  public async saveProject(project: ProjectData): Promise<void> {
+  /**
+   * プロジェクトの読み込み
+   */
+  async loadProject(id: string): Promise<ProjectData> {
     try {
-      const updatedProject = {
-        ...project,
-        updatedAt: new Date()
-      };
-      await this.dbManager.saveProject(updatedProject);
-      this.currentProject = updatedProject;
-    } catch (error) {
-      throw new AppError(
-        ErrorType.ProjectServiceError,
-        'Failed to save project',
-        error
-      );
-    }
-  }
-
-  public async loadProject(id: string): Promise<ProjectData> {
-    try {
-      const project = await this.dbManager.loadProject(id);
+      const project = await this.indexedDB.get<ProjectData>('projects', id);
       if (!project) {
         throw new AppError(
           ErrorType.ProjectNotFound,
-          `Project with id ${id} not found`
+          'プロジェクトが見つかりません'
         );
       }
+
       this.currentProject = project;
       this.startAutoSave();
       return project;
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(
-        ErrorType.ProjectServiceError,
-        'Failed to load project',
-        error
+        ErrorType.ProjectLoadFailed,
+        'プロジェクトの読み込みに失敗しました'
       );
     }
   }
 
-  public getCurrentProject(): ProjectData | null {
-    return this.currentProject;
-  }
-
-  public async listProjects(): Promise<ProjectMetadata[]> {
+  /**
+   * プロジェクトの保存
+   */
+  async saveProject(project: ProjectData): Promise<void> {
     try {
-      return await this.dbManager.listProjects();
+      project.updatedAt = Date.now();
+      await this.indexedDB.put('projects', project);
+      this.currentProject = project;
     } catch (error) {
       throw new AppError(
-        ErrorType.ProjectServiceError,
-        'Failed to list projects',
-        error
+        ErrorType.ProjectSaveFailed,
+        'プロジェクトの保存に失敗しました'
       );
     }
   }
 
-  public async deleteProject(id: string): Promise<void> {
+  /**
+   * プロジェクトの削除
+   */
+  async deleteProject(id: string): Promise<void> {
     try {
-      await this.dbManager.deleteProject(id);
+      await this.indexedDB.delete('projects', id);
       if (this.currentProject?.id === id) {
-        this.currentProject = null;
         this.stopAutoSave();
+        this.currentProject = null;
       }
     } catch (error) {
       throw new AppError(
-        ErrorType.ProjectServiceError,
-        'Failed to delete project',
-        error
+        ErrorType.ProjectDeleteFailed,
+        'プロジェクトの削除に失敗しました'
       );
     }
   }
 
-  public dispose(): void {
-    this.stopAutoSave();
-    if (this.currentProject) {
-      this.saveProject(this.currentProject).catch(console.error);
+  /**
+   * プロジェクト一覧の取得
+   */
+  async listProjects(): Promise<ProjectMetadata[]> {
+    try {
+      const projects = await this.indexedDB.getAll<ProjectData>('projects');
+      return projects.map(({ id, name, createdAt, updatedAt }: ProjectData) => ({
+        id,
+        name,
+        createdAt,
+        updatedAt
+      }));
+    } catch (error) {
+      throw new AppError(
+        ErrorType.DatabaseOperationFailed,
+        'プロジェクト一覧の取得に失敗しました'
+      );
     }
-    this.dbManager.close();
   }
-} 
+
+  /**
+   * 現在のプロジェクトの取得
+   */
+  getCurrentProject(): ProjectData | null {
+    return this.currentProject;
+  }
+
+  /**
+   * 自動保存の開始
+   */
+  private startAutoSave(): void {
+    if (this.autoSaveInterval) return;
+
+    this.autoSaveInterval = window.setInterval(async () => {
+      if (this.currentProject) {
+        try {
+          await this.saveProject(this.currentProject);
+        } catch (error) {
+          console.error('Auto save failed:', error);
+        }
+      }
+    }, 30000); // 30秒ごとに保存
+  }
+
+  /**
+   * 自動保存の停止
+   */
+  private stopAutoSave(): void {
+    if (this.autoSaveInterval) {
+      window.clearInterval(this.autoSaveInterval);
+      this.autoSaveInterval = null;
+    }
+  }
+}

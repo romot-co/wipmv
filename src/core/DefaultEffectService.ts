@@ -18,7 +18,10 @@ export function createDefaultBackgroundEffect(audioSource?: AudioSource): Backgr
     visible: true,
     startTime: 0,
     endTime: audioSource?.duration ?? 0,
-    zIndex: 0
+    zIndex: 0,
+    position: { x: 0, y: 0 },
+    size: { width: 100, height: 100 },
+    coordinateSystem: 'relative'
   };
 }
 
@@ -27,6 +30,10 @@ export function createDefaultWaveformEffect(audioSource?: AudioSource): Waveform
     id: crypto.randomUUID(),
     type: EffectType.Waveform,
     waveformType: 'bar',
+    displayMode: 'waveform',
+    channelMode: 'mono',
+    windowSeconds: 0.5,
+    samplesPerSecond: 60,
     color: '#ffffff',
     barWidth: 3,
     barGap: 1,
@@ -38,7 +45,13 @@ export function createDefaultWaveformEffect(audioSource?: AudioSource): Waveform
     startTime: 0,
     endTime: audioSource?.duration ?? 0,
     zIndex: 0,
-    mirror: true
+    position: { x: 0, y: 0 },
+    size: { width: 100, height: 100 },
+    coordinateSystem: 'relative',
+    mirror: {
+      vertical: true,
+      horizontal: true
+    }
   };
 }
 
@@ -52,6 +65,8 @@ export function createDefaultTextEffect(audioSource?: AudioSource): TextEffectCo
     fontWeight: 'bold',
     color: '#ffffff',
     position: { x: 400, y: 300 },
+    size: { width: 200, height: 60 },
+    coordinateSystem: 'relative',
     alignment: 'center',
     opacity: 1,
     blendMode: 'source-over',

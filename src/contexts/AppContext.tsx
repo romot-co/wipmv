@@ -3,9 +3,10 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 type AppState = 'initial' | 'ready' | 'error';
 
 interface AppErrors {
-  audio?: Error;
-  effect?: Error;
-  export?: Error;
+  audio: Error | null;
+  effect: Error | null;
+  project: Error | null;
+  export: Error | null;
 }
 
 interface AppContextType {
@@ -28,7 +29,12 @@ export const useApp = () => {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [appState, setAppState] = useState<AppState>('initial');
-  const [errors, setErrors] = useState<AppErrors>({});
+  const [errors, setErrors] = useState<AppErrors>({
+    audio: null,
+    effect: null,
+    project: null,
+    export: null
+  });
 
   const handleError = useCallback((type: keyof AppErrors, error: Error) => {
     console.error(`${type}エラー:`, error);

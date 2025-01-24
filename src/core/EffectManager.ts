@@ -6,6 +6,7 @@
  * - プレビュー時はrequestAnimationFrameでレンダリングループを実行
  * - エンコード時は単一フレーム単位で描画を実行
  * - AudioPlaybackServiceと連携して再生時間に応じた描画を実現
+ * - キャンバスサイズ変更時に全エフェクトの座標とサイズを更新
  */
 
 import { EffectBase } from './EffectBase';
@@ -13,6 +14,7 @@ import { EffectConfig } from './types';
 import { AppError, ErrorType } from './types';
 import { AudioPlaybackService } from './AudioPlaybackService';
 import { Renderer } from './Renderer';
+import { updateRectForResize } from '../utils/coordinates';
 
 /**
  * エフェクトマネージャー
@@ -27,6 +29,7 @@ export class EffectManager {
   private rafId: number | null = null;
   private audioService: AudioPlaybackService | null = null;
   private renderer: Renderer | null = null;
+  private lastCanvasSize: { width: number; height: number } | null = null;
 
   /**
    * プレビュー用キャンバスを設定
@@ -34,6 +37,7 @@ export class EffectManager {
   setPreviewCanvas(canvas: HTMLCanvasElement): void {
     try {
       this.renderer = new Renderer(canvas);
+      this.lastCanvasSize = this.renderer.getSize();
     } catch (error) {
       throw new AppError(
         ErrorType.EffectInitFailed,
@@ -61,6 +65,16 @@ export class EffectManager {
       if (!this.isRendering || !this.renderer) {
         this.stopPreviewLoop();
         return;
+      }
+
+      // キャンバスサイズの変更を検知
+      const currentSize = this.renderer.getSize();
+      if (this.lastCanvasSize && (
+        currentSize.width !== this.lastCanvasSize.width ||
+        currentSize.height !== this.lastCanvasSize.height
+      )) {
+        this.handleCanvasResize(this.lastCanvasSize, currentSize);
+        this.lastCanvasSize = currentSize;
       }
 
       // 現在時刻を取得
@@ -163,6 +177,36 @@ export class EffectManager {
   }
 
   /**
+   * キャンバスサイズ変更時の処理
+   * - 全エフェクトの座標とサイズを更新
+   */
+  private handleCanvasResize(
+    oldSize: { width: number; height: number },
+    newSize: { width: number; height: number }
+  ): void {
+    try {
+      for (const effect of this.effects) {
+        const config = effect.getConfig();
+        const { position, size } = updateRectForResize(
+          config.position,
+          config.size,
+          config.coordinateSystem ?? 'absolute',
+          oldSize,
+          newSize
+        );
+        effect.updateConfig({ position, size });
+      }
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      throw new AppError(
+        ErrorType.EffectUpdateFailed,
+        `Failed to update effects on resize: ${details}`,
+        error
+      );
+    }
+  }
+
+  /**
    * zIndexでエフェクトをソート
    */
   private sortEffectsByZIndex(): void {
@@ -239,5 +283,6 @@ export class EffectManager {
     this.effects = [];
     this.audioService = null;
     this.renderer = null;
+    this.lastCanvasSize = null;
   }
 }

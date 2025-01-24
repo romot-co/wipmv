@@ -2,12 +2,16 @@ import React from 'react';
 import { WatermarkEffectConfig } from '../../../core/types';
 import { Flex, Box, Text, Select, Slider, Switch } from '@radix-ui/themes';
 import { ImageUploader } from '../../common/ImageUploader';
+import { CoordinateSystemSettings } from '../../common/CoordinateSystemSettings';
 import '../../EffectSettings.css';
 
 interface WatermarkSettingsProps {
   config: WatermarkEffectConfig;
   onChange: (newConfig: Partial<WatermarkEffectConfig>) => void;
 }
+
+const defaultPosition = { x: 0, y: 0 };
+const defaultSize = { width: 100, height: 100 };
 
 export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
   config,
@@ -16,88 +20,25 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
   return (
     <div className="effect-settings">
       <Flex direction="column" gap="3">
+        <CoordinateSystemSettings
+          coordinateSystem={config.coordinateSystem || 'relative'}
+          position={config.position || defaultPosition}
+          size={config.size || defaultSize}
+          onCoordinateSystemChange={(value) => onChange({ coordinateSystem: value })}
+          onPositionChange={(position) => onChange({ position })}
+          onSizeChange={(size) => onChange({ size })}
+        />
+
         <Box>
           <Text as="label" size="2" weight="bold" mb="2">
             透かし画像
           </Text>
           <ImageUploader
             label=""
-            value={config.imageUrl}
+            value={config.imageUrl || ''}
             onChange={(url) => onChange({ imageUrl: url })}
             accept="image/*"
           />
-        </Box>
-
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            位置
-          </Text>
-          <Flex direction="column" gap="2">
-            <Flex gap="3" align="center">
-              <Text size="2" weight="medium">X座標</Text>
-              <input
-                type="number"
-                value={config.position.x}
-                onChange={(e) => onChange({
-                  position: {
-                    x: Number(e.target.value),
-                    y: config.position.y
-                  }
-                })}
-                className="number-input"
-              />
-            </Flex>
-            <Flex gap="3" align="center">
-              <Text size="2" weight="medium">Y座標</Text>
-              <input
-                type="number"
-                value={config.position.y}
-                onChange={(e) => onChange({
-                  position: {
-                    x: config.position.x,
-                    y: Number(e.target.value)
-                  }
-                })}
-                className="number-input"
-              />
-            </Flex>
-          </Flex>
-        </Box>
-
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            サイズ
-          </Text>
-          <Flex direction="column" gap="2">
-            <Flex gap="3" align="center">
-              <Text size="2" weight="medium">幅</Text>
-              <input
-                type="number"
-                value={config.size.width}
-                onChange={(e) => onChange({
-                  size: {
-                    width: Number(e.target.value),
-                    height: config.size.height
-                  }
-                })}
-                className="number-input"
-              />
-            </Flex>
-            <Flex gap="3" align="center">
-              <Text size="2" weight="medium">高さ</Text>
-              <input
-                type="number"
-                value={config.size.height}
-                onChange={(e) => onChange({
-                  size: {
-                    width: config.size.width,
-                    height: Number(e.target.value)
-                  }
-                })}
-                className="number-input"
-              />
-            </Flex>
-          </Flex>
         </Box>
 
         <Box>
@@ -106,13 +47,13 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
           </Text>
           <Flex gap="3" align="center">
             <Slider
-              value={[config.rotation ?? 0]}
+              value={[config.rotation || 0]}
               min={0}
               max={360}
               step={1}
               onValueChange={(value) => onChange({ rotation: value[0] })}
             />
-            <Text size="2">{config.rotation ?? 0}°</Text>
+            <Text size="2">{config.rotation || 0}°</Text>
           </Flex>
         </Box>
 
@@ -121,7 +62,7 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
             繰り返し
           </Text>
           <Switch
-            checked={config.repeat ?? false}
+            checked={config.repeat || false}
             onCheckedChange={(checked) => onChange({ repeat: checked })}
           />
         </Box>
@@ -132,13 +73,13 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
           </Text>
           <Flex gap="3" align="center">
             <Slider
-              value={[config.opacity ?? 1]}
+              value={[config.opacity || 1]}
               min={0}
               max={1}
               step={0.1}
               onValueChange={(value) => onChange({ opacity: value[0] })}
             />
-            <Text size="2">{config.opacity ?? 1}</Text>
+            <Text size="2">{config.opacity || 1}</Text>
           </Flex>
         </Box>
 
@@ -147,7 +88,7 @@ export const WatermarkSettings: React.FC<WatermarkSettingsProps> = ({
             ブレンドモード
           </Text>
           <Select.Root
-            value={config.blendMode ?? 'source-over'}
+            value={config.blendMode || 'source-over'}
             onValueChange={(value) => onChange({ blendMode: value as GlobalCompositeOperation })}
           >
             <Select.Trigger />

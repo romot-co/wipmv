@@ -1,19 +1,18 @@
-import { ProjectData, ProjectMetadata } from './types';
-
 /**
- * IndexedDBを管理するクラス
+ * IndexedDBマネージャー
+ * - データベースの初期化と管理
+ * - CRUD操作の提供
+ * - エラーハンドリング
  */
 export class IndexedDBManager {
-  private static instance: IndexedDBManager | null = null;
+  private static instance: IndexedDBManager;
   private db: IDBDatabase | null = null;
-  private readonly DB_NAME = 'wipmv-db';
-  private readonly DB_VERSION = 1;
-  private readonly STORE_NAME = 'projects';
+  private readonly dbName = 'wipmv';
+  private readonly version = 1;
+  private readonly storeName = 'projects';
   private initPromise: Promise<void> | null = null;
 
-  private constructor() {
-    // シングルトンのためprivate
-  }
+  private constructor() {}
 
   public static getInstance(): IndexedDBManager {
     if (!IndexedDBManager.instance) {
@@ -25,36 +24,27 @@ export class IndexedDBManager {
   /**
    * データベースの初期化
    */
-  public async initialize(): Promise<void> {
-    await this.init();
-  }
-
-  /**
-   * データベースの初期化（内部実装）
-   */
   private async init(): Promise<void> {
     if (this.db) return;
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
+      const request = indexedDB.open(this.dbName, this.version);
 
       request.onerror = () => {
-        console.error('データベースの初期化に失敗:', request.error);
-        reject(new Error('Failed to initialize database'));
+        reject(new Error('Failed to open database'));
       };
 
       request.onsuccess = () => {
-        console.log('データベースの初期化成功');
         this.db = request.result;
         resolve();
       };
 
       request.onupgradeneeded = (event) => {
-        console.log('データベースのアップグレード');
         const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-          db.createObjectStore(this.STORE_NAME, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(this.storeName)) {
+          const store = db.createObjectStore(this.storeName, { keyPath: 'id' });
+          store.createIndex('updatedAt', 'updatedAt');
         }
       };
     });
@@ -63,113 +53,89 @@ export class IndexedDBManager {
   }
 
   /**
-   * プロジェクトの保存
+   * データの保存
    */
-  public async saveProject(project: ProjectData): Promise<void> {
+  async put<T extends { id: string }>(storeName: string, data: T): Promise<void> {
     await this.init();
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
+    if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(this.STORE_NAME);
-
-      const request = store.put(project);
-
-      request.onsuccess = () => {
-        console.log('プロジェクトを保存しました:', project.id);
-        resolve();
-      };
+      const transaction = this.db!.transaction([storeName], 'readwrite');
+      const store = transaction.objectStore(storeName);
+      const request = store.put(data);
 
       request.onerror = () => {
-        console.error('プロジェクトの保存に失敗:', request.error);
-        reject(new Error('Failed to save project'));
+        reject(new Error('Failed to save data'));
+      };
+
+      request.onsuccess = () => {
+        resolve();
       };
     });
   }
 
   /**
-   * プロジェクトの読み込み
+   * データの取得
    */
-  public async loadProject(id: string): Promise<ProjectData | null> {
+  async get<T>(storeName: string, id: string): Promise<T | null> {
     await this.init();
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
+    if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readonly');
-      const store = transaction.objectStore(this.STORE_NAME);
-
+      const transaction = this.db!.transaction([storeName], 'readonly');
+      const store = transaction.objectStore(storeName);
       const request = store.get(id);
+
+      request.onerror = () => {
+        reject(new Error('Failed to get data'));
+      };
 
       request.onsuccess = () => {
         resolve(request.result || null);
       };
-
-      request.onerror = () => {
-        console.error('プロジェクトの読み込みに失敗:', request.error);
-        reject(new Error('Failed to load project'));
-      };
     });
   }
 
   /**
-   * プロジェクト一覧の取得
+   * 全データの取得
    */
-  public async listProjects(): Promise<ProjectMetadata[]> {
+  async getAll<T>(storeName: string): Promise<T[]> {
     await this.init();
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
+    if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readonly');
-      const store = transaction.objectStore(this.STORE_NAME);
+      const transaction = this.db!.transaction([storeName], 'readonly');
+      const store = transaction.objectStore(storeName);
       const request = store.getAll();
 
-      request.onsuccess = () => {
-        const projects = request.result || [];
-        const metadata: ProjectMetadata[] = projects.map(project => ({
-          id: project.id,
-          name: project.name,
-          createdAt: new Date(project.createdAt),
-          updatedAt: new Date(project.updatedAt)
-        }));
-        resolve(metadata);
+      request.onerror = () => {
+        reject(new Error('Failed to get all data'));
       };
 
-      request.onerror = () => {
-        console.error('プロジェクト一覧の取得に失敗:', request.error);
-        reject(new Error('Failed to list projects'));
+      request.onsuccess = () => {
+        resolve(request.result);
       };
     });
   }
 
   /**
-   * プロジェクトの削除
+   * データの削除
    */
-  public async deleteProject(id: string): Promise<void> {
+  async delete(storeName: string, id: string): Promise<void> {
     await this.init();
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
+    if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(this.STORE_NAME);
-
+      const transaction = this.db!.transaction([storeName], 'readwrite');
+      const store = transaction.objectStore(storeName);
       const request = store.delete(id);
 
-      request.onsuccess = () => {
-        console.log('プロジェクトを削除しました:', id);
-        resolve();
+      request.onerror = () => {
+        reject(new Error('Failed to delete data'));
       };
 
-      request.onerror = () => {
-        console.error('プロジェクトの削除に失敗:', request.error);
-        reject(new Error('Failed to delete project'));
+      request.onsuccess = () => {
+        resolve();
       };
     });
   }
@@ -177,7 +143,7 @@ export class IndexedDBManager {
   /**
    * データベースの接続を閉じる
    */
-  public close(): void {
+  close(): void {
     if (this.db) {
       this.db.close();
       this.db = null;
