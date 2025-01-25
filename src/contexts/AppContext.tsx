@@ -246,7 +246,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
         
         await services.audioService.playback.setAudioSource(source);
-        dispatch({ type: 'SET_AUDIO', payload: { source } });
+        
+        // 音声ソースと再生状態を更新
+        const playbackState = services.audioService.playback.getPlaybackState();
+        dispatch({
+          type: 'SET_AUDIO',
+          payload: {
+            source,
+            currentTime: playbackState.currentTime,
+            duration: playbackState.duration,
+            isPlaying: playbackState.isPlaying,
+            volume: playbackState.volume,
+            loop: playbackState.loop
+          }
+        });
         
         transitionTo({ type: 'analyzing' });
         const analysis = await services.audioService.analyzer.analyze(source);

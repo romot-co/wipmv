@@ -1,4 +1,3 @@
-/// <reference lib="webworker" />
 import FFT from 'fft.js';
 
 interface AudioData {
@@ -129,7 +128,7 @@ async function analyzeAudio(audioData: AudioData, config: AnalysisConfig = DEFAU
       const currentWaveformData = new Float32Array(totalSamples);
       const samplesPerPoint = Math.floor(downsampledData.length / totalSamples);
 
-      // 波形データの生成（RMS値を使用）
+      // 波形データの生成（RMS値とピーク値を組み合わせて使用）
       for (let i = 0; i < totalSamples; i++) {
         // キャンセルチェック（定期的に）
         if (i % 100 === 0 && isCancelled) {
@@ -138,13 +137,17 @@ async function analyzeAudio(audioData: AudioData, config: AnalysisConfig = DEFAU
 
         const startSample = i * samplesPerPoint;
         const endSample = Math.min(startSample + samplesPerPoint, downsampledData.length);
-        let sum = 0;
+        let sumSquares = 0;
+        let peakValue = 0;
         
         for (let j = startSample; j < endSample; j++) {
-          sum += downsampledData[j] * downsampledData[j];
+          const sample = Math.abs(downsampledData[j]);
+          sumSquares += sample * sample;
+          peakValue = Math.max(peakValue, sample);
         }
         
-        currentWaveformData[i] = Math.sqrt(sum / (endSample - startSample));
+        const rms = Math.sqrt(sumSquares / (endSample - startSample));
+        currentWaveformData[i] = rms * 0.7 + peakValue * 0.3;
       }
 
       waveformData.push(currentWaveformData);
@@ -244,7 +247,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       sampleRate: e.data.audioData.sampleRate,
       duration: e.data.audioData.duration,
       numberOfChannels: e.data.audioData.numberOfChannels,
-      channelsLength: e.data.audioData.channelData.map((ch: Float32Array) => ch.length),
+      channelsLength: e.data.audioData.channelData.map(ch => ch.length),
       config: adjustedConfig
     });
     
@@ -256,8 +259,8 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     }
 
     console.log('Worker: 解析完了', {
-      waveformLength: result.waveformData?.map((ch: Float32Array) => ch.length),
-      frequencyLength: result.frequencyData?.map((ch: Float32Array) => ch.length)
+      waveformLength: result.waveformData?.map(ch => ch.length),
+      frequencyLength: result.frequencyData?.map(ch => ch.length)
     });
 
     self.postMessage({ 
@@ -272,4 +275,6 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       details: error
     });
   }
-}; 
+};
+
+export {}; 

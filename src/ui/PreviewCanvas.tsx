@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, memo, useMemo } from 'react';
+import debug from 'debug';
 import { EffectManager } from '../core/types/core';
 import { AppError, ErrorType } from '../core/types/error';
 import { withAppError } from '../core/types/app';
+import { Renderer } from '../core/Renderer';
+
+const log = debug('app:PreviewCanvas');
 
 // プレビュー用の最大解像度を定義
 const PREVIEW_MAX_WIDTH = 1280;
@@ -11,10 +15,11 @@ const PREVIEW_MAX_HEIGHT = 720;
  * プレビューキャンバスのプロパティ
  */
 interface PreviewCanvasProps {
-  manager: EffectManager;
   width: number;
   height: number;
+  manager?: EffectManager;
   onError?: (error: AppError) => void;
+  onRendererInit?: (renderer: Renderer) => void;
 }
 
 /**
@@ -27,9 +32,11 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
   manager,
   width,
   height,
-  onError
+  onError,
+  onRendererInit
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rendererRef = useRef<Renderer | null>(null);
 
   // プレビュー用の解像度を計算
   const { previewWidth, previewHeight } = useMemo(() => {
@@ -74,45 +81,56 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
       canvas.style.height = 'auto';
       canvas.style.imageRendering = 'pixelated';
 
+      // レンダラーを初期化
+      const renderer = new Renderer(canvas, true);
+      rendererRef.current = renderer;
+      
+      // レンダラー初期化コールバックを呼び出し
+      if (onRendererInit) {
+        onRendererInit(renderer);
+      }
+
       // マネージャーにキャンバスを設定
-      manager.setRenderer({
-        getOffscreenContext: () => {
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            throw new AppError(
-              ErrorType.RENDERER_INIT_FAILED,
-              'プレビューキャンバスの2Dコンテキストを取得できません。'
-            );
+      if (manager) {
+        manager.setRenderer({
+          getOffscreenContext: () => {
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              throw new AppError(
+                ErrorType.RENDERER_INIT_FAILED,
+                'プレビューキャンバスの2Dコンテキストを取得できません。'
+              );
+            }
+            return ctx;
+          },
+          drawToMain: () => {
+            // プレビューキャンバスは直接描画するため不要
+          },
+          clear: () => {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+          },
+          getOriginalSize: () => ({
+            width,
+            height
+          }),
+          getCurrentSize: () => ({
+            width: previewWidth,
+            height: previewHeight
+          }),
+          getScale: () => previewWidth / width,
+          isPreview: () => true,
+          getCanvas: () => canvas,
+          dispose: () => {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
           }
-          return ctx;
-        },
-        drawToMain: () => {
-          // プレビューキャンバスは直接描画するため不要
-        },
-        clear: () => {
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-          }
-        },
-        getOriginalSize: () => ({
-          width,
-          height
-        }),
-        getCurrentSize: () => ({
-          width: previewWidth,
-          height: previewHeight
-        }),
-        getScale: () => previewWidth / width,
-        isPreview: () => true,
-        getCanvas: () => canvas,
-        dispose: () => {
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-          }
-        }
-      });
+        });
+      }
 
       console.log('プレビューキャンバスの初期化完了:', {
         width: canvas.width,
@@ -136,24 +154,30 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
         if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
-        manager.setRenderer({
-          getOffscreenContext: () => {
-            throw new Error('Disposed');
-          },
-          drawToMain: () => {},
-          clear: () => {},
-          getOriginalSize: () => ({ width: 0, height: 0 }),
-          getCurrentSize: () => ({ width: 0, height: 0 }),
-          getScale: () => 1,
-          isPreview: () => false,
-          getCanvas: () => canvas,
-          dispose: () => {}
-        });
+        if (manager) {
+          manager.setRenderer({
+            getOffscreenContext: () => {
+              throw new Error('Disposed');
+            },
+            drawToMain: () => {},
+            clear: () => {},
+            getOriginalSize: () => ({ width: 0, height: 0 }),
+            getCurrentSize: () => ({ width: 0, height: 0 }),
+            getScale: () => 1,
+            isPreview: () => false,
+            getCanvas: () => canvas,
+            dispose: () => {}
+          });
+        }
+        if (rendererRef.current) {
+          rendererRef.current.dispose();
+          rendererRef.current = null;
+        }
       } catch (error) {
         console.error('プレビューキャンバスのクリーンアップに失敗:', error);
       }
     };
-  }, [manager, width, height, previewWidth, previewHeight, onError]);
+  }, [manager, width, height, previewWidth, previewHeight, onError, onRendererInit]);
 
   return (
     <div className="preview-canvas-container">

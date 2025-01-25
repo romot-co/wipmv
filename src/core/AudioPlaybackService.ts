@@ -50,6 +50,12 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   private startTime = 0;
   private pausedTime = 0;
   private stateManager: PlaybackStateManager;
+  private isPlaying = false;
+  private offset = 0;
+  private duration = 0;
+  private volume = 1;
+  private loop = false;
+  private stateUpdateTimer: number | null = null;
 
   private constructor() {
     this.stateManager = new PlaybackStateManager();
@@ -96,8 +102,16 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
           throw new Error('AudioContext is not initialized');
         }
 
+        // duration設定を確実に行う
+        const duration = this.audioBuffer?.duration || 0;
+        console.log('オーディオソース設定: duration =', duration);
+        
         this.stateManager.update({
-          duration: this.audioBuffer?.duration || 0
+          currentTime: 0,
+          duration: duration,
+          isPlaying: false,
+          volume: this.stateManager.get().volume,
+          loop: this.stateManager.get().loop
         });
 
         console.log('AudioSource設定完了');
@@ -124,30 +138,50 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   }
 
   public play(): void {
-    if (!this.audioContext || !this.audioBuffer) {
-      throw new AppError(
-        ErrorType.PlaybackError,
-        'AudioContext or AudioBuffer is not initialized'
-      );
-    }
+    if (!this.audioContext || !this.audioBuffer || !this.gainNode) return;
 
-    this.initAudioSource();
+    this.isPlaying = true;
+    this.startTime = this.audioContext.currentTime;
+    this.duration = this.audioBuffer.duration;
+
+    this.sourceNode = this.audioContext.createBufferSource();
+    this.sourceNode.buffer = this.audioBuffer;
+    this.sourceNode.connect(this.gainNode);
+    this.sourceNode.loop = this.loop;
     
-    if (this.audioSource) {
-      const offset = this.pausedTime;
-      this.startTime = this.audioContext.currentTime - offset;
-      this.sourceNode?.start(0, offset);
-      
-      this.stateManager.update({ isPlaying: true });
-      
-      const updateInterval = setInterval(() => {
-        if (!this.stateManager.get().isPlaying) {
-          clearInterval(updateInterval);
-          return;
-        }
+    this.sourceNode.onended = () => {
+      if (this.loop) {
+        this.offset = 0;
+        this.startTime = this.audioContext.currentTime;
+        this.play();
+      } else {
+        this.isPlaying = false;
+        this.offset = 0;
         this.updatePlaybackState();
-      }, 100);
-    }
+      }
+    };
+
+    this.sourceNode.start(0, this.offset);
+    
+    // 再生開始時に状態を更新
+    this.stateManager.update({
+      currentTime: this.offset,
+      duration: this.duration,
+      isPlaying: true,
+      volume: this.volume,
+      loop: this.loop
+    });
+    
+    // 定期的な状態更新を開始
+    this.updatePlaybackState();
+    
+    // デバッグログ
+    console.log('再生開始:', {
+      startTime: this.startTime,
+      offset: this.offset,
+      duration: this.duration,
+      isPlaying: this.isPlaying
+    });
   }
 
   public pause(): void {
@@ -171,12 +205,18 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   }
 
   public seek(time: number): void {
-    const wasPlaying = this.stateManager.get().isPlaying;
+    const wasPlaying = this.isPlaying;
     if (wasPlaying) {
-      this.pause();
+      if (this.sourceNode) {
+        this.sourceNode.stop();
+        this.sourceNode.disconnect();
+        this.sourceNode = null;
+      }
     }
-    this.pausedTime = Math.max(0, Math.min(time, this.getDuration()));
-    this.stateManager.update({ currentTime: this.pausedTime });
+    
+    this.offset = Math.max(0, Math.min(time, this.getDuration()));
+    this.stateManager.update({ currentTime: this.offset });
+    
     if (wasPlaying) {
       this.play();
     }
@@ -185,14 +225,22 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   public getCurrentTime(): number {
     if (!this.audioContext || !this.audioBuffer) return 0;
     
-    if (this.stateManager.get().isPlaying) {
-      const currentTime = this.audioContext.currentTime - this.startTime;
-      if (this.stateManager.get().loop) {
-        return currentTime % this.audioBuffer.duration;
+    if (this.isPlaying) {
+      const elapsed = this.audioContext.currentTime - this.startTime;
+      let currentTime = this.offset + elapsed;
+      
+      // ループ再生時の位置調整
+      if (this.loop && currentTime >= this.audioBuffer.duration) {
+        currentTime = currentTime % this.audioBuffer.duration;
+      } else if (!this.loop && currentTime >= this.audioBuffer.duration) {
+        currentTime = this.audioBuffer.duration;
+        this.isPlaying = false;
       }
+      
       return Math.min(currentTime, this.audioBuffer.duration);
     }
-    return this.pausedTime;
+    
+    return this.offset;
   }
 
   public getDuration(): number {
@@ -208,13 +256,39 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   }
 
   private updatePlaybackState(): void {
-    this.stateManager.update({
-      currentTime: this.getCurrentTime()
+    if (!this.audioContext || !this.audioBuffer) return;
+
+    const currentTime = this.getCurrentTime();
+    const duration = this.audioBuffer.duration;
+
+    // デバッグログ
+    console.log('再生状態更新:', {
+      currentTime,
+      duration,
+      isPlaying: this.isPlaying,
+      volume: this.volume,
+      loop: this.loop
     });
+
+    // 再生状態の更新
+    this.stateManager.update({
+      currentTime,
+      duration,
+      isPlaying: this.isPlaying,
+      volume: this.volume,
+      loop: this.loop
+    });
+
+    // 再生中の場合、次の更新をスケジュール
+    if (this.isPlaying) {
+      // requestAnimationFrameを使用して更新
+      window.requestAnimationFrame(() => this.updatePlaybackState());
+    }
   }
 
   public setVolume(value: number): void {
     const volume = Math.max(0, Math.min(1, value));
+    this.volume = volume;
     if (this.gainNode) {
       this.gainNode.gain.value = volume;
     }
@@ -222,6 +296,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   }
 
   public setLoop(value: boolean): void {
+    this.loop = value;
     if (this.sourceNode) {
       this.sourceNode.loop = value;
     }

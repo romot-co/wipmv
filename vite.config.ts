@@ -9,6 +9,8 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
+    open: true,
+    host: true,
   },
   worker: {
     format: 'es',
@@ -23,6 +25,11 @@ export default defineConfig({
       output: {
         format: 'es'
       }
-    }
+    },
+    sourcemap: true,
+  },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
+    'process.env.DEBUG': JSON.stringify(process.env.DEBUG || 'app:*'),
   }
 });

@@ -1,4 +1,7 @@
 import { ErrorType, AudioSource, AnalysisResult, AudioAnalyzer, withAudioError } from './types/index';
+import debug from 'debug';
+
+const log = debug('app:AudioAnalyzerService');
 
 /**
  * 音声解析サービス
@@ -25,41 +28,72 @@ export class AudioAnalyzerService implements AudioAnalyzer {
   private initWorker(): void {
     if (this.worker) return;
 
-    this.worker = new Worker(
-      new URL('./workers/audioAnalyzer.worker.ts', import.meta.url),
-      { type: 'module' }
-    );
+    try {
+      log('Web Worker初期化開始');
+      this.worker = new Worker(
+        new URL('./workers/audioAnalyzer.worker.ts', import.meta.url),
+        { type: 'module' }
+      );
+      log('Web Worker初期化完了');
+    } catch (error) {
+      log('Web Worker初期化エラー:', error);
+      throw new Error('Failed to initialize Web Worker');
+    }
   }
 
   public async analyze(source: AudioSource): Promise<AnalysisResult> {
     return withAudioError(
       async () => {
+        log('音声解析開始');
         if (!this.worker) {
+          log('エラー: Worker未初期化');
           throw new Error('Worker is not initialized');
         }
 
         if (!source.buffer) {
+          log('エラー: AudioBuffer未提供');
           throw new Error('AudioBuffer is not provided');
         }
 
         const buffer = source.buffer;
+        log('解析対象バッファ:', {
+          duration: buffer.duration,
+          sampleRate: buffer.sampleRate,
+          channels: buffer.numberOfChannels
+        });
 
         return new Promise<AnalysisResult>((resolve, reject) => {
           if (!this.worker) return reject(new Error('Worker is not initialized'));
 
           this.worker.onmessage = (event) => {
-            const { waveformData, frequencyData } = event.data;
-            this.analysisResult = {
-              waveformData,
-              frequencyData,
-              duration: buffer.duration,
-              sampleRate: buffer.sampleRate,
-              numberOfChannels: buffer.numberOfChannels
-            };
-            resolve(this.analysisResult);
+            if (event.data.error) {
+              log('Worker解析エラー:', event.data.error);
+              reject(new Error(event.data.error));
+              return;
+            }
+
+            if (event.data.type === 'success' && event.data.data) {
+              const { waveformData, frequencyData } = event.data.data;
+              this.analysisResult = {
+                waveformData: waveformData.map((data: Float32Array) => new Float32Array(data)),
+                frequencyData: frequencyData.map((data: Float32Array) => new Float32Array(data)),
+                duration: buffer.duration,
+                sampleRate: buffer.sampleRate,
+                numberOfChannels: buffer.numberOfChannels
+              };
+              log('音声解析完了');
+              resolve(this.analysisResult);
+            } else if (event.data.type === 'cancelled') {
+              log('音声解析がキャンセルされました');
+              reject(new Error('音声解析がキャンセルされました'));
+            } else {
+              log('不正な応答フォーマット:', event.data);
+              reject(new Error('不正な応答フォーマット'));
+            }
           };
 
           this.worker.onerror = (error) => {
+            log('Workerエラー:', error);
             reject(new Error(`Worker error: ${error.message}`));
           };
 
@@ -68,10 +102,15 @@ export class AudioAnalyzerService implements AudioAnalyzer {
             (_, i) => buffer.getChannelData(i)
           );
 
+          log('Workerにデータ送信');
           this.worker.postMessage({
-            channelData,
-            sampleRate: buffer.sampleRate,
-            duration: buffer.duration
+            type: 'analyze',
+            audioData: {
+              channelData,
+              sampleRate: buffer.sampleRate,
+              duration: buffer.duration,
+              numberOfChannels: buffer.numberOfChannels
+            }
           });
         });
       },
@@ -86,8 +125,10 @@ export class AudioAnalyzerService implements AudioAnalyzer {
 
   public dispose(): void {
     if (this.worker) {
+      log('Worker終了処理開始');
       this.worker.terminate();
       this.worker = null;
+      log('Worker終了処理完了');
     }
     this.analysisResult = null;
     AudioAnalyzerService.instance = null;

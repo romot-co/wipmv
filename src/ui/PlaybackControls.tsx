@@ -1,5 +1,5 @@
 // src/components/PlaybackControls.tsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Flex, Text, IconButton } from '@radix-ui/themes';
 import * as Slider from '@radix-ui/react-slider';
 import { 
@@ -38,6 +38,17 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
   onVolumeChange,
   onLoopChange
 }) => {
+  // スライダーの内部状態
+  const [isDragging, setIsDragging] = useState(false);
+  const [sliderValue, setSliderValue] = useState(currentTime);
+
+  // 再生時間が更新されたら、ドラッグ中でない場合のみスライダーの値を更新
+  useEffect(() => {
+    if (!isDragging) {
+      setSliderValue(currentTime);
+    }
+  }, [currentTime, isDragging]);
+
   // 時間表示のフォーマット
   const formatTime = (time: number): string => {
     const minutes = Math.floor(time / 60);
@@ -45,17 +56,30 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // スライダーの値を制限
+  const clampedCurrentTime = Math.max(0, Math.min(sliderValue, duration));
+
   return (
     <div className="playback-controls">
       <Flex direction="column" gap="2">
         {/* シークバー */}
         <Flex gap="2" align="center">
-          <Text size="1">{formatTime(currentTime)}</Text>
+          <Text size="1" className="time-display">{formatTime(clampedCurrentTime)}</Text>
           <Slider.Root
-            value={[currentTime]}
-            max={duration}
+            value={[clampedCurrentTime]}
+            max={Math.max(duration, 0.1)} // 0除算を防ぐ
             step={0.1}
-            onValueChange={([value]) => onSeek(value)}
+            onValueChange={([value]) => {
+              setSliderValue(value);
+              if (!isDragging) {
+                onSeek(value);
+              }
+            }}
+            onPointerDown={() => setIsDragging(true)}
+            onPointerUp={() => {
+              setIsDragging(false);
+              onSeek(sliderValue);
+            }}
             className="seek-slider"
           >
             <Slider.Track className="seek-track">
@@ -63,7 +87,7 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
             </Slider.Track>
             <Slider.Thumb className="seek-thumb" />
           </Slider.Root>
-          <Text size="1">{formatTime(duration)}</Text>
+          <Text size="1" className="time-display">{formatTime(duration)}</Text>
         </Flex>
 
         {/* コントロールボタン */}
@@ -71,7 +95,8 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
           <IconButton
             size="2"
             variant="ghost"
-            onClick={() => onSeek(Math.max(0, currentTime - 5))}
+            onClick={() => onSeek(Math.max(0, clampedCurrentTime - 5))}
+            disabled={!duration}
           >
             <ArrowLeftIcon />
           </IconButton>
@@ -79,13 +104,15 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
             size="3"
             variant="soft"
             onClick={isPlaying ? onPause : onPlay}
+            disabled={!duration}
           >
             {isPlaying ? <PauseIcon /> : <PlayIcon />}
           </IconButton>
           <IconButton
             size="2"
             variant="ghost"
-            onClick={() => onSeek(Math.min(duration, currentTime + 5))}
+            onClick={() => onSeek(Math.min(duration, clampedCurrentTime + 5))}
+            disabled={!duration}
           >
             <ArrowRightIcon />
           </IconButton>
@@ -102,7 +129,6 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
             <Slider.Root
               value={[volume * 100]}
               max={100}
-              step={1}
               onValueChange={([value]) => onVolumeChange(value / 100)}
               className="volume-slider"
               aria-label="音量"
@@ -117,10 +143,10 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
           {/* ループ切り替え */}
           <IconButton
             size="2"
-            variant={loop ? "soft" : "ghost"}
+            variant="ghost"
             onClick={() => onLoopChange(!loop)}
           >
-            <LoopIcon />
+            <LoopIcon style={{ color: loop ? 'var(--accent-9)' : undefined }} />
           </IconButton>
         </Flex>
       </Flex>

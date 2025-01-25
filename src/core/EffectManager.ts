@@ -159,11 +159,26 @@ export class EffectManager implements IEffectManager {
    * 全エフェクトの状態を更新
    */
   updateAll(currentTime: number): void {
-    this.updateEffectVisibility(currentTime);
-    for (const effect of this.effects) {
-      if (effect.getConfig().visible) {
-        effect.update(currentTime);
+    if (!this.renderer) {
+      throw new AppError(
+        ErrorType.RENDERER_ERROR,
+        'Renderer is not set'
+      );
+    }
+
+    try {
+      this.updateEffectVisibility(currentTime);
+      for (const effect of this.effects) {
+        if (effect.getConfig().visible) {
+          effect.update(currentTime);
+        }
       }
+    } catch (error) {
+      console.error('エフェクト更新エラー:', error);
+      throw new AppError(
+        ErrorType.EffectError,
+        'Failed to update effects'
+      );
     }
   }
 

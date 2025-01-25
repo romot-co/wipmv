@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useMemo, useEffect } from 'react';
 import { Container, Flex, Box, Card, Section } from '@radix-ui/themes';
 import { PlaybackControls } from './ui/PlaybackControls';
 import { EffectList } from './ui/EffectList';
@@ -13,13 +13,10 @@ import { EffectBase } from './core/types/core';
 import { 
   EffectType,
   EffectConfig,
-  BackgroundEffectConfig,
-  TextEffectConfig,
-  WaveformEffectConfig,
-  WatermarkEffectConfig,
 } from './core/types/effect';
 import { AudioSource, VideoSettings } from './core/types/base';
-import { ProjectData } from './core/types/state';
+import debug from 'debug';
+import { Renderer } from './core/Renderer';
 
 // エフェクトのインポート
 import { BackgroundEffect } from './features/background/BackgroundEffect';
@@ -57,6 +54,8 @@ function createEffectByType(type: EffectType): EffectBase<EffectConfig> {
   }
 }
 
+const log = debug('app:App');
+
 export const App: React.FC = () => {
   const {
     phase,
@@ -83,24 +82,88 @@ export const App: React.FC = () => {
 
   // エフェクトマネージャー
   const manager = useMemo(() => {
-    console.log('App: EffectManager初期化');
+    log('App: EffectManager初期化');
     return new EffectManager();
   }, []);
+
+  // プレビューキャンバスのレンダラー設定
+  const handleRendererInit = useCallback((renderer: Renderer) => {
+    log('App: レンダラーを設定');
+    manager.setRenderer(renderer);
+  }, [manager]);
 
   // エフェクトマネージャーの初期化
   useEffect(() => {
     if (!manager || !effectState.effects.length) return;
 
-    console.log('App: 既存エフェクトの復元開始');
+    log('App: 既存エフェクトの復元開始');
     effectState.effects.forEach((effect: EffectBase<EffectConfig>) => {
+      // エフェクトを追加
       manager.addEffect(effect);
+      
+      // 音声ソースが必要なエフェクトの場合は設定
+      if (hasSetAudioSource(effect) && audioState.source) {
+        const audioSource = {
+          ...audioState.source,
+          waveformData: audioState.analysis?.waveformData || [],
+          frequencyData: audioState.analysis?.frequencyData?.map(data => 
+            data instanceof Uint8Array ? data : new Uint8Array(data.length)
+          ) || []
+        };
+        effect.setAudioSource(audioSource);
+      }
     });
-    console.log('App: 既存エフェクトの復元完了');
-  }, [manager, effectState.effects]);
+    log('App: 既存エフェクトの復元完了');
+  }, [manager, effectState.effects, audioState.source]);
+
+  // アニメーションループの設定
+  useEffect(() => {
+    if (!manager || phase.type === 'idle' || phase.type === 'loadingAudio') return;
+
+    let animationFrameId: number;
+    let lastTime = performance.now();
+
+    const animate = () => {
+      try {
+        const currentTime = performance.now();
+        const deltaTime = (currentTime - lastTime) / 1000;
+        lastTime = currentTime;
+
+        // エフェクトの状態を更新
+        manager.updateAll(audioState.currentTime);
+
+        // 次のフレームをリクエスト（エフェクトの更新後に設定）
+        animationFrameId = requestAnimationFrame(() => {
+          // エフェクトを描画（次のフレームで実行）
+          manager.renderAll(audioState.currentTime);
+          // 次のアニメーションフレームを予約
+          animationFrameId = requestAnimationFrame(animate);
+        });
+      } catch (error) {
+        console.error('アニメーションループエラー:', error);
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+        }
+      }
+    };
+
+    // アニメーションを開始
+    console.log('アニメーションループ開始');
+    animationFrameId = requestAnimationFrame(animate);
+
+    // クリーンアップ
+    return () => {
+      console.log('アニメーションループ停止');
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [manager, phase.type, audioState.currentTime]);
 
   // エフェクト追加
   const handleAddEffect = useCallback(async (type: EffectType) => {
     try {
+      log('エフェクト追加:', type);
       // エフェクトを作成
       const effect = createEffectByType(type);
       
@@ -110,6 +173,7 @@ export const App: React.FC = () => {
       // 選択状態にする
       selectEffect(effect.getId());
     } catch (error) {
+      log('エフェクト追加エラー:', error);
       if (error instanceof Error) {
         transitionTo({ type: 'error', error });
       } else {
@@ -219,20 +283,20 @@ export const App: React.FC = () => {
         <Container>
           <Section>
             <Flex direction="column" gap="4">
-              <Card className="upload-section">
-                <AudioUploader
-                  onFileSelect={handleAudioFileSelect}
-                  onError={(error: Error) => transitionTo({ type: 'error', error })}
-                />
-              </Card>
-
-              {phase.type !== 'idle' && (
+              {phase.type === 'idle' ? (
+                <Card className="upload-section">
+                  <AudioUploader
+                    onFileSelect={handleAudioFileSelect}
+                    onError={(error: Error) => transitionTo({ type: 'error', error })}
+                  />
+                </Card>
+              ) : (
                 <Box className="main-content">
                   <Card className="preview-section">
                     <PreviewCanvas
-                      manager={manager}
-                      width={projectState.currentProject?.videoSettings.width ?? 1280}
-                      height={projectState.currentProject?.videoSettings.height ?? 720}
+                      width={1280}
+                      height={720}
+                      onRendererInit={handleRendererInit}
                     />
                     <Box className="controls-section">
                       <PlaybackControls
@@ -250,58 +314,60 @@ export const App: React.FC = () => {
                     </Box>
                   </Card>
 
-                  <Card className="effects-panel">
-                    <Flex direction="column" gap="4">
-                      <EffectList
-                        effects={effectState.effects}
-                        selectedEffectId={selectedEffect?.getId() ?? null}
-                        onEffectSelect={(id) => selectEffect(id)}
-                        onEffectAdd={handleAddEffect}
-                        onEffectRemove={handleEffectDelete}
-                        onEffectMove={handleEffectMove}
-                        isLoading={phase.type === 'loadingAudio' || phase.type === 'analyzing'}
-                        disabled={phase.type === 'error'}
-                      />
-                      {selectedEffect && (
-                        <Box className="effect-settings-container">
-                          <EffectSettings
-                            effect={selectedEffect}
-                            onUpdate={(config) => handleEffectUpdate(selectedEffect.getId(), config)}
-                            duration={audioState.duration}
-                          />
-                        </Box>
-                      )}
-                    </Flex>
-                  </Card>
-
-                  <Card className="export-section">
-                    <ExportButton
-                      manager={manager}
-                      onError={(error: Error) => transitionTo({ type: 'error', error })}
-                      videoSettings={projectState.currentProject?.videoSettings ?? {
-                        width: 1280,
-                        height: 720,
-                        frameRate: 30,
-                        videoBitrate: 5000000,
-                        audioBitrate: 128000
-                      }}
-                      onSettingsChange={handleVideoSettingsUpdate}
-                      audioSource={audioState.source}
-                      onExportStart={() => {
-                        const settings = projectState.currentProject?.videoSettings ?? {
+                  <Box className="right-pane">
+                    <Card className="toolbar">
+                      <ExportButton
+                        manager={manager}
+                        onError={(error: Error) => transitionTo({ type: 'error', error })}
+                        videoSettings={projectState.currentProject?.videoSettings ?? {
                           width: 1280,
                           height: 720,
                           frameRate: 30,
                           videoBitrate: 5000000,
                           audioBitrate: 128000
-                        };
-                        startExport(settings);
-                      }}
-                      onExportComplete={() => console.log('エクスポート完了')}
-                      onExportError={(error: Error) => transitionTo({ type: 'error', error })}
-                      disabled={phase.type === 'error'}
-                    />
-                  </Card>
+                        }}
+                        onSettingsChange={handleVideoSettingsUpdate}
+                        audioSource={audioState.source}
+                        onExportStart={() => {
+                          const settings = projectState.currentProject?.videoSettings ?? {
+                            width: 1280,
+                            height: 720,
+                            frameRate: 30,
+                            videoBitrate: 5000000,
+                            audioBitrate: 128000
+                          };
+                          startExport(settings);
+                        }}
+                        onExportComplete={() => console.log('エクスポート完了')}
+                        onExportError={(error: Error) => transitionTo({ type: 'error', error })}
+                        disabled={phase.type === 'error'}
+                      />
+                    </Card>
+
+                    <Card className="effects-panel">
+                      <Flex direction="column" gap="4">
+                        <EffectList
+                          effects={effectState.effects}
+                          selectedEffectId={selectedEffect?.getId() ?? null}
+                          onEffectSelect={(id) => selectEffect(id)}
+                          onEffectAdd={handleAddEffect}
+                          onEffectRemove={handleEffectDelete}
+                          onEffectMove={handleEffectMove}
+                          isLoading={phase.type === 'loadingAudio' || phase.type === 'analyzing'}
+                          disabled={phase.type === 'error'}
+                        />
+                        {selectedEffect && (
+                          <Box className="effect-settings-container">
+                            <EffectSettings
+                              effect={selectedEffect}
+                              onUpdate={(config) => handleEffectUpdate(selectedEffect.getId(), config)}
+                              duration={audioState.duration}
+                            />
+                          </Box>
+                        )}
+                      </Flex>
+                    </Card>
+                  </Box>
                 </Box>
               )}
             </Flex>

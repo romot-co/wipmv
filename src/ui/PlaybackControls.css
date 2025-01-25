@@ -1,8 +1,6 @@
 .playback-controls {
+  padding: 1rem;
   width: 100%;
-  padding: 0.5rem;
-  background-color: var(--gray-2);
-  border-radius: var(--radius-3);
 }
 
 .playback-controls > div {
@@ -17,28 +15,26 @@
 /* シークバー */
 .seek-slider {
   position: relative;
-  flex: 1;
-  height: 20px;
+  display: flex;
+  align-items: center;
+  width: 100%;
   touch-action: none;
   user-select: none;
-  width: 100%;
 }
 
 .seek-track {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 3px;
+  position: relative;
+  flex-grow: 1;
   background-color: var(--gray-5);
-  border-radius: 9999px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
 }
 
 .seek-range {
   position: absolute;
-  height: 100%;
   background-color: var(--accent-9);
+  height: 100%;
 }
 
 .seek-thumb {
@@ -46,55 +42,62 @@
   width: 12px;
   height: 12px;
   background-color: white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   border-radius: 50%;
   transition: transform 0.2s;
 }
 
 .seek-thumb:hover {
   transform: scale(1.2);
-  background-color: var(--accent-9);
+}
+
+.seek-thumb:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--accent-3);
 }
 
 /* 音量スライダー */
 .volume-slider {
   position: relative;
+  display: flex;
+  align-items: center;
   width: 80px;
-  height: 20px;
   touch-action: none;
   user-select: none;
 }
 
 .volume-track {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 3px;
+  position: relative;
+  flex-grow: 1;
   background-color: var(--gray-5);
-  border-radius: 9999px;
+  height: 3px;
+  border-radius: 1.5px;
+  overflow: hidden;
 }
 
 .volume-range {
   position: absolute;
-  height: 100%;
   background-color: var(--accent-9);
+  height: 100%;
 }
 
 .volume-thumb {
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   background-color: white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   border-radius: 50%;
   transition: transform 0.2s;
 }
 
 .volume-thumb:hover {
   transform: scale(1.2);
-  background-color: var(--accent-9);
+}
+
+.volume-thumb:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-3);
 }
 
 /* ボタンのホバースタイル */

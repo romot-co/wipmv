@@ -90,15 +90,34 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
    * 音声ソースを設定
    */
   setAudioSource(source: AudioSource): void {
-    if (!source.waveformData) {
-      console.warn('波形エフェクト: 波形データが存在しません');
+    this.audioSource = source;
+    
+    // データの詳細な検証
+    const waveformDataValid = source.waveformData && 
+      Array.isArray(source.waveformData) && 
+      source.waveformData.length > 0 &&
+      source.waveformData[0] instanceof Float32Array;
+      
+    const frequencyDataValid = source.frequencyData && 
+      Array.isArray(source.frequencyData) && 
+      source.frequencyData.length > 0 &&
+      source.frequencyData[0] instanceof Float32Array;
+
+    if (!waveformDataValid || !source.waveformData) {
+      console.warn('波形エフェクト: 波形データが無効です', {
+        hasData: !!source.waveformData,
+        isArray: Array.isArray(source.waveformData),
+        length: source.waveformData?.length,
+        type: source.waveformData?.[0]?.constructor.name
+      });
       return;
     }
-    this.audioSource = source;
+
     console.log('波形エフェクト: 音声ソース設定完了', {
-      hasWaveformData: !!source.waveformData,
-      hasFrequencyData: !!source.frequencyData,
-      channels: source.waveformData.length
+      hasWaveformData: true,
+      hasFrequencyData: frequencyDataValid,
+      channels: source.waveformData.length,
+      samplesPerChannel: source.waveformData[0].length
     });
   }
 
@@ -106,8 +125,8 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
    * 現在時刻に応じて内部状態を更新
    */
   update(currentTime: number): void {
-    if (!this.audioSource?.waveformData) {
-      console.warn('波形エフェクト: 波形データが存在しないため更新をスキップします');
+    if (!this.audioSource?.waveformData || !Array.isArray(this.audioSource.waveformData) || this.audioSource.waveformData.length === 0) {
+      console.warn('波形エフェクト: 波形データが存在しないか、正しい形式ではありません');
       return;
     }
 
@@ -120,7 +139,12 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
 
     // データの更新
     const { windowSeconds, samplesPerSecond } = this.config;
-    const totalFrames = this.audioSource.waveformData[0].length;
+    const totalFrames = this.audioSource.waveformData[0]?.length || 0;
+    if (totalFrames === 0) {
+      console.warn('波形エフェクト: 波形データが空です');
+      return;
+    }
+
     const duration = this.audioSource.duration;
     const ratio = Math.max(0, Math.min(currentTime / duration, 1.0));
     const currentFrameIndex = Math.floor(ratio * (totalFrames - 1));
@@ -130,43 +154,43 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     const startIndex = Math.max(0, currentFrameIndex - halfWindow);
     const endIndex = Math.min(startIndex + windowSize, totalFrames);
 
-    // チャンネルモードに応じてデータを準備
     try {
+      // チャンネルモードに応じてデータを準備
       switch (this.config.channelMode) {
         case 'mono':
           this.currentWaveformData = [this.averageChannels(this.audioSource.waveformData, startIndex, endIndex)];
-          if (this.audioSource.frequencyData) {
+          if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
             this.currentFrequencyData = [this.averageChannels(this.audioSource.frequencyData, startIndex, endIndex)];
-          }
-          break;
-        case 'leftOnly':
-          this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
-          if (this.audioSource.frequencyData) {
-            this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
-          }
-          break;
-        case 'rightOnly':
-          if (this.audioSource.waveformData.length > 1) {
-            this.currentWaveformData = [this.processData(this.audioSource.waveformData[1].slice(startIndex, endIndex))];
-            if (this.audioSource.frequencyData) {
-              this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[1].slice(startIndex, endIndex))];
-            }
-          } else {
-            console.log('右チャンネルが存在しないため、左チャンネルを使用します');
-            this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
-            if (this.audioSource.frequencyData) {
-              this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
-            }
           }
           break;
         case 'stereo':
           this.currentWaveformData = this.audioSource.waveformData.map(channel => 
             this.processData(channel.slice(startIndex, endIndex))
           );
-          if (this.audioSource.frequencyData) {
+          if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
             this.currentFrequencyData = this.audioSource.frequencyData.map(channel =>
               this.processData(channel.slice(startIndex, endIndex))
             );
+          }
+          break;
+        case 'leftOnly':
+          this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
+          if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
+            this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
+          }
+          break;
+        case 'rightOnly':
+          if (this.audioSource.waveformData.length > 1) {
+            this.currentWaveformData = [this.processData(this.audioSource.waveformData[1].slice(startIndex, endIndex))];
+            if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
+              this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[1].slice(startIndex, endIndex))];
+            }
+          } else {
+            console.warn('右チャンネルが存在しないため、左チャンネルを使用します');
+            this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
+            if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
+              this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
+            }
           }
           break;
       }
@@ -174,7 +198,6 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
       console.error('波形データの更新中にエラーが発生しました:', error);
       this.currentWaveformData = null;
       this.currentFrequencyData = null;
-      return;
     }
 
     // デバッグログ
