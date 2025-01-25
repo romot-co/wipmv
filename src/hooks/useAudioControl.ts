@@ -113,13 +113,13 @@ export function useAudioControl(audioService: AudioPlaybackService) {
    */
   const stop = useCallback(async () => {
     try {
-      await audioService.pause(); // 一時停止
-      await audioService.seek(0); // 先頭にシーク
+      await audioService.pause(); // stopの代わりにpauseを使用
+      const currentTime = audioService.getCurrentTime();
       dispatch({
         type: 'SET_AUDIO',
         payload: {
           isPlaying: false,
-          currentTime: 0
+          currentTime // 現在の再生位置を保持
         }
       });
 

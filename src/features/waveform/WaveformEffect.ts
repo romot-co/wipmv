@@ -6,7 +6,6 @@ import { Color, AudioSource } from '../../core/types/base';
 /**
  * 波形エフェクト
  * - 音声波形の描画を担当
- * - currentTimeに応じて波形データをスライスして表示
  * - 波形表示と周波数表示の切り替えをサポート
  * - ステレオチャンネルの分割表示をサポート
  */
@@ -14,6 +13,7 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
   protected currentWaveformData: Float32Array[] | null = null;
   private currentFrequencyData: Float32Array[] | null = null;
   private animationController: AnimationController | null = null;
+  private lastCurrentTime: number = 0;
 
   /**
    * 線形補間を行うヘルパーメソッド
@@ -125,76 +125,63 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
    * 現在時刻に応じて内部状態を更新
    */
   update(currentTime: number): void {
-    if (!this.audioSource?.waveformData || !Array.isArray(this.audioSource.waveformData) || this.audioSource.waveformData.length === 0) {
-      return;
-    }
+    if (!this.audioSource) return;
 
-    // アニメーションの更新
-    if (this.config.animation && this.animationController) {
-      const { startTime = 0, endTime = this.audioSource.duration } = this.config;
-      const duration = endTime - startTime;
-      this.animationController.update(currentTime, startTime, duration);
-    }
-
-    // データの更新
-    const { windowSeconds, samplesPerSecond } = this.config;
-    const totalFrames = this.audioSource.waveformData[0]?.length || 0;
-    if (totalFrames === 0) {
-      return;
-    }
-
+    this.lastCurrentTime = currentTime;
     const duration = this.audioSource.duration;
-    const ratio = Math.max(0, Math.min(currentTime / duration, 1.0));
-    const currentFrameIndex = Math.floor(ratio * (totalFrames - 1));
-    
-    const windowSize = Math.floor(windowSeconds * samplesPerSecond * 2);
-    const halfWindow = Math.floor(windowSize / 2);
-    const startIndex = Math.max(0, currentFrameIndex - halfWindow);
-    const endIndex = Math.min(startIndex + windowSize, totalFrames);
+    const ratio = currentTime / duration;
 
-    try {
-      // チャンネルモードに応じてデータを準備
-      switch (this.config.channelMode) {
-        case 'mono':
-          this.currentWaveformData = [this.averageChannels(this.audioSource.waveformData, startIndex, endIndex)];
-          if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
-            this.currentFrequencyData = [this.averageChannels(this.audioSource.frequencyData, startIndex, endIndex)];
+    if (this.config.displayMode === 'frequency' && this.audioSource.frequencyData) {
+      // 周波数表示モード
+      const totalFrames = this.audioSource.frequencyData.length;
+      const frameIndex = Math.floor(ratio * (totalFrames - 1));
+
+      if (frameIndex >= 0 && frameIndex < totalFrames) {
+        // 現在のフレームの周波数データを取得して正規化
+        this.currentFrequencyData = this.audioSource.frequencyData.map(channel => {
+          const uint8Array = channel as Uint8Array;
+          const float32Data = new Float32Array(uint8Array.length);
+          for (let i = 0; i < uint8Array.length; i++) {
+            float32Data[i] = uint8Array[i] / 255;
           }
-          break;
-        case 'stereo':
-          this.currentWaveformData = this.audioSource.waveformData.map(channel => 
-            this.processData(channel.slice(startIndex, endIndex))
-          );
-          if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
-            this.currentFrequencyData = this.audioSource.frequencyData.map(channel =>
-              this.processData(channel.slice(startIndex, endIndex))
-            );
-          }
-          break;
-        case 'leftOnly':
-          this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
-          if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
-            this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
-          }
-          break;
-        case 'rightOnly':
-          if (this.audioSource.waveformData.length > 1) {
-            this.currentWaveformData = [this.processData(this.audioSource.waveformData[1].slice(startIndex, endIndex))];
-            if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
-              this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[1].slice(startIndex, endIndex))];
-            }
-          } else {
-            this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
-            if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
-              this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
-            }
-          }
-          break;
+          return float32Data;
+        });
+      } else {
+        this.currentFrequencyData = null;
       }
-    } catch (error) {
-      console.error('波形データの更新中にエラーが発生しました:', error);
-      this.currentWaveformData = null;
-      this.currentFrequencyData = null;
+    } else if (this.config.displayMode === 'waveform' && this.audioSource.waveformData) {
+      // 波形表示モード
+      const waveformData = this.audioSource.waveformData;
+      const totalSamples = waveformData[0].length;
+      const sampleRate = totalSamples / duration;
+      
+      // windowSecondsをサンプル数に変換（デフォルト2秒）
+      const windowSize = Math.floor((this.config.windowSeconds || 2) * sampleRate);
+      const currentSample = Math.floor(ratio * totalSamples);
+      
+      // 表示範囲の計算（現在位置を中心に）
+      const half = Math.floor(windowSize / 2);
+      let start = currentSample - half;
+      let end = start + windowSize;
+      
+      // 範囲の調整
+      if (start < 0) {
+        start = 0;
+        end = Math.min(windowSize, totalSamples);
+      }
+      if (end > totalSamples) {
+        end = totalSamples;
+        start = Math.max(0, end - windowSize);
+      }
+      
+      // データの切り出し
+      this.currentWaveformData = waveformData.map(channel => channel.slice(start, end));
+    }
+
+    // アニメーション更新
+    if (this.config.animation && this.animationController) {
+      const { startTime = 0, endTime = duration } = this.config;
+      this.animationController.update(currentTime, startTime, endTime - startTime);
     }
   }
 
@@ -405,41 +392,23 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     if (!this.currentFrequencyData) return;
 
     const { width, height } = ctx.canvas;
-    const { barWidth, barGap, sensitivity, color, mirror, smoothingFactor } = options;
+    const { barWidth, barGap, sensitivity, color, smoothingFactor } = options;
+    const centerY = height / 2;
 
-    // 描画色の設定
     ctx.fillStyle = this.colorToString(color);
 
-    // データの平滑化
-    const smoothedData = this.smoothData(this.currentFrequencyData[0], smoothingFactor);
-
-    // バーの描画
     const barCount = Math.floor(width / (barWidth + barGap));
-    const step = Math.floor(smoothedData.length / barCount);
+    const data = this.currentFrequencyData[0];
+    const step = data.length / barCount;
 
     for (let i = 0; i < barCount; i++) {
-      const value = smoothedData[i * step] * sensitivity;
+      const index = Math.floor(i * step);
+      const value = data[index] * sensitivity;
+      const barHeight = value * (height / 2);
       const x = i * (barWidth + barGap);
-      const barHeight = value * height;
-
-      if (mirror.vertical) {
-        const y = (height - barHeight) / 2;
-        ctx.fillRect(x, y, barWidth, barHeight);
-      } else {
-        const y = height - barHeight;
-        ctx.fillRect(x, y, barWidth, barHeight);
-      }
-
-      if (mirror.horizontal) {
-        const mirrorX = width - x - barWidth;
-        if (mirror.vertical) {
-          const y = (height - barHeight) / 2;
-          ctx.fillRect(mirrorX, y, barWidth, barHeight);
-        } else {
-          const y = height - barHeight;
-          ctx.fillRect(mirrorX, y, barWidth, barHeight);
-        }
-      }
+      
+      // 中心線から上下対称に描画
+      ctx.fillRect(x, centerY - barHeight, barWidth, barHeight * 2);
     }
   }
 
@@ -455,33 +424,19 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     sensitivity: number;
     mirror: { vertical: boolean; horizontal: boolean };
   }): void {
-    const { width, height, yOffset, barWidth, barGap, sensitivity, mirror } = options;
+    const { width, height, yOffset, barWidth, barGap, sensitivity } = options;
+    const centerY = yOffset + height / 2;
     const barCount = Math.floor(width / (barWidth + barGap));
-    const step = Math.floor(data.length / barCount);
+    const step = data.length / barCount;
 
     for (let i = 0; i < barCount; i++) {
-      const value = Math.abs(data[i * step]) * sensitivity;
+      const index = Math.floor(i * step);
+      const value = data[index] * sensitivity;
+      const barHeight = Math.abs(value) * (height / 2);
       const x = i * (barWidth + barGap);
-      const barHeight = value * height;
-
-      if (mirror.vertical) {
-        const y = yOffset + (height - barHeight) / 2;
-        ctx.fillRect(x, y, barWidth, barHeight);
-      } else {
-        const y = yOffset + height - barHeight;
-        ctx.fillRect(x, y, barWidth, barHeight);
-      }
-
-      if (mirror.horizontal) {
-        const mirrorX = width - x - barWidth;
-        if (mirror.vertical) {
-          const y = yOffset + (height - barHeight) / 2;
-          ctx.fillRect(mirrorX, y, barWidth, barHeight);
-        } else {
-          const y = yOffset + height - barHeight;
-          ctx.fillRect(mirrorX, y, barWidth, barHeight);
-        }
-      }
+      
+      // 中心線から上下対称に描画
+      ctx.fillRect(x, centerY - barHeight, barWidth, barHeight * 2);
     }
   }
 
@@ -495,42 +450,43 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     sensitivity: number;
     mirror: { vertical: boolean; horizontal: boolean };
   }): void {
-    const { width, height, yOffset, sensitivity, mirror } = options;
-    const step = Math.floor(data.length / width);
+    const { width, height, yOffset, sensitivity } = options;
+    const centerY = yOffset + height / 2;
+    const step = data.length / width;
 
     ctx.beginPath();
     for (let i = 0; i < width; i++) {
-      const value = data[i * step] * sensitivity;
-      const x = i;
-      const y = mirror.vertical
-        ? yOffset + height / 2 + (value * height) / 2
-        : yOffset + height - (value * height);
-
+      const index = Math.floor(i * step);
+      const value = data[index] * sensitivity;
+      const y = centerY - (value * height / 2);
+      
       if (i === 0) {
-        ctx.moveTo(x, y);
+        ctx.moveTo(i, y);
       } else {
-        ctx.lineTo(x, y);
+        ctx.lineTo(i, y);
       }
     }
     ctx.stroke();
 
-    if (mirror.horizontal) {
+    // 再生位置インジケーター（ヘッドライン）を描画
+    const ratio = this.getCurrentPlaybackRatio();
+    if (ratio !== null) {
+      const xHead = ratio * width;
+      
+      ctx.save();
+      ctx.strokeStyle = '#ff0000';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      for (let i = 0; i < width; i++) {
-        const value = data[i * step] * sensitivity;
-        const x = width - i;
-        const y = mirror.vertical
-          ? yOffset + height / 2 + (value * height) / 2
-          : yOffset + height - (value * height);
-
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-      }
+      ctx.moveTo(xHead, yOffset);
+      ctx.lineTo(xHead, yOffset + height);
       ctx.stroke();
+      ctx.restore();
     }
+  }
+
+  private getCurrentPlaybackRatio(): number | null {
+    if (!this.audioSource?.duration) return null;
+    return this.lastCurrentTime / this.audioSource.duration;
   }
 
   /**
@@ -547,16 +503,16 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     const centerX = width / 2;
     const centerY = height / 2;
     const radius = Math.min(width, height) / 4;
-    const step = Math.floor(data.length / 360);
+    const angleStep = (2 * Math.PI) / data.length;
 
     ctx.beginPath();
-    for (let i = 0; i < 360; i++) {
-      const value = data[i * step] * sensitivity;
-      const angle = (i * Math.PI) / 180;
+    for (let i = 0; i < data.length; i++) {
+      const value = data[i] * sensitivity;
       const r = radius + value * radius;
+      const angle = i * angleStep;
       const x = centerX + r * Math.cos(angle);
       const y = centerY + r * Math.sin(angle);
-
+      
       if (i === 0) {
         ctx.moveTo(x, y);
       } else {

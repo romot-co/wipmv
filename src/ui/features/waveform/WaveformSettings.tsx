@@ -74,15 +74,13 @@ export const WaveformSettings = memo<WaveformSettingsProps>(({
           </Text>
           <Select.Root
             value={config.channelMode || 'mono'}
-            onValueChange={(value) => onChange({ channelMode: value as 'mono' | 'stereo' | 'leftOnly' | 'rightOnly' })}
+            onValueChange={(value) => onChange({ channelMode: value as 'mono' | 'stereo' })}
             disabled={disabled}
           >
             <Select.Trigger />
             <Select.Content>
               <Select.Item value="mono">モノラル</Select.Item>
               <Select.Item value="stereo">ステレオ</Select.Item>
-              <Select.Item value="leftOnly">左チャンネルのみ</Select.Item>
-              <Select.Item value="rightOnly">右チャンネルのみ</Select.Item>
             </Select.Content>
           </Select.Root>
         </Box>

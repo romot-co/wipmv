@@ -76,7 +76,7 @@ export interface WaveformEffectConfig extends BaseEffectConfig {
   color: string;
   smoothingFactor: number;
   mirror: { vertical: boolean; horizontal: boolean };
-  channelMode: 'mono' | 'stereo' | 'leftOnly' | 'rightOnly';
+  channelMode: 'mono' | 'stereo';
   windowSeconds: number;
   samplesPerSecond: number;
   useColorBands?: boolean;

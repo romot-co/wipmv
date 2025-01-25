@@ -84,56 +84,76 @@ export const App: React.FC = () => {
   const currentTimeRef = useRef(0);
   const isLoopRunningRef = useRef(false);
   const lastStateRef = useRef({ currentTime: 0, isPlaying: false });
+  const lastLogTimeRef = useRef<{ [key: string]: number }>({});
+
+  // ログ出力を間引くヘルパー関数
+  const shouldLog = (key: string, intervalMs: number = 1000): boolean => {
+    const now = performance.now();
+    const lastTime = lastLogTimeRef.current[key] || 0;
+    if (now - lastTime > intervalMs) {
+      lastLogTimeRef.current[key] = now;
+      return true;
+    }
+    return false;
+  };
 
   // エフェクトマネージャー
   const manager = useMemo(() => {
-    log('App: EffectManager初期化');
+    if (shouldLog('manager-init')) {
+      log('App: EffectManager初期化');
+    }
     return new EffectManager();
   }, []);
 
   // プレビューキャンバスのレンダラー設定
   const handleRendererInit = useCallback((renderer: Renderer) => {
-    log('App: レンダラーを設定');
+    if (shouldLog('renderer-init')) {
+      log('App: レンダラーを設定');
+    }
     manager.setRenderer(renderer);
   }, [manager]);
 
   // アニメーションループの制御
   useEffect(() => {
     let rafId: number;
+    let lastLogTime = 0;
+    const LOG_INTERVAL = 5000; // ログ出力の間隔を5秒に延長
     
     const animate = () => {
       if (!isLoopRunningRef.current) return;
       
       try {
-        // AudioPlaybackServiceから直接currentTimeを取得
         const currentTime = services.audioService.playback.getCurrentTime();
         
-        // manager と renderer が存在する場合は更新
         if (manager && manager.getRenderer()) {
-          // 状態が変化した時のみログを出力
-          if (lastStateRef.current.currentTime !== currentTime || 
-              lastStateRef.current.isPlaying !== audioState.isPlaying) {
-            console.log('アニメーションフレーム詳細:', {
-              currentTime,
-              phase: phase.type,
-              isPlaying: audioState.isPlaying,
-              hasRenderer: true,
-              effectCount: manager.getEffects().length,
-              isLoopRunning: isLoopRunningRef.current
-            });
+          const now = performance.now();
+          
+          // 状態が大きく変化した時のみログを出力
+          if ((Math.abs(lastStateRef.current.currentTime - currentTime) > 1.0 || 
+               lastStateRef.current.isPlaying !== audioState.isPlaying) &&
+              now - lastLogTime > LOG_INTERVAL) {
+            if (shouldLog('animation-frame')) {
+              console.log('アニメーションフレーム詳細:', {
+                currentTime,
+                phase: phase.type,
+                isPlaying: audioState.isPlaying,
+                hasRenderer: true,
+                effectCount: manager.getEffects().length,
+                isLoopRunning: isLoopRunningRef.current
+              });
+            }
             
             lastStateRef.current = {
               currentTime,
               isPlaying: audioState.isPlaying
             };
+            lastLogTime = now;
           }
 
-          // エフェクトを更新して描画
           manager.updateAll(currentTime);
           manager.renderAll(currentTime);
           
-          // 状態を更新
-          if (currentTime !== audioState.currentTime) {
+          if (Math.abs(currentTime - audioState.currentTime) > 0.01) {
             dispatch({
               type: 'SET_AUDIO',
               payload: {
@@ -150,46 +170,56 @@ export const App: React.FC = () => {
       }
     };
 
-    // manager と renderer が存在する場合はループを開始
     if (manager && manager.getRenderer() && !isLoopRunningRef.current) {
-      console.log('アニメーションループ開始:', {
-        phase: phase.type,
-        currentTime: audioState.currentTime,
-        hasManager: true,
-        hasRenderer: true
-      });
+      if (shouldLog('animation-loop')) {
+        console.log('アニメーションループ開始:', {
+          phase: phase.type,
+          currentTime: audioState.currentTime,
+          hasManager: true,
+          hasRenderer: true
+        });
+      }
       isLoopRunningRef.current = true;
       rafId = requestAnimationFrame(animate);
     }
 
     return () => {
       if (isLoopRunningRef.current) {
-        console.log('アニメーションループ停止');
+        if (shouldLog('animation-loop')) {
+          console.log('アニメーションループ停止');
+        }
         isLoopRunningRef.current = false;
         cancelAnimationFrame(rafId);
       }
     };
-  }, [manager, services, audioState.currentTime, audioState.isPlaying, phase.type, dispatch]);
+  }, [manager, services, phase.type, dispatch]);
 
-  // audioStateの変更を監視
+  // audioStateの変更を監視（ログ出力を間引く）
+  const lastAudioStateLogRef = useRef(0);
   useEffect(() => {
-    console.log('audioState更新:', {
-      currentTime: audioState.currentTime,
-      isPlaying: audioState.isPlaying,
-      phase: phase.type
-    });
+    const now = performance.now();
+    if (now - lastAudioStateLogRef.current > 1000) {
+      console.log('audioState更新:', {
+        currentTime: audioState.currentTime,
+        isPlaying: audioState.isPlaying,
+        phase: phase.type
+      });
+      lastAudioStateLogRef.current = now;
+    }
   }, [audioState.currentTime, audioState.isPlaying, phase.type]);
 
   // エフェクトマネージャーの初期化
   useEffect(() => {
     if (!manager || !effectState.effects.length) return;
 
-    log('App: 既存エフェクトの復元開始');
+    if (shouldLog('effect-restore')) {
+      log('App: 既存エフェクトの復元開始');
+    }
+
+    // 既存のエフェクトを復元
     effectState.effects.forEach((effect: EffectBase<EffectConfig>) => {
-      // エフェクトを追加
       manager.addEffect(effect);
       
-      // 音声ソースが必要なエフェクトの場合は設定
       if (hasSetAudioSource(effect) && audioState.source) {
         const audioSource = {
           ...audioState.source,
@@ -200,29 +230,28 @@ export const App: React.FC = () => {
         };
         effect.setAudioSource(audioSource);
       }
-
-      // 初期描画を実行
-      try {
-        manager.updateAll(audioState.currentTime);
-        manager.renderAll(audioState.currentTime);
-      } catch (error) {
-        console.error('エフェクト初期描画エラー:', error);
-      }
     });
-    log('App: 既存エフェクトの復元完了');
-  }, [manager, effectState.effects, audioState.source, audioState.currentTime]);
+
+    try {
+      manager.updateAll(0);
+      manager.renderAll(0);
+    } catch (error) {
+      console.error('エフェクト初期描画エラー:', error);
+    }
+
+    if (shouldLog('effect-restore')) {
+      log('App: 既存エフェクトの復元完了');
+    }
+  }, [manager, effectState.effects]);
 
   // エフェクト追加
   const handleAddEffect = useCallback(async (type: EffectType) => {
     try {
-      log('エフェクト追加:', type);
-      // エフェクトを作成
+      if (shouldLog('effect-add')) {
+        log('エフェクト追加:', type);
+      }
       const effect = createEffectByType(type);
-      
-      // エフェクトを追加
       await addEffect(effect);
-      
-      // 選択状態にする
       selectEffect(effect.getId());
     } catch (error) {
       log('エフェクト追加エラー:', error);
