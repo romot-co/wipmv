@@ -85,11 +85,22 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
           );
         }
 
-        // 現在時刻を計算
-        const currentTime = frameIndex / videoSettings.frameRate;
-
-        // フレームをレンダリング
+        // 現在時刻を計算（秒単位）
+        const currentTime = (frameIndex / videoSettings.frameRate);
+        
+        // エフェクトの状態を更新してからレンダリング
+        manager.updateAll(currentTime);
         manager.renderExportFrame(canvas, currentTime);
+
+        // デバッグ用ログ
+        if (frameIndex % 10 === 0) {  // 10フレームごとにログ出力
+          console.log('フレームエクスポート:', {
+            frameIndex,
+            currentTime,
+            totalFrames,
+            effectCount: manager.getEffects().length
+          });
+        }
 
         // 1フレーム分の映像エンコード
         await encoder.encodeVideoFrame(canvas, frameIndex);

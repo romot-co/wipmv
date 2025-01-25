@@ -86,4 +86,32 @@ export interface Renderer extends Disposable {
   getScale(): number;
   isPreview(): boolean;
   getCanvas(): HTMLCanvasElement;
+}
+
+/**
+ * エクスポートボタンのプロパティ
+ */
+export interface ExportButtonProps {
+  manager: EffectManager | null;
+  onError: (error: Error) => void;
+  onProgress?: (progress: number) => void;
+  videoSettings: {
+    width: number;
+    height: number;
+    frameRate: number;
+    videoBitrate: number;
+    audioBitrate: number;
+  };
+  onSettingsChange: (settings: {
+    width: number;
+    height: number;
+    frameRate: number;
+    videoBitrate: number;
+    audioBitrate: number;
+  }) => void;
+  audioSource: AudioSource | null;
+  onExportStart?: () => void;
+  onExportComplete?: () => void;
+  onExportError?: (error: Error) => void;
+  disabled?: boolean;
 } 

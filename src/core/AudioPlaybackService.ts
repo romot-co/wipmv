@@ -55,7 +55,6 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   private duration = 0;
   private volume = 1;
   private loop = false;
-  private stateUpdateTimer: number | null = null;
 
   private constructor() {
     this.stateManager = new PlaybackStateManager();
@@ -138,44 +137,29 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   }
 
   public play(): void {
-    if (!this.audioContext || !this.audioBuffer || !this.gainNode) return;
+    if (this.isPlaying || !this.audioContext) return;
+    
+    // 再生開始時のオフセットを設定
+    this.startTime = this.audioContext.currentTime;
+    this.offset = this.pausedTime;
+
+    if (!this.audioBuffer || !this.gainNode) return;
 
     console.log('再生開始:', {
       duration: this.audioBuffer.duration,
       currentTime: this.getCurrentTime(),
       offset: this.offset,
-      loop: this.loop
+      loop: this.loop,
+      pausedTime: this.pausedTime
     });
 
     this.isPlaying = true;
-    this.startTime = this.audioContext.currentTime;
     this.duration = this.audioBuffer.duration;
 
-    this.sourceNode = this.audioContext.createBufferSource();
-    this.sourceNode.buffer = this.audioBuffer;
-    this.sourceNode.connect(this.gainNode);
-    this.sourceNode.loop = this.loop;
+    this.initAudioSource();
     
-    this.sourceNode.onended = () => {
-      console.log('再生終了イベント:', {
-        loop: this.loop,
-        currentTime: this.getCurrentTime(),
-        duration: this.duration,
-        offset: this.offset
-      });
-
-      if (this.loop && this.audioContext) {
-        this.offset = 0;
-        this.startTime = this.audioContext.currentTime;
-        this.play();
-      } else {
-        this.isPlaying = false;
-        this.offset = 0;
-        this.updatePlaybackState();
-      }
-    };
-
-    this.sourceNode.start(0, this.offset);
+    // オフセット位置から再生開始
+    this.sourceNode?.start(0, this.offset);
     
     this.stateManager.update({
       currentTime: this.offset,
@@ -189,13 +173,13 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   }
 
   public pause(): void {
-    if (this.sourceNode) {
-      this.sourceNode.stop();
-      this.sourceNode.disconnect();
-      this.sourceNode = null;
-    }
-    this.pausedTime = this.getCurrentTime();
-    this.stateManager.update({ isPlaying: false });
+    if (!this.isPlaying || !this.audioContext || !this.sourceNode) return;
+    this.sourceNode.stop();
+    this.isPlaying = false;
+    const currentTime = this.getCurrentTime();
+    this.offset = currentTime;
+    this.pausedTime = currentTime;
+    this.updatePlaybackState();
   }
 
   public stop(): void {
@@ -236,10 +220,33 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
       // ループ再生時の位置調整
       if (this.loop && currentTime >= this.audioBuffer.duration) {
         currentTime = currentTime % this.audioBuffer.duration;
+        // ループ時のオフセットを更新
+        this.offset = currentTime;
+        this.startTime = this.audioContext.currentTime;
       } else if (!this.loop && currentTime >= this.audioBuffer.duration) {
         currentTime = this.audioBuffer.duration;
         this.isPlaying = false;
+        this.offset = 0;
+        this.pausedTime = 0;
+        
+        // 再生終了時の状態更新
+        this.stateManager.update({
+          currentTime: this.audioBuffer.duration,
+          isPlaying: false
+        });
       }
+      
+      console.log('getCurrentTime詳細:', {
+        elapsed,
+        currentTime,
+        offset: this.offset,
+        audioContextTime: this.audioContext.currentTime,
+        startTime: this.startTime,
+        duration: this.audioBuffer.duration,
+        isPlaying: this.isPlaying,
+        loop: this.loop,
+        pausedTime: this.pausedTime
+      });
       
       return Math.min(currentTime, this.audioBuffer.duration);
     }

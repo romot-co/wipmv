@@ -80,8 +80,10 @@ export const App: React.FC = () => {
     dispatch,
     services
   } = useApp();
+
   const currentTimeRef = useRef(0);
   const isLoopRunningRef = useRef(false);
+  const lastStateRef = useRef({ currentTime: 0, isPlaying: false });
 
   // エフェクトマネージャー
   const manager = useMemo(() => {
@@ -104,25 +106,41 @@ export const App: React.FC = () => {
       
       try {
         // AudioPlaybackServiceから直接currentTimeを取得
-        const currentTime = audioState.source ? services.audioService.playback.getCurrentTime() : 0;
+        const currentTime = services.audioService.playback.getCurrentTime();
         
-        // 再生中またはシーク時に更新
+        // manager と renderer が存在する場合は更新
         if (manager && manager.getRenderer()) {
-          console.log('アニメーションフレーム詳細:', {
-            currentTime,
-            phase: phase.type,
-            isPlaying: audioState.isPlaying,
-            hasRenderer: true,
-            effectCount: manager.getEffects().length,
-            isLoopRunning: isLoopRunningRef.current,
-            duration: audioState.duration,
-            audioBuffer: !!audioState.source?.buffer,
-            bufferDuration: audioState.source?.buffer?.duration
-          });
+          // 状態が変化した時のみログを出力
+          if (lastStateRef.current.currentTime !== currentTime || 
+              lastStateRef.current.isPlaying !== audioState.isPlaying) {
+            console.log('アニメーションフレーム詳細:', {
+              currentTime,
+              phase: phase.type,
+              isPlaying: audioState.isPlaying,
+              hasRenderer: true,
+              effectCount: manager.getEffects().length,
+              isLoopRunning: isLoopRunningRef.current
+            });
+            
+            lastStateRef.current = {
+              currentTime,
+              isPlaying: audioState.isPlaying
+            };
+          }
 
-          // 現在時刻でエフェクトを更新
+          // エフェクトを更新して描画
           manager.updateAll(currentTime);
           manager.renderAll(currentTime);
+          
+          // 状態を更新
+          if (currentTime !== audioState.currentTime) {
+            dispatch({
+              type: 'SET_AUDIO',
+              payload: {
+                currentTime
+              }
+            });
+          }
         }
         
         rafId = requestAnimationFrame(animate);
@@ -132,43 +150,26 @@ export const App: React.FC = () => {
       }
     };
 
-    const startLoop = () => {
-      if (!isLoopRunningRef.current && manager && manager.getRenderer()) {
-        console.log('アニメーションループ開始:', {
-          phase: phase.type,
-          currentTime: audioState.currentTime,
-          isPlaying: audioState.isPlaying,
-          hasManager: true,
-          hasRenderer: true
-        });
-        isLoopRunningRef.current = true;
-        rafId = requestAnimationFrame(animate);
-      }
-    };
+    // manager と renderer が存在する場合はループを開始
+    if (manager && manager.getRenderer() && !isLoopRunningRef.current) {
+      console.log('アニメーションループ開始:', {
+        phase: phase.type,
+        currentTime: audioState.currentTime,
+        hasManager: true,
+        hasRenderer: true
+      });
+      isLoopRunningRef.current = true;
+      rafId = requestAnimationFrame(animate);
+    }
 
-    const stopLoop = () => {
+    return () => {
       if (isLoopRunningRef.current) {
-        console.log('アニメーションループ停止:', {
-          phase: phase.type,
-          currentTime: audioState.currentTime,
-          isPlaying: audioState.isPlaying
-        });
+        console.log('アニメーションループ停止');
         isLoopRunningRef.current = false;
         cancelAnimationFrame(rafId);
       }
     };
-
-    // 再生中またはシーク時にループを開始
-    if ((audioState.isPlaying || phase.type === 'playing') && manager && manager.getRenderer()) {
-      startLoop();
-    } else {
-      stopLoop();
-    }
-
-    return () => {
-      stopLoop();
-    };
-  }, [manager, phase.type, audioState.isPlaying, audioState.currentTime, audioState.source, services]);
+  }, [manager, services, audioState.currentTime, audioState.isPlaying, phase.type, dispatch]);
 
   // audioStateの変更を監視
   useEffect(() => {

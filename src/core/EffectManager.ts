@@ -148,15 +148,30 @@ export class EffectManager implements IEffectManager {
     for (const effect of this.effects) {
       const config = effect.getConfig();
       
-      // デフォルトで表示状態にする
-      config.visible = true;
+      // 開始時間と終了時間のチェック
+      const startTime = config.startTime ?? 0;
+      const endTime = (config.endTime === 0 || config.endTime === undefined) ? Infinity : config.endTime;
       
-      // 開始時間と終了時間が設定されている場合のみ、時間による表示制御を行う
-      if (config.startTime !== undefined || config.endTime !== undefined) {
-        const startTime = config.startTime ?? 0;
-        const endTime = config.endTime ?? Infinity;
-        config.visible = currentTime >= startTime && currentTime <= endTime;
+      // 表示状態を更新
+      const isVisible = currentTime >= startTime && currentTime <= endTime;
+      
+      // 表示状態が変化した時のみログを出力
+      if (config.visible !== isVisible) {
+        console.log('エフェクト表示状態更新:', {
+          effectId: effect.getId(),
+          currentTime,
+          startTime,
+          endTime,
+          visible: isVisible,
+          previousVisible: config.visible
+        });
       }
+      
+      // 設定を更新
+      effect.updateConfig({
+        ...config,
+        visible: isVisible
+      });
     }
   }
 
@@ -164,28 +179,27 @@ export class EffectManager implements IEffectManager {
    * 全エフェクトの状態を更新
    */
   updateAll(currentTime: number): void {
-    if (!this.renderer) return;
+    if (!this.renderer) {
+      console.warn('レンダラーが設定されていません');
+      return;
+    }
 
     // エフェクトの表示状態を更新
-    this.effects.forEach(effect => {
-      const config = effect.getConfig();
-      const startTime = config.startTime ?? 0;
-      const endTime = config.endTime ?? Infinity;
-      
-      // デフォルトで表示
-      config.visible = true;
-      
-      // 時間範囲が指定されている場合のみ、表示/非表示を切り替え
-      if (startTime !== 0 || endTime !== Infinity) {
-        config.visible = currentTime >= startTime && currentTime <= endTime;
-      }
-      
-      effect.updateConfig(config);
-    });
+    this.updateEffectVisibility(currentTime);
 
     // エフェクトを更新
     this.effects.forEach(effect => {
-      effect.update(currentTime);
+      const config = effect.getConfig();
+      if (config.visible) {
+        try {
+          effect.update(currentTime);
+        } catch (error) {
+          console.error('エフェクト更新エラー:', {
+            effectId: effect.getId(),
+            error
+          });
+        }
+      }
     });
   }
 
@@ -209,24 +223,28 @@ export class EffectManager implements IEffectManager {
       }
 
       // 表示状態のエフェクトのみ描画
+      let hasVisibleEffects = false;
       for (const effect of this.effects) {
-        if (effect.getConfig().visible) {
+        const config = effect.getConfig();
+        if (config.visible) {
+          hasVisibleEffects = true;
           try {
             effect.render(context);
           } catch (error) {
-            console.error('エフェクト描画エラー:', error);
-            // 個別のエフェクトのエラーは無視して続行
+            console.error('エフェクト描画エラー:', {
+              effectId: effect.getId(),
+              error
+            });
           }
         }
       }
 
-      // メインキャンバスに転送（外部コンテキストが指定されていない場合のみ）
+      // メインキャンバスに転送
       if (!ctx && this.renderer) {
         this.renderer.drawToMain();
       }
     } catch (error) {
       console.error('renderAllエラー:', error);
-      // エラーを投げずに続行
     }
   }
 
