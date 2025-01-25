@@ -49,6 +49,20 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
     }
   }, [currentTime, isDragging]);
 
+  // 再生状態が変更されたときの処理を追加
+  useEffect(() => {
+    if (isPlaying) {
+      // 再生中は定期的に更新
+      const intervalId = setInterval(() => {
+        if (!isDragging) {
+          setSliderValue(currentTime);
+        }
+      }, 16.67); // 約60fps
+
+      return () => clearInterval(intervalId);
+    }
+  }, [isPlaying, currentTime, isDragging]);
+
   // 時間表示のフォーマット
   const formatTime = (time: number): string => {
     const minutes = Math.floor(time / 60);
@@ -71,14 +85,16 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
             step={0.1}
             onValueChange={([value]) => {
               setSliderValue(value);
+              // ドラッグ中は更新を抑制
               if (!isDragging) {
                 onSeek(value);
               }
             }}
             onPointerDown={() => setIsDragging(true)}
             onPointerUp={() => {
-              setIsDragging(false);
+              // 先にシーク処理を実行してから、ドラッグ状態を解除
               onSeek(sliderValue);
+              setIsDragging(false);
             }}
             className="seek-slider"
           >

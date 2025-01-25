@@ -27,6 +27,7 @@ function validatePhaseTransition(current: AppPhase['type'], next: AppPhase['type
 
 type AppContextType = AppState & AppOperations & {
   dispatch: (action: AppAction) => void;
+  services: AppServices;
 };
 
 type AppAction = 
@@ -458,7 +459,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const value: AppContextType = {
     ...state,
     ...operations,
-    dispatch
+    dispatch,
+    services
   };
 
   return (

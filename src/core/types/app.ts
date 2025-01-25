@@ -135,4 +135,5 @@ export type AppAction =
 
 export type AppContextType = AppState & AppOperations & {
   dispatch: (action: AppAction) => void;
+  services: AppServices;
 }; 

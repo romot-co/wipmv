@@ -126,7 +126,6 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
    */
   update(currentTime: number): void {
     if (!this.audioSource?.waveformData || !Array.isArray(this.audioSource.waveformData) || this.audioSource.waveformData.length === 0) {
-      console.warn('波形エフェクト: 波形データが存在しないか、正しい形式ではありません');
       return;
     }
 
@@ -141,7 +140,6 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     const { windowSeconds, samplesPerSecond } = this.config;
     const totalFrames = this.audioSource.waveformData[0]?.length || 0;
     if (totalFrames === 0) {
-      console.warn('波形エフェクト: 波形データが空です');
       return;
     }
 
@@ -186,7 +184,6 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
               this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[1].slice(startIndex, endIndex))];
             }
           } else {
-            console.warn('右チャンネルが存在しないため、左チャンネルを使用します');
             this.currentWaveformData = [this.processData(this.audioSource.waveformData[0].slice(startIndex, endIndex))];
             if (this.audioSource.frequencyData && Array.isArray(this.audioSource.frequencyData)) {
               this.currentFrequencyData = [this.processData(this.audioSource.frequencyData[0].slice(startIndex, endIndex))];
@@ -199,16 +196,6 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
       this.currentWaveformData = null;
       this.currentFrequencyData = null;
     }
-
-    // デバッグログ
-    console.log('波形データ更新:', {
-      channelMode: this.config.channelMode,
-      channels: this.currentWaveformData?.length,
-      samplesPerChannel: this.currentWaveformData?.[0]?.length,
-      startIndex,
-      endIndex,
-      windowSize
-    });
   }
 
   private averageChannels(data: Float32Array[] | Uint8Array[], start: number, end: number): Float32Array {

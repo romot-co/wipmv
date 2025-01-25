@@ -34,23 +34,23 @@ export function createDefaultWaveformEffect(audioSource?: AudioSource): Waveform
     channelMode: 'mono',
     windowSeconds: 0.5,
     samplesPerSecond: 60,
-    color: '#ffffff',
-    barWidth: 3,
-    barGap: 1,
-    sensitivity: 2.0,
+    color: '#ff0000',
+    barWidth: 4,
+    barGap: 2,
+    sensitivity: 3.0,
     smoothingFactor: 0.5,
-    opacity: 1,
+    opacity: 1.0,
     blendMode: 'source-over',
     visible: true,
     startTime: 0,
     endTime: audioSource?.duration ?? 0,
-    zIndex: 0,
+    zIndex: 1,
     position: { x: 0, y: 0 },
-    size: { width: 100, height: 100 },
-    coordinateSystem: 'relative',
+    size: { width: 1280, height: 720 },
+    coordinateSystem: 'absolute',
     mirror: {
       vertical: true,
-      horizontal: true
+      horizontal: false
     }
   };
 }

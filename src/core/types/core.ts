@@ -59,7 +59,7 @@ export abstract class EffectBase<T extends EffectConfig> implements HasAudioSour
  * エフェクトマネージャーのインターフェース
  */
 export interface EffectManager extends Disposable {
-  setRenderer(renderer: Renderer): void;
+  setRenderer(renderer: Renderer | null): void;
   getRenderer(): Renderer | null;
   addEffect(effect: EffectBase<EffectConfig>, zIndex?: number): void;
   removeEffect(id: string): void;

@@ -147,11 +147,16 @@ export class EffectManager implements IEffectManager {
   private updateEffectVisibility(currentTime: number): void {
     for (const effect of this.effects) {
       const config = effect.getConfig();
-      const startTime = config.startTime ?? 0;
-      const endTime = config.endTime ?? Infinity;
       
-      // 表示/非表示の更新
-      config.visible = currentTime >= startTime && currentTime <= endTime;
+      // デフォルトで表示状態にする
+      config.visible = true;
+      
+      // 開始時間と終了時間が設定されている場合のみ、時間による表示制御を行う
+      if (config.startTime !== undefined || config.endTime !== undefined) {
+        const startTime = config.startTime ?? 0;
+        const endTime = config.endTime ?? Infinity;
+        config.visible = currentTime >= startTime && currentTime <= endTime;
+      }
     }
   }
 
@@ -159,27 +164,29 @@ export class EffectManager implements IEffectManager {
    * 全エフェクトの状態を更新
    */
   updateAll(currentTime: number): void {
-    if (!this.renderer) {
-      throw new AppError(
-        ErrorType.RENDERER_ERROR,
-        'Renderer is not set'
-      );
-    }
+    if (!this.renderer) return;
 
-    try {
-      this.updateEffectVisibility(currentTime);
-      for (const effect of this.effects) {
-        if (effect.getConfig().visible) {
-          effect.update(currentTime);
-        }
+    // エフェクトの表示状態を更新
+    this.effects.forEach(effect => {
+      const config = effect.getConfig();
+      const startTime = config.startTime ?? 0;
+      const endTime = config.endTime ?? Infinity;
+      
+      // デフォルトで表示
+      config.visible = true;
+      
+      // 時間範囲が指定されている場合のみ、表示/非表示を切り替え
+      if (startTime !== 0 || endTime !== Infinity) {
+        config.visible = currentTime >= startTime && currentTime <= endTime;
       }
-    } catch (error) {
-      console.error('エフェクト更新エラー:', error);
-      throw new AppError(
-        ErrorType.EffectError,
-        'Failed to update effects'
-      );
-    }
+      
+      effect.updateConfig(config);
+    });
+
+    // エフェクトを更新
+    this.effects.forEach(effect => {
+      effect.update(currentTime);
+    });
   }
 
   /**
@@ -187,31 +194,39 @@ export class EffectManager implements IEffectManager {
    */
   renderAll(currentTime: number, ctx?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
     if (!this.renderer && !ctx) {
-      throw new AppError(
-        ErrorType.RENDERER_ERROR,
-        'Renderer is not set'
-      );
+      console.warn('レンダラーが設定されていません');
+      return;
     }
 
-    // エフェクトをソート
-    this.sortEffectsByZIndex();
+    try {
+      // エフェクトをソート
+      this.sortEffectsByZIndex();
 
-    // オフスクリーンに描画
-    const context = ctx ?? this.renderer!.getOffscreenContext();
-    if (!ctx && this.renderer) {
-      this.renderer.clear();
-    }
-
-    // 表示状態のエフェクトのみ描画
-    for (const effect of this.effects) {
-      if (effect.getConfig().visible) {
-        effect.render(context);
+      // オフスクリーンに描画
+      const context = ctx ?? this.renderer!.getOffscreenContext();
+      if (!ctx && this.renderer) {
+        this.renderer.clear();
       }
-    }
 
-    // メインキャンバスに転送（外部コンテキストが指定されていない場合のみ）
-    if (!ctx && this.renderer) {
-      this.renderer.drawToMain();
+      // 表示状態のエフェクトのみ描画
+      for (const effect of this.effects) {
+        if (effect.getConfig().visible) {
+          try {
+            effect.render(context);
+          } catch (error) {
+            console.error('エフェクト描画エラー:', error);
+            // 個別のエフェクトのエラーは無視して続行
+          }
+        }
+      }
+
+      // メインキャンバスに転送（外部コンテキストが指定されていない場合のみ）
+      if (!ctx && this.renderer) {
+        this.renderer.drawToMain();
+      }
+    } catch (error) {
+      console.error('renderAllエラー:', error);
+      // エラーを投げずに続行
     }
   }
 

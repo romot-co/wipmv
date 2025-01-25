@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useMemo, useEffect, useRef } from 'react';
 import { Container, Flex, Box, Card, Section } from '@radix-ui/themes';
 import { PlaybackControls } from './ui/PlaybackControls';
 import { EffectList } from './ui/EffectList';
@@ -77,8 +77,11 @@ export const App: React.FC = () => {
     selectEffect,
     startExport,
     cancelExport,
-    dispatch
+    dispatch,
+    services
   } = useApp();
+  const currentTimeRef = useRef(0);
+  const isLoopRunningRef = useRef(false);
 
   // エフェクトマネージャー
   const manager = useMemo(() => {
@@ -91,6 +94,90 @@ export const App: React.FC = () => {
     log('App: レンダラーを設定');
     manager.setRenderer(renderer);
   }, [manager]);
+
+  // アニメーションループの制御
+  useEffect(() => {
+    let rafId: number;
+    
+    const animate = () => {
+      if (!isLoopRunningRef.current) return;
+      
+      try {
+        // AudioPlaybackServiceから直接currentTimeを取得
+        const currentTime = audioState.source ? services.audioService.playback.getCurrentTime() : 0;
+        
+        // 再生中またはシーク時に更新
+        if (manager && manager.getRenderer()) {
+          console.log('アニメーションフレーム詳細:', {
+            currentTime,
+            phase: phase.type,
+            isPlaying: audioState.isPlaying,
+            hasRenderer: true,
+            effectCount: manager.getEffects().length,
+            isLoopRunning: isLoopRunningRef.current,
+            duration: audioState.duration,
+            audioBuffer: !!audioState.source?.buffer,
+            bufferDuration: audioState.source?.buffer?.duration
+          });
+
+          // 現在時刻でエフェクトを更新
+          manager.updateAll(currentTime);
+          manager.renderAll(currentTime);
+        }
+        
+        rafId = requestAnimationFrame(animate);
+      } catch (error) {
+        console.error('アニメーションループエラー:', error);
+        isLoopRunningRef.current = false;
+      }
+    };
+
+    const startLoop = () => {
+      if (!isLoopRunningRef.current && manager && manager.getRenderer()) {
+        console.log('アニメーションループ開始:', {
+          phase: phase.type,
+          currentTime: audioState.currentTime,
+          isPlaying: audioState.isPlaying,
+          hasManager: true,
+          hasRenderer: true
+        });
+        isLoopRunningRef.current = true;
+        rafId = requestAnimationFrame(animate);
+      }
+    };
+
+    const stopLoop = () => {
+      if (isLoopRunningRef.current) {
+        console.log('アニメーションループ停止:', {
+          phase: phase.type,
+          currentTime: audioState.currentTime,
+          isPlaying: audioState.isPlaying
+        });
+        isLoopRunningRef.current = false;
+        cancelAnimationFrame(rafId);
+      }
+    };
+
+    // 再生中またはシーク時にループを開始
+    if ((audioState.isPlaying || phase.type === 'playing') && manager && manager.getRenderer()) {
+      startLoop();
+    } else {
+      stopLoop();
+    }
+
+    return () => {
+      stopLoop();
+    };
+  }, [manager, phase.type, audioState.isPlaying, audioState.currentTime, audioState.source, services]);
+
+  // audioStateの変更を監視
+  useEffect(() => {
+    console.log('audioState更新:', {
+      currentTime: audioState.currentTime,
+      isPlaying: audioState.isPlaying,
+      phase: phase.type
+    });
+  }, [audioState.currentTime, audioState.isPlaying, phase.type]);
 
   // エフェクトマネージャーの初期化
   useEffect(() => {
@@ -112,53 +199,17 @@ export const App: React.FC = () => {
         };
         effect.setAudioSource(audioSource);
       }
+
+      // 初期描画を実行
+      try {
+        manager.updateAll(audioState.currentTime);
+        manager.renderAll(audioState.currentTime);
+      } catch (error) {
+        console.error('エフェクト初期描画エラー:', error);
+      }
     });
     log('App: 既存エフェクトの復元完了');
-  }, [manager, effectState.effects, audioState.source]);
-
-  // アニメーションループの設定
-  useEffect(() => {
-    if (!manager || phase.type === 'idle' || phase.type === 'loadingAudio') return;
-
-    let animationFrameId: number;
-    let lastTime = performance.now();
-
-    const animate = () => {
-      try {
-        const currentTime = performance.now();
-        const deltaTime = (currentTime - lastTime) / 1000;
-        lastTime = currentTime;
-
-        // エフェクトの状態を更新
-        manager.updateAll(audioState.currentTime);
-
-        // 次のフレームをリクエスト（エフェクトの更新後に設定）
-        animationFrameId = requestAnimationFrame(() => {
-          // エフェクトを描画（次のフレームで実行）
-          manager.renderAll(audioState.currentTime);
-          // 次のアニメーションフレームを予約
-          animationFrameId = requestAnimationFrame(animate);
-        });
-      } catch (error) {
-        console.error('アニメーションループエラー:', error);
-        if (animationFrameId) {
-          cancelAnimationFrame(animationFrameId);
-        }
-      }
-    };
-
-    // アニメーションを開始
-    console.log('アニメーションループ開始');
-    animationFrameId = requestAnimationFrame(animate);
-
-    // クリーンアップ
-    return () => {
-      console.log('アニメーションループ停止');
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
-  }, [manager, phase.type, audioState.currentTime]);
+  }, [manager, effectState.effects, audioState.source, audioState.currentTime]);
 
   // エフェクト追加
   const handleAddEffect = useCallback(async (type: EffectType) => {

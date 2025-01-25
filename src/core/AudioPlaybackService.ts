@@ -140,6 +140,13 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   public play(): void {
     if (!this.audioContext || !this.audioBuffer || !this.gainNode) return;
 
+    console.log('再生開始:', {
+      duration: this.audioBuffer.duration,
+      currentTime: this.getCurrentTime(),
+      offset: this.offset,
+      loop: this.loop
+    });
+
     this.isPlaying = true;
     this.startTime = this.audioContext.currentTime;
     this.duration = this.audioBuffer.duration;
@@ -150,7 +157,14 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
     this.sourceNode.loop = this.loop;
     
     this.sourceNode.onended = () => {
-      if (this.loop) {
+      console.log('再生終了イベント:', {
+        loop: this.loop,
+        currentTime: this.getCurrentTime(),
+        duration: this.duration,
+        offset: this.offset
+      });
+
+      if (this.loop && this.audioContext) {
         this.offset = 0;
         this.startTime = this.audioContext.currentTime;
         this.play();
@@ -163,7 +177,6 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
 
     this.sourceNode.start(0, this.offset);
     
-    // 再生開始時に状態を更新
     this.stateManager.update({
       currentTime: this.offset,
       duration: this.duration,
@@ -172,16 +185,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
       loop: this.loop
     });
     
-    // 定期的な状態更新を開始
     this.updatePlaybackState();
-    
-    // デバッグログ
-    console.log('再生開始:', {
-      startTime: this.startTime,
-      offset: this.offset,
-      duration: this.duration,
-      isPlaying: this.isPlaying
-    });
   }
 
   public pause(): void {
@@ -261,16 +265,16 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
     const currentTime = this.getCurrentTime();
     const duration = this.audioBuffer.duration;
 
-    // デバッグログ
     console.log('再生状態更新:', {
       currentTime,
       duration,
       isPlaying: this.isPlaying,
-      volume: this.volume,
-      loop: this.loop
+      loop: this.loop,
+      audioContextTime: this.audioContext.currentTime,
+      startTime: this.startTime,
+      offset: this.offset
     });
 
-    // 再生状態の更新
     this.stateManager.update({
       currentTime,
       duration,
@@ -279,10 +283,31 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
       loop: this.loop
     });
 
-    // 再生中の場合、次の更新をスケジュール
     if (this.isPlaying) {
-      // requestAnimationFrameを使用して更新
-      window.requestAnimationFrame(() => this.updatePlaybackState());
+      window.requestAnimationFrame(() => {
+        try {
+          if (!this.loop && currentTime >= duration) {
+            console.log('再生終了判定:', {
+              currentTime,
+              duration,
+              loop: this.loop
+            });
+            this.isPlaying = false;
+            this.offset = 0;
+            this.stateManager.update({
+              currentTime: 0,
+              isPlaying: false
+            });
+            return;
+          }
+          this.updatePlaybackState();
+        } catch (error) {
+          console.error('再生状態更新エラー:', error);
+          if (this.isPlaying) {
+            window.requestAnimationFrame(() => this.updatePlaybackState());
+          }
+        }
+      });
     }
   }
 

@@ -48,82 +48,90 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       return;
     }
 
-    await withAppError(
-      async () => {
-        setIsExporting(true);
-        setExportProgress(0);
-        cancelRef.current = false;
-        onExportStart?.();
+    try {
+      setIsExporting(true);
+      setExportProgress(0);
+      cancelRef.current = false;
+      onExportStart?.();
 
-        // エンコーダーを初期化
-        const encoder = new VideoEncoderService({
-          width: videoSettings.width,
-          height: videoSettings.height,
-          frameRate: videoSettings.frameRate,
-          videoBitrate: videoSettings.videoBitrate,
-          audioBitrate: videoSettings.audioBitrate,
-          sampleRate: buffer.sampleRate,
-          channels: buffer.numberOfChannels
-        });
+      // エンコーダーを初期化
+      const encoder = new VideoEncoderService({
+        width: videoSettings.width,
+        height: videoSettings.height,
+        frameRate: videoSettings.frameRate,
+        videoBitrate: videoSettings.videoBitrate,
+        audioBitrate: videoSettings.audioBitrate,
+        sampleRate: buffer.sampleRate,
+        channels: buffer.numberOfChannels
+      });
 
-        await encoder.initialize();
+      await encoder.initialize();
 
-        // エクスポート用のキャンバスを作成
-        const canvas = manager.createExportCanvas({
-          width: videoSettings.width,
-          height: videoSettings.height
-        });
+      // エクスポート用のキャンバスを作成
+      const canvas = manager.createExportCanvas({
+        width: videoSettings.width,
+        height: videoSettings.height
+      });
 
-        // フレーム数を計算
-        const totalFrames = Math.ceil(buffer.duration * videoSettings.frameRate);
+      // フレーム数を計算
+      const totalFrames = Math.ceil(buffer.duration * videoSettings.frameRate);
 
-        // フレームごとに描画＋エンコード
-        for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-          if (cancelRef.current) {
-            throw new AppError(
-              ErrorType.EXPORT_CANCELLED,
-              'エクスポートがキャンセルされました。'
-            );
-          }
-
-          // 現在時刻を計算
-          const currentTime = frameIndex / videoSettings.frameRate;
-
-          // フレームをレンダリング
-          manager.renderExportFrame(canvas, currentTime);
-
-          // 1フレーム分の映像エンコード
-          await encoder.encodeVideoFrame(canvas, frameIndex);
-
-          // 進捗更新
-          const progress = (frameIndex + 1) / totalFrames * 100;
-          setExportProgress(progress);
-          onProgress?.(progress);
+      // フレームごとに描画＋エンコード
+      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+        if (cancelRef.current) {
+          throw new AppError(
+            ErrorType.EXPORT_CANCELLED,
+            'エクスポートがキャンセルされました。'
+          );
         }
 
-        // 音声をエンコード
-        await encoder.encodeAudioBuffer(buffer, 0);
+        // 現在時刻を計算
+        const currentTime = frameIndex / videoSettings.frameRate;
 
-        // エンコードを完了
-        const mp4Binary = await encoder.finalize();
-        const blob = new Blob([mp4Binary], { type: 'video/mp4' });
-        const url = URL.createObjectURL(blob);
+        // フレームをレンダリング
+        manager.renderExportFrame(canvas, currentTime);
 
-        // ダウンロードリンクを作成
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'output.mp4';
-        a.click();
+        // 1フレーム分の映像エンコード
+        await encoder.encodeVideoFrame(canvas, frameIndex);
 
-        URL.revokeObjectURL(url);
-        onExportComplete?.();
-      },
-      { type: 'exporting', settings: videoSettings },
-      (error) => {
-        onExportError?.(error);
-        onError(error);
+        // 1フレーム分の音声エンコード
+        await encoder.encodeAudioBuffer(buffer, frameIndex);
+
+        // 進捗更新
+        const progress = (frameIndex + 1) / totalFrames * 100;
+        setExportProgress(progress);
+        onProgress?.(progress);
       }
-    );
+
+      // エンコードを完了
+      const mp4Binary = await encoder.finalize();
+      const blob = new Blob([mp4Binary], { type: 'video/mp4' });
+      const url = URL.createObjectURL(blob);
+
+      // ダウンロードリンクを作成
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'output.mp4';
+      a.click();
+
+      URL.revokeObjectURL(url);
+      onExportComplete?.();
+    } catch (error) {
+      console.error('エクスポートエラー:', error);
+      if (error instanceof AppError) {
+        onExportError?.(error);
+      } else {
+        onExportError?.(new AppError(
+          ErrorType.ExportFailed,
+          'エクスポート中にエラーが発生しました。'
+        ));
+      }
+    } finally {
+      // 状態を完全にリセット
+      setIsExporting(false);
+      setExportProgress(0);
+      cancelRef.current = false;
+    }
   }, [manager, videoSettings, audioSource, onExportStart, onExportComplete, onExportError, onProgress, onError]);
 
   /**
@@ -131,6 +139,8 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
    */
   const handleCancel = useCallback(() => {
     cancelRef.current = true;
+    setIsExporting(false);
+    setExportProgress(0);
   }, []);
 
   /**
