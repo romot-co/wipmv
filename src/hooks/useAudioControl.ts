@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { AudioPlaybackService } from '../core/AudioPlaybackService';
 import { AppError, ErrorType } from '../core/types/error';
 import { useApp } from '../contexts/AppContext';
-import { AppContextType } from '../core/types/app';
+import { AppContextType } from '../contexts/AppContext';
 
 export function useAudioControl(audioService: AudioPlaybackService) {
   const { audioState, dispatch } = useApp() as AppContextType;

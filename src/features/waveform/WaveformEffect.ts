@@ -2,6 +2,7 @@ import { EffectBase } from '../../core/types/core';
 import { WaveformEffectConfig } from '../../core/types/effect';
 import { AnimationController } from '../../core/animation/AnimationController';
 import { Color, AudioSource } from '../../core/types/base';
+import { convertRect } from '../../utils/coordinates';
 
 /**
  * 波形エフェクト
@@ -121,37 +122,74 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     });
   }
 
+  private ensureFloat32Array(data: Uint8Array | Float32Array): Float32Array {
+    if (data instanceof Float32Array) {
+      return data;
+    }
+    // Uint8Arrayの場合は0-255の値を0-1に正規化
+    const float32Data = new Float32Array(data.length);
+    for (let i = 0; i < data.length; i++) {
+      float32Data[i] = data[i] / 255;
+    }
+    return float32Data;
+  }
+
   /**
    * 現在時刻に応じて内部状態を更新
    */
   update(currentTime: number): void {
-    if (!this.audioSource) return;
+    // ★ 表示状態を更新
+    this.visible = this.isActive(currentTime);
+    if (!this.visible) return; // 非表示なら以降の処理は不要
+
+    // オーディオソースがなければ何もしない
+    const audioSource = this.getAudioSource();
+    if (!audioSource || !audioSource.buffer || !audioSource.waveformData) {
+      console.warn('WaveformEffect: AudioSource not available or no waveform data');
+      return;
+    }
 
     this.lastCurrentTime = currentTime;
-    const duration = this.audioSource.duration;
+    const duration = audioSource.duration;
     const ratio = currentTime / duration;
 
-    if (this.config.displayMode === 'frequency' && this.audioSource.frequencyData) {
+    if (this.config.displayMode === 'frequency' && audioSource.frequencyData) {
       // 周波数表示モード
-      const totalFrames = this.audioSource.frequencyData.length;
-      const frameIndex = Math.floor(ratio * (totalFrames - 1));
-
-      if (frameIndex >= 0 && frameIndex < totalFrames) {
-        // 現在のフレームの周波数データを取得して正規化
-        this.currentFrequencyData = this.audioSource.frequencyData.map(channel => {
-          const uint8Array = channel as Uint8Array;
-          const float32Data = new Float32Array(uint8Array.length);
-          for (let i = 0; i < uint8Array.length; i++) {
-            float32Data[i] = uint8Array[i] / 255;
+      try {
+        const frequencyData = audioSource.frequencyData;
+        
+        // データ構造の判別: Float32Array[][] か Uint8Array[] か
+        if (Array.isArray(frequencyData) && frequencyData.length > 0) {
+          if (Array.isArray(frequencyData[0])) {
+            // Float32Array[][] 形式 (チャンネル×フレーム)
+            const typedData = frequencyData as Float32Array[][];
+            const totalFramesInChannel = typedData[0].length;
+            const frameIndex = Math.floor(ratio * (totalFramesInChannel - 1));
+            
+            if (frameIndex >= 0 && frameIndex < totalFramesInChannel) {
+              // 各チャンネルの現在フレームを抽出
+              this.currentFrequencyData = typedData.map(channelData => channelData[frameIndex]);
+            } else {
+              this.currentFrequencyData = null;
+            }
+          } else {
+            // Uint8Array[] 形式（単一フレーム、旧形式）
+            // Float32Arrayに変換・正規化して使用
+            this.currentFrequencyData = (frequencyData as Uint8Array[]).map(
+              channel => this.ensureFloat32Array(channel)
+            );
           }
-          return float32Data;
-        });
-      } else {
+        } else {
+          console.warn('WaveformEffect: Invalid frequency data structure');
+          this.currentFrequencyData = null;
+        }
+      } catch (error) {
+        console.error('WaveformEffect: Error processing frequency data', error);
         this.currentFrequencyData = null;
       }
-    } else if (this.config.displayMode === 'waveform' && this.audioSource.waveformData) {
+    } else if (this.config.displayMode === 'waveform' && audioSource.waveformData) {
       // 波形表示モード
-      const waveformData = this.audioSource.waveformData;
+      const waveformData = audioSource.waveformData;
       const totalSamples = waveformData[0].length;
       const sampleRate = totalSamples / duration;
       
@@ -244,18 +282,6 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     if (!data || data.length === 0) {
       console.warn('波形エフェクト: 表示データが存在しません', { displayMode });
       return { left: null, right: null };
-    }
-
-    // 周波数データの場合は正規化
-    if (displayMode === 'frequency') {
-      data.forEach(channel => {
-        const maxValue = Math.max(...channel);
-        if (maxValue > 0) {
-          for (let i = 0; i < channel.length; i++) {
-            channel[i] /= maxValue;
-          }
-        }
-      });
     }
 
     return {
@@ -577,5 +603,26 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
     this.currentFrequencyData = null;
     this.animationController = null;
     super.dispose();
+  }
+
+  getBoundingBox(canvasWidth: number, canvasHeight: number): { x: number; y: number; width: number; height: number; } | null {
+    // config から position と size を取得 (相対座標)
+    const { position = { x: 0.5, y: 0.5 }, size = { width: 0.8, height: 0.3 }, coordinateSystem = 'relative' } = this.config;
+
+    // 相対座標から絶対座標の矩形に変換
+    const absoluteRectData = convertRect(
+      position,
+      size,
+      coordinateSystem, // fromSystem
+      'absolute',      // toSystem
+      { width: canvasWidth, height: canvasHeight }
+    );
+
+    return {
+      x: absoluteRectData.position.x,
+      y: absoluteRectData.position.y,
+      width: absoluteRectData.size.width,
+      height: absoluteRectData.size.height
+    };
   }
 } 

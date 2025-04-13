@@ -1,19 +1,18 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Button, Dialog, Flex, Text } from '@radix-ui/themes';
+import { Button, Dialog, Flex, Text, IconButton } from '@radix-ui/themes';
 import { EncodeSettings } from './EncodeSettings';
 import { Cross2Icon, GearIcon } from '@radix-ui/react-icons';
 import { ExportButtonProps } from '../core/types/core';
-import { VideoEncoderService } from '../core/VideoEncoderService';
+import { VideoEncoderService, ProgressCallback } from '../core/VideoEncoderService';
 import { AppError, ErrorType } from '../core/types/error';
-import { withAppError } from '../core/types/app';
+import { useApp } from '../contexts/AppContext';
 
 /**
  * ExportButton コンポーネント
  * - エクスポート設定ダイアログを開いて VideoEncoderService を呼び出す
- * - オンライン/オフライン描画を行い、最終的にMP4を生成してダウンロードする
+ * - Worker ベースのオフライン描画を行い、最終的にMP4を生成してダウンロードする
  */
 export const ExportButton: React.FC<ExportButtonProps> = ({
-  manager,
   onError,
   onProgress,
   videoSettings,
@@ -24,17 +23,19 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
   onExportError,
   disabled
 }) => {
+  const { managerInstance, drawingManager } = useApp();
+
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
 
-  const cancelRef = useRef(false);
+  const encoderRef = useRef<VideoEncoderService | null>(null);
 
   const handleExport = useCallback(async () => {
-    if (!manager) {
+    if (!managerInstance || !drawingManager) {
       onError(new AppError(
-        ErrorType.ExportFailed,
-        'EffectManager が存在しません。'
+        ErrorType.INVALID_STATE,
+        'EffectManager or DrawingManager is not available in context.'
       ));
       return;
     }
@@ -42,8 +43,8 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
     const buffer = audioSource?.buffer;
     if (!buffer) {
       onError(new AppError(
-        ErrorType.ExportFailed,
-        '有効な AudioSource がセットされていないため、エクスポートできません。'
+        ErrorType.INVALID_STATE,
+        'Valid AudioSource is not set. Cannot export.'
       ));
       return;
     }
@@ -51,11 +52,16 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
     try {
       setIsExporting(true);
       setExportProgress(0);
-      cancelRef.current = false;
       onExportStart?.();
 
-      // エンコーダーを初期化
-      const encoder = new VideoEncoderService({
+      const handleProgress: ProgressCallback = (processedFrames, totalFrames) => {
+        const progress = totalFrames > 0 ? (processedFrames / totalFrames) * 100 : 0;
+        setExportProgress(progress);
+        onProgress?.(progress);
+        console.log(`Export Progress: ${progress.toFixed(1)}% (${processedFrames}/${totalFrames})`);
+      };
+
+      encoderRef.current = new VideoEncoderService({
         width: videoSettings.width,
         height: videoSettings.height,
         frameRate: videoSettings.frameRate,
@@ -64,99 +70,92 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         sampleRate: buffer.sampleRate,
         channels: buffer.numberOfChannels
       });
+      const encoder = encoderRef.current;
 
-      await encoder.initialize();
+      const totalFrames = Math.ceil(buffer.duration * videoSettings.frameRate);
+      console.log(`Starting export for ${totalFrames} frames.`);
 
-      // エクスポート用のキャンバスを作成
-      const canvas = manager.createExportCanvas({
+      await encoder.initialize(handleProgress, totalFrames);
+      console.log("Encoder initialized successfully.");
+
+      const canvas = drawingManager.createExportCanvas({
         width: videoSettings.width,
         height: videoSettings.height
       });
 
-      // フレーム数を計算
-      const totalFrames = Math.ceil(buffer.duration * videoSettings.frameRate);
-
-      // フレームごとに描画＋エンコード
+      console.log("Starting frame encoding loop...");
       for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-        if (cancelRef.current) {
-          throw new AppError(
-            ErrorType.EXPORT_CANCELLED,
-            'エクスポートがキャンセルされました。'
-          );
-        }
-
-        // 現在時刻を計算（秒単位）
         const currentTime = (frameIndex / videoSettings.frameRate);
-        
-        // エフェクトの状態を更新してからレンダリング
-        manager.updateAll(currentTime);
-        manager.renderExportFrame(canvas, currentTime);
 
-        // デバッグ用ログ
-        if (frameIndex % 10 === 0) {  // 10フレームごとにログ出力
-          console.log('フレームエクスポート:', {
-            frameIndex,
-            currentTime,
-            totalFrames,
-            effectCount: manager.getEffects().length
-          });
-        }
+        managerInstance.updateAll(currentTime);
+        drawingManager.renderExportFrame(canvas, currentTime);
 
-        // 1フレーム分の映像エンコード
-        await encoder.encodeVideoFrame(canvas, frameIndex);
-
-        // 1フレーム分の音声エンコード
-        await encoder.encodeAudioBuffer(buffer, frameIndex);
-
-        // 進捗更新
-        const progress = (frameIndex + 1) / totalFrames * 100;
-        setExportProgress(progress);
-        onProgress?.(progress);
+        encoder.encodeVideoFrame(canvas, frameIndex);
+        encoder.encodeAudioBuffer(buffer, frameIndex);
       }
+      console.log("Frame encoding loop finished. Finalizing...");
 
-      // エンコードを完了
       const mp4Binary = await encoder.finalize();
+      console.log("Export finalized, MP4 size:", mp4Binary.byteLength);
+
       const blob = new Blob([mp4Binary], { type: 'video/mp4' });
       const url = URL.createObjectURL(blob);
-
-      // ダウンロードリンクを作成
       const a = document.createElement('a');
       a.href = url;
       a.download = 'output.mp4';
+      document.body.appendChild(a);
       a.click();
-
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      console.log("MP4 download initiated.");
       onExportComplete?.();
+
     } catch (error) {
-      console.error('エクスポートエラー:', error);
+      console.error('エクスポート処理中にエラー発生:', error);
       if (error instanceof AppError) {
-        onExportError?.(error);
+        if (error.type === ErrorType.EXPORT_CANCELLED) {
+          console.log("Export was cancelled by user request.");
+          onExportError?.(error);
+        } else {
+          onError(error);
+          onExportError?.(error);
+        }
       } else {
-        onExportError?.(new AppError(
-          ErrorType.ExportFailed,
-          'エクスポート中にエラーが発生しました。'
-        ));
+        const genericError = new AppError(ErrorType.EXPORT_ENCODE_FAILED, 'エクスポート中に予期せぬエラーが発生しました。', error);
+        onError(genericError);
+        onExportError?.(genericError);
       }
     } finally {
-      // 状態を完全にリセット
+      console.log("Cleaning up export resources...");
+      encoderRef.current?.dispose();
+      encoderRef.current = null;
       setIsExporting(false);
       setExportProgress(0);
-      cancelRef.current = false;
     }
-  }, [manager, videoSettings, audioSource, onExportStart, onExportComplete, onExportError, onProgress, onError]);
+  }, [
+    managerInstance,
+    drawingManager,
+    videoSettings,
+    audioSource,
+    onError,
+    onProgress,
+    onExportStart,
+    onExportComplete,
+    onExportError
+  ]);
 
-  /**
-   * エクスポートキャンセル処理
-   */
   const handleCancel = useCallback(() => {
-    cancelRef.current = true;
+    if (encoderRef.current) {
+      console.log("User requested export cancellation...");
+      encoderRef.current.cancel();
+    } else {
+       console.warn("Cannot cancel export: encoder instance not found.");
+    }
     setIsExporting(false);
     setExportProgress(0);
   }, []);
 
-  /**
-   * 設定ダイアログ開閉
-   */
   const handleOpenSettings = useCallback(() => {
     setShowSettings(true);
   }, []);
@@ -165,9 +164,10 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
     setShowSettings(false);
   }, []);
 
+  const isButtonDisabled = disabled || !audioSource || !managerInstance || !drawingManager;
+
   return (
     <Flex align="center" gap="3">
-      {/* 設定ダイアログのトリガーボタン */}
       <Dialog.Root open={showSettings} onOpenChange={setShowSettings}>
         <Dialog.Trigger>
           <Button
@@ -178,47 +178,42 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
             onClick={handleOpenSettings}
           >
             <GearIcon />
-            &nbsp;エクスポート設定
+            &nbsp;Export Settings
           </Button>
         </Dialog.Trigger>
-        <Dialog.Content>
-          <Dialog.Close>
-            <Button variant="ghost" className="dialog-close">
-              <Cross2Icon />
-            </Button>
-          </Dialog.Close>
-          <Dialog.Title>エクスポート設定</Dialog.Title>
+        <Dialog.Content style={{ maxWidth: 450 }}>
+          <Flex justify="end">
+            <Dialog.Close>
+              <IconButton variant="ghost" color="gray" onClick={handleCloseSettings}>
+                  <Cross2Icon />
+              </IconButton>
+            </Dialog.Close>
+          </Flex>
+          <Dialog.Title>Export Settings</Dialog.Title>
           <EncodeSettings
             {...videoSettings}
             onSettingsChange={onSettingsChange}
           />
-          <Dialog.Close>
-            <Button variant="solid" onClick={handleCloseSettings}>
-              OK
-            </Button>
-          </Dialog.Close>
         </Dialog.Content>
       </Dialog.Root>
 
-      {/* エクスポート開始ボタン or キャンセルボタン */}
-      {!isExporting && (
+      {!isExporting ? (
         <Button
           variant="solid"
           color="blue"
           size="2"
-          disabled={disabled}
+          disabled={isButtonDisabled}
           onClick={handleExport}
         >
-          エクスポート
+          Export Video
         </Button>
-      )}
-      {isExporting && (
+      ) : (
         <Flex align="center" gap="2">
           <Text size="2" color="gray">
-            エクスポート中... {Math.round(exportProgress)}%
+            Exporting... {Math.round(exportProgress)}%
           </Text>
           <Button variant="soft" color="red" size="2" onClick={handleCancel}>
-            キャンセル
+            Cancel
           </Button>
         </Flex>
       )}

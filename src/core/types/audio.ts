@@ -6,7 +6,7 @@ import { ErrorType } from './error';
  */
 export interface AnalysisResult {
   waveformData: Float32Array[];
-  frequencyData: Uint8Array[];
+  frequencyData: Float32Array[][];
   duration: number;
   sampleRate: number;
   numberOfChannels: number;

@@ -1,0 +1,221 @@
+/* Timeline.css */
+
+/* タイムラインのメインコンテナ */
+.timeline-container {
+  width: 100%;
+  height: 130px;
+  background-color: #F1F5F9;
+  border-top: 1px solid #E2E8F0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  position: relative;
+  user-select: none;
+  border-radius: 0 0 8px 8px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* プレースホルダ */
+.timeline-placeholder {
+  width: 100%;
+  height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748B;
+  background-color: #F8FAFC;
+  border-radius: 6px;
+}
+
+/* トラックラベル部分 */
+.timeline-labels {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 60px;
+  height: 100%;
+  border-right: 1px solid #CBD5E1;
+  background-color: #E2E8F0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  padding: 0px;
+  box-shadow: 1px 0 3px rgba(0, 0, 0, 0.05);
+}
+
+.timeline-labels-header {
+  height: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid #CBD5E1;
+  font-weight: bold;
+  font-size: 10px;
+  color: #475569;
+  background-color: #CBD5E1;
+}
+
+.timeline-track-label {
+  position: absolute;
+  left: 10px;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.timeline-track-label.background {
+  top: 35px;
+  color: #1E40AF;
+}
+
+.timeline-track-label.waveform {
+  top: 60px;
+  color: #B91C1C;
+}
+
+.timeline-track-label.watermark {
+  top: 85px;
+  color: #047857;
+}
+
+.timeline-track-label.text {
+  top: 110px;
+  color: #A21CAF;
+}
+
+/* タイムラインコンテンツエリア */
+.timeline-content {
+  position: absolute;
+  left: 60px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background-position: 0 25px;
+}
+
+/* 時間目盛りヘッダー */
+.timeline-header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 25px;
+  background-color: #CBD5E1;
+  border-bottom: 1px solid #94A3B8;
+  display: flex;
+  align-items: center;
+  z-index: 4;
+}
+
+/* 時間の目盛りマーク */
+.timeline-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 0 2px;
+  font-size: 10px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  color: #334155;
+  width: 20px;
+}
+
+/* エフェクトバー */
+.effect-bar {
+  position: absolute;
+  height: 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  transition: all 0.15s ease;
+}
+
+.effect-bar.selected {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  z-index: 2;
+  border-width: 2px;
+}
+
+.effect-bar:not(.selected) {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  z-index: 1;
+  border-width: 1px;
+}
+
+/* ハンドル */
+.handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 3;
+  border-radius: 2px;
+  background-color: rgba(0, 122, 255, 0.7);
+}
+
+.handle.left {
+  left: -4px;
+  border-left: 2px solid rgb(0, 99, 220);
+}
+
+.handle.right {
+  right: -4px;
+  border-right: 2px solid rgb(0, 99, 220);
+}
+
+/* 現在時間インジケーター */
+.time-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: rgba(239, 68, 68, 0.9);
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 0 3px rgba(239, 68, 68, 0.5);
+}
+
+.time-indicator-handle {
+  position: absolute;
+  top: 0;
+  width: 20px;
+  height: 20px;
+  background-color: rgba(239, 68, 68, 0.9);
+  border-radius: 50%;
+  transform: translateY(-10px);
+  pointer-events: none;
+  z-index: 10;
+  border: 2px solid white;
+  box-shadow: 0 0 3px rgba(239, 68, 68, 0.5);
+}
+
+/* テーマカラー変数 */
+:root {
+  --color-background-bg: #2563EB;
+  --color-background-border: #1E40AF;
+  --color-background-text: #FFFFFF;
+  
+  --color-waveform-bg: #E05D37;
+  --color-waveform-border: #B91C1C;
+  --color-waveform-text: #FFFFFF;
+  
+  --color-watermark-bg: #059669;
+  --color-watermark-border: #047857;
+  --color-watermark-text: #FFFFFF;
+  
+  --color-text-bg: #C026D3;
+  --color-text-border: #A21CAF;
+  --color-text-text: #FFFFFF;
+  
+  --color-default-bg: #64748B;
+  --color-default-border: #475569;
+  --color-default-text: #FFFFFF;
+} 

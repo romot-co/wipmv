@@ -12,6 +12,14 @@ export type AppPhase =
   | { type: 'exporting', settings?: VideoSettings }
   | { type: 'error', error: Error };
 
+// Define the AnalysisResult type explicitly for clarity and reuse
+// Assuming frequencyData is an array of arrays (time-varying)
+export interface AnalysisResult {
+  waveformData: Float32Array[]; // Array per channel
+  // Assuming each inner array represents frequency data for a specific time frame
+  frequencyData: Float32Array[][]; // Array of Float32Array per channel per time frame
+}
+
 export interface AppState {
   phase: AppPhase;
   projectState: {
@@ -26,10 +34,8 @@ export interface AppState {
     isPlaying: boolean;
     volume: number;
     loop: boolean;
-    analysis?: {
-      waveformData: Float32Array[];
-      frequencyData: (Float32Array | Uint8Array)[];
-    };
+    // Use the defined AnalysisResult type here
+    analysis?: AnalysisResult;
   };
   effectState: {
     effects: EffectBase<EffectConfig>[];
@@ -39,6 +45,8 @@ export interface AppState {
     isSidebarOpen: boolean;
     activeTab: 'effects' | 'export';
     theme: 'light' | 'dark';
+    selectedEffectId: string | null;
+    isSettingsPanelOpen: boolean;
   };
   error: {
     type: ErrorType | null;
@@ -61,6 +69,9 @@ export interface AppOperations {
   updateEffect(id: string, config: Partial<EffectConfig>): void;
   moveEffect(sourceId: string, targetId: string): Promise<void>;
   selectEffect(id: string | null): void;
+  deselectEffect(): void;
+  openSettingsPanel(): void;
+  closeSettingsPanel(): void;
   startExport(settings: VideoSettings): Promise<void>;
   cancelExport(): void;
 }
@@ -101,10 +112,8 @@ export interface AppServices {
       decodeAudioData(buffer: ArrayBuffer): Promise<AudioBuffer>;
     };
     analyzer: {
-      analyze(source: AudioSource): Promise<{
-        waveformData: Float32Array[];
-        frequencyData: (Float32Array | Uint8Array)[];
-      }>;
+      // Use the defined AnalysisResult type for the return promise
+      analyze(source: AudioSource): Promise<AnalysisResult>;
     };
   };
 }
@@ -115,7 +124,7 @@ export function withAppError<T>(
   onError?: (error: AppError) => void
 ): Promise<T> {
   return fn().catch(error => {
-    const appError = error instanceof AppError ? error : new AppError(ErrorType.UnknownError, error.message);
+    const appError = error instanceof AppError ? error : new AppError(ErrorType.UNKNOWN, error.message);
     if (onError) {
       onError(appError);
     }
@@ -136,4 +145,5 @@ export type AppAction =
 export type AppContextType = AppState & AppOperations & {
   dispatch: (action: AppAction) => void;
   services: AppServices;
+  handleError: (error: AppError) => void;
 }; 

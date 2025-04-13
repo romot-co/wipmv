@@ -6,120 +6,104 @@
  * エラーの種類
  */
 export enum ErrorType {
-  // エフェクト関連
-  EffectInitFailed = 'EffectInitFailed',
-  EffectUpdateFailed = 'EffectUpdateFailed',
-  EffectNotFound = 'EffectNotFound',
-  EffectAlreadyExists = 'EffectAlreadyExists',
-  EffectError = 'EffectError',
-  
-  // オーディオ関連
-  AudioLoadFailed = 'AudioLoadFailed',
-  AudioDecodeFailed = 'AudioDecodeFailed',
-  AudioPlaybackFailed = 'AudioPlaybackFailed',
-  AudioAnalysisFailed = 'AudioAnalysisFailed',
-  AudioAnalysisCancelled = 'AudioAnalysisCancelled',
-  
-  // プロジェクト関連
-  ProjectServiceError = 'ProjectServiceError',
-  ProjectNotFound = 'ProjectNotFound',
-  ProjectCreateFailed = 'ProjectCreateFailed',
-  ProjectSaveFailed = 'ProjectSaveFailed',
-  ProjectLoadFailed = 'ProjectLoadFailed',
-  ProjectDeleteFailed = 'ProjectDeleteFailed',
-  
-  // データベース関連
-  DatabaseError = 'DatabaseError',
-  DatabaseConnectionFailed = 'DatabaseConnectionFailed',
-  DatabaseOperationFailed = 'DatabaseOperationFailed',
-  
-  // エクスポート関連
-  EXPORT_INIT_FAILED = 'EXPORT_INIT_FAILED',
-  EXPORT_RENDER_FAILED = 'EXPORT_RENDER_FAILED',
-  EXPORT_ENCODE_FAILED = 'EXPORT_ENCODE_FAILED',
-  EXPORT_CANCELLED = 'EXPORT_CANCELLED',
-  
-  // 再生エラー
-  PlaybackError = 'PlaybackError',
-  
-  // エクスポートエラー
-  ExportFailed = 'ExportFailed',
-  
-  // 未知のエラー
-  UnknownError = 'UnknownError',
-  
-  // レンダラー関連
-  RENDERER_INIT_FAILED = 'RENDERER_INIT_FAILED',
-  RENDERER_ERROR = 'RENDERER_ERROR',
-  
-  // 新しいエラー
-  InvalidState = 'InvalidState',
+  // General
+  GENERIC_ERROR = 'GENERIC_ERROR',
+  UNKNOWN = 'unknown',
+
+  // File/Audio Context
+  FILE_LOAD_ERROR = 'file/load-error',
+  AUDIO_CONTEXT_ERROR = 'audio/context-error',
+  DECODE_AUDIO_DATA_ERROR = 'audio/decode-error',
+  AudioDecodeFailed = 'audio/decode-failed',
+
+  // Playback
+  PLAYBACK_ERROR = 'playback/error',
+  SEEK_ERROR = 'playback/seek-error',
+  AudioPlaybackFailed = 'playback/failed',
+
+  // Export Process
+  EXPORT_INIT_FAILED = 'export/init-failed',
+  EXPORT_RENDER_FAILED = 'export/render-failed',
+  EXPORT_ENCODE_FAILED = 'export/encode-failed',
+  EXPORT_FINALIZE_FAILED = 'export/finalize-failed',
+  EXPORT_CANCELLED = 'export/cancelled',
+
+  // Analysis
+  AUDIO_ANALYSIS_FAILED = 'analysis/failed',
+
+  // Effects
+  EFFECT_CONFIG_INVALID = 'effect/config-invalid',
+  EFFECT_NOT_FOUND = 'effect/not-found',
+
+  // Project
+  ProjectCreateFailed = 'project/create-failed',
+  ProjectLoadFailed = 'project/load-failed',
+  ProjectSaveFailed = 'project/save-failed',
+  ProjectNotFound = 'project/not-found',
+  ProjectDeleteFailed = 'project/delete-failed',
+
+  // Renderer
+  RENDERER_ERROR = 'renderer/error',
+
+  // App State/General Operation
+  INVALID_STATE = 'app/invalid-state',
+  OPERATION_ABORTED = 'operation/aborted',
 }
 
 /**
  * エラーメッセージのマッピング
  */
-export const ErrorMessages: Record<ErrorType, string> = {
-  // エフェクト関連
-  EffectInitFailed: 'エフェクトの初期化に失敗しました',
-  EffectUpdateFailed: 'エフェクトの更新に失敗しました',
-  EffectNotFound: '指定されたエフェクトが見つかりません',
-  EffectAlreadyExists: '同じIDのエフェクトが既に存在します',
-  EffectError: 'エフェクトでエラーが発生しました',
-  
-  // オーディオ関連
-  AudioLoadFailed: '音声ファイルの読み込みに失敗しました',
-  AudioDecodeFailed: '音声ファイルのデコードに失敗しました',
-  AudioPlaybackFailed: '音声の再生に失敗しました',
-  AudioAnalysisFailed: '音声の解析に失敗しました',
-  AudioAnalysisCancelled: '音声解析がキャンセルされました',
-  
-  // プロジェクト関連
-  ProjectServiceError: 'プロジェクト操作でエラーが発生しました',
-  ProjectNotFound: '指定されたプロジェクトが見つかりません',
-  ProjectCreateFailed: 'プロジェクトの作成に失敗しました',
-  ProjectSaveFailed: 'プロジェクトの保存に失敗しました',
-  ProjectLoadFailed: 'プロジェクトの読み込みに失敗しました',
-  ProjectDeleteFailed: 'プロジェクトの削除に失敗しました',
-  
-  // データベース関連
-  DatabaseError: 'データベース操作でエラーが発生しました',
-  DatabaseConnectionFailed: 'データベースへの接続に失敗しました',
-  DatabaseOperationFailed: 'データベース操作に失敗しました',
-  
-  // エクスポート関連
-  EXPORT_INIT_FAILED: 'エクスポートの初期化に失敗しました',
-  EXPORT_RENDER_FAILED: 'エクスポートのレンダリングに失敗しました',
-  EXPORT_ENCODE_FAILED: 'エクスポートのエンコードに失敗しました',
-  EXPORT_CANCELLED: 'エクスポートがキャンセルされました',
-  
-  // 再生エラー
-  PlaybackError: '再生中にエラーが発生しました',
-  
-  // エクスポートエラー
-  ExportFailed: 'エクスポートに失敗しました',
-  
-  // 未知のエラー
-  UnknownError: '未知のエラーが発生しました',
-  
-  // レンダラー関連
-  RENDERER_INIT_FAILED: 'レンダラーの初期化に失敗しました',
-  RENDERER_ERROR: 'レンダラーでエラーが発生しました',
-  
-  // 新しいエラー
-  InvalidState: '無効な状態が検出されました',
+export const ErrorMessages: { [key in ErrorType]: string } = {
+  [ErrorType.GENERIC_ERROR]: '一般的なエラーが発生しました。',
+  [ErrorType.UNKNOWN]: '不明なエラーが発生しました。',
+
+  [ErrorType.FILE_LOAD_ERROR]: 'ファイルの読み込みに失敗しました。',
+  [ErrorType.AUDIO_CONTEXT_ERROR]: 'オーディオコンテキストの初期化に失敗しました。',
+  [ErrorType.DECODE_AUDIO_DATA_ERROR]: 'オーディオデータのデコード中にエラーが発生しました。',
+  [ErrorType.AudioDecodeFailed]: 'オーディオデータのデコードに失敗しました。',
+
+  [ErrorType.PLAYBACK_ERROR]: '再生中にエラーが発生しました。',
+  [ErrorType.SEEK_ERROR]: 'シーク（再生位置の移動）中にエラーが発生しました。',
+  [ErrorType.AudioPlaybackFailed]: '音声の再生に失敗しました。',
+
+  [ErrorType.EXPORT_INIT_FAILED]: 'エクスポートの初期化に失敗しました。ブラウザが対応していないか、設定に誤りがある可能性があります。',
+  [ErrorType.EXPORT_RENDER_FAILED]: 'ビデオフレームのレンダリング中にエラーが発生しました。',
+  [ErrorType.EXPORT_ENCODE_FAILED]: 'エンコード中にエラーが発生しました。',
+  [ErrorType.EXPORT_FINALIZE_FAILED]: 'エクスポートの最終処理に失敗しました。',
+  [ErrorType.EXPORT_CANCELLED]: 'エクスポートがキャンセルされました。',
+
+  [ErrorType.AUDIO_ANALYSIS_FAILED]: '音声解析中にエラーが発生しました。',
+
+  [ErrorType.EFFECT_CONFIG_INVALID]: 'エフェクトの設定が無効です。',
+  [ErrorType.EFFECT_NOT_FOUND]: '指定されたエフェクトが見つかりません。',
+
+  [ErrorType.ProjectCreateFailed]: 'プロジェクトの作成に失敗しました。',
+  [ErrorType.ProjectLoadFailed]: 'プロジェクトの読み込みに失敗しました。',
+  [ErrorType.ProjectSaveFailed]: 'プロジェクトの保存に失敗しました。',
+  [ErrorType.ProjectNotFound]: '指定されたプロジェクトが見つかりません。',
+  [ErrorType.ProjectDeleteFailed]: 'プロジェクトの削除に失敗しました。',
+
+  [ErrorType.RENDERER_ERROR]: 'レンダリング処理中にエラーが発生しました。',
+
+  [ErrorType.INVALID_STATE]: 'アプリケーションが予期しない状態です。処理を続行できません。',
+  [ErrorType.OPERATION_ABORTED]: '操作が中断されました。',
 };
 
 /**
  * アプリケーションエラー
  */
 export class AppError extends Error {
-  constructor(
-    public readonly type: ErrorType,
-    message: string,
-    public readonly details?: unknown
-  ) {
-    super(message);
+  public readonly type: ErrorType;
+  public readonly cause?: unknown;
+
+  constructor(type: ErrorType, message?: string, cause?: unknown) {
+    super(message || ErrorMessages[type] || `Unknown error type: ${type}`);
     this.name = 'AppError';
+    this.type = type;
+    this.cause = cause;
+
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, AppError);
+    }
   }
 } 

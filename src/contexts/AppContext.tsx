@@ -1,11 +1,34 @@
-import React, { createContext, useContext, useReducer, useCallback } from 'react';
-import { AppState, AppOperations, AppPhase, AppServices, withAppError } from '../core/types/app';
+import React, { createContext, useContext, useReducer, useCallback, useMemo, useRef, useEffect } from 'react';
+import { AppState, AppOperations, AppPhase, AppServices, withAppError, AnalysisResult } from '../core/types/app';
 import { ProjectService } from '../core/ProjectService';
 import { AudioPlaybackService } from '../core/AudioPlaybackService';
 import { AudioAnalyzerService } from '../core/AudioAnalyzerService';
 import { EffectBase, EffectConfig } from '../core/types/core';
 import { VideoSettings } from '../core/types/base';
 import { AppError, ErrorType } from '../core/types/error';
+import { EffectManager } from '../core/EffectManager';
+import { AudioSource } from '../core/types/base';
+import { DrawingManager } from '../core/DrawingManager';
+import { 
+  createDefaultBackgroundEffect,
+  createDefaultWaveformEffect,
+  createDefaultWatermarkEffect
+} from '../core/DefaultEffectService';
+import { BackgroundEffect } from '../features/background/BackgroundEffect';
+import { WaveformEffect } from '../features/waveform/WaveformEffect';
+import { WatermarkEffect } from '../features/watermark/WatermarkEffect';
+import { TextEffect } from '../features/text/TextEffect';
+import { ProjectData } from '../core/types/state';
+import {
+  BackgroundEffectConfig, 
+  TextEffectConfig, 
+  WaveformEffectConfig, 
+  WatermarkEffectConfig
+} from '../core/types/effect';
+import { PlaybackState } from '../core/types/audio';
+import debug from 'debug';
+
+const log = debug('app:AppContext');
 
 // 状態遷移の定義
 const PHASE_TRANSITIONS: Record<AppPhase['type'], AppPhase['type'][]> = {
@@ -25,11 +48,6 @@ function validatePhaseTransition(current: AppPhase['type'], next: AppPhase['type
   return isValid;
 }
 
-type AppContextType = AppState & AppOperations & {
-  dispatch: (action: AppAction) => void;
-  services: AppServices;
-};
-
 type AppAction = 
   | { type: 'TRANSITION'; payload: AppPhase }
   | { type: 'SET_PROJECT'; payload: Partial<AppState['projectState']> }
@@ -38,8 +56,13 @@ type AppAction =
   | { type: 'SET_UI'; payload: Partial<AppState['ui']> }
   | { type: 'SET_ERROR'; payload: Partial<AppState['error']> }
   | { type: 'CLEAR_ERROR' }
-  | { type: 'HANDLE_ERROR'; payload: { error: AppError; errorType: ErrorType; message: string } };
+  | { type: 'HANDLE_ERROR'; payload: { error: AppError; errorType: ErrorType; message: string } }
+  | { type: 'SELECT_EFFECT'; payload: string | null }
+  | { type: 'DESELECT_EFFECT' }
+  | { type: 'OPEN_SETTINGS_PANEL' }
+  | { type: 'CLOSE_SETTINGS_PANEL' };
 
+// Use the original AppState type from app.ts which now includes the correct AnalysisResult
 const initialState: AppState = {
   phase: { type: 'idle' },
   projectState: {
@@ -52,7 +75,8 @@ const initialState: AppState = {
     duration: 0,
     isPlaying: false,
     volume: 1,
-    loop: false
+    loop: false,
+    analysis: undefined // Initialize analysis as undefined
   },
   effectState: {
     effects: [],
@@ -61,7 +85,9 @@ const initialState: AppState = {
   ui: {
     isSidebarOpen: true,
     activeTab: 'effects',
-    theme: 'light'
+    theme: 'light',
+    selectedEffectId: null,
+    isSettingsPanelOpen: false
   },
   error: {
     type: null,
@@ -70,8 +96,16 @@ const initialState: AppState = {
   }
 };
 
-const AppContext = createContext<AppContextType | null>(null);
+// Use the original AppState
+export interface AppContextType extends AppState, AppOperations {
+  dispatch: React.Dispatch<AppAction>;
+  managerInstance: EffectManager;
+  drawingManager: DrawingManager;
+}
 
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+// Use original AppState in reducer
 const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'TRANSITION': {
@@ -93,6 +127,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       };
 
     case 'SET_AUDIO':
+      // Payload type should now match AppState['audioState']
       return {
         ...state,
         audioState: {
@@ -145,335 +180,442 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         }
       };
 
+    case 'SELECT_EFFECT':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          selectedEffectId: action.payload
+        }
+      };
+
+    case 'DESELECT_EFFECT':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          selectedEffectId: null,
+          isSettingsPanelOpen: false
+        }
+      };
+
+    case 'OPEN_SETTINGS_PANEL':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          isSettingsPanelOpen: true
+        }
+      };
+
+    case 'CLOSE_SETTINGS_PANEL':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          isSettingsPanelOpen: false
+        }
+      };
+
     default:
       return state;
   }
 };
 
+// --- Helper function moved here --- 
+interface WithAudioSource {
+  setAudioSource: (source: AudioSource & Partial<AnalysisResult>) => void;
+}
+function hasSetAudioSource(effect: unknown): effect is WithAudioSource {
+  return typeof (effect as WithAudioSource).setAudioSource === 'function';
+}
+// --- End Helper function ---
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
-  // サービスの初期化
-  const services: AppServices = {
-    projectService: ProjectService.getInstance(),
-    audioService: {
-      playback: AudioPlaybackService.getInstance(),
-      analyzer: AudioAnalyzerService.getInstance()
-    }
-  };
+  const audioService = useMemo(() => AudioPlaybackService.getInstance(), []);
+  const managerInstance = useMemo(() => new EffectManager(), []);
+  const drawingManager = useMemo(() => new DrawingManager(managerInstance), [managerInstance]);
+  const analyzerService = useMemo(() => AudioAnalyzerService.getInstance(), []);
 
-  // エラーハンドラー
-  const handleError = useCallback((error: AppError) => {
-    dispatch({
-      type: 'SET_ERROR',
-      payload: {
-        type: error.type,
-        message: error.message
-      }
+  const handleErrorCallback = useCallback((error: AppError) => {
+    log('Handling error:', error);
+    dispatch({ 
+      type: 'HANDLE_ERROR', 
+      payload: { error, errorType: error.type, message: error.message }
     });
-    dispatch({
-      type: 'TRANSITION',
-      payload: { type: 'error', error }
-    });
+  }, [dispatch]);
+
+  const addEffect = useCallback(async (effect: EffectBase<any>) => {
+    try {
+      await managerInstance.addEffect(effect);
+      // Get the updated list from the manager to ensure consistency
+      const updatedEffects = managerInstance.getEffects();
+      dispatch({ type: 'SET_EFFECTS', payload: { effects: updatedEffects } });
+      log('Effect added:', effect.getId(), 'Updated effects count:', updatedEffects.length);
+      // await saveProject(); // Consider if saving is needed immediately after adding an effect
+    } catch (error) {
+      console.error("Failed to add effect:", error);
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.GENERIC_ERROR, "Failed to add effect", error as Error));
+    }
+  }, [managerInstance, dispatch, handleErrorCallback]);
+
+  // 音声再生状態の監視（インターバルポーリングからイベントリスナー方式に変更）
+  useEffect(() => {
+    // 状態変更リスナーのコールバック
+    const handlePlaybackStateChange = (state: PlaybackState) => {
+      // アニメーションフレームとの同期を考慮し、再生状態と現在時刻のみ更新
+      dispatch({ 
+        type: 'SET_AUDIO', 
+        payload: { 
+          isPlaying: state.isPlaying,
+          // currentTimeはアニメーションフレームで更新するため除外
+          volume: state.volume,
+          loop: state.loop,
+        }
+      });
+    };
+
+    // リスナーを登録
+    audioService.addStateChangeListener(handlePlaybackStateChange);
+
+    // クリーンアップ時にリスナーを解除
+    return () => {
+      audioService.removeStateChangeListener(handlePlaybackStateChange);
+    };
+  }, [audioService, dispatch]);
+
+  const transitionTo = useCallback((phase: AppPhase) => {
+    dispatch({ type: 'TRANSITION', payload: phase });
   }, []);
 
-  // フェーズ遷移
-  const transitionTo = useCallback((phase: AppPhase) => {
-    console.log('フェーズ遷移要求:', {
-      from: state.phase.type,
-      to: phase.type,
-      project: state.projectState.currentProject,
-      audio: state.audioState,
-      effects: state.effectState.effects
-    });
-    dispatch({ type: 'TRANSITION', payload: phase });
-  }, [state]);
-
-  // プロジェクト操作
-  const createProject = useCallback(async (name: string, settings: VideoSettings) => {
-    await withAppError(
-      async () => {
-        transitionTo({ type: 'idle' });
-        const project = await services.projectService.createProject(name, settings);
-        dispatch({ type: 'SET_PROJECT', payload: { currentProject: project } });
-        transitionTo({ type: 'ready' });
-      },
-      { type: 'error', error: new Error('プロジェクトの作成に失敗しました') },
-      handleError
-    );
-  }, [transitionTo, handleError]);
-
-  const saveProject = useCallback(async () => {
-    if (!state.projectState.currentProject) return;
-    await withAppError(
-      async () => {
-        await services.projectService.saveProject(state.projectState.currentProject!);
-        dispatch({ type: 'SET_PROJECT', payload: { lastSaved: Date.now() } });
-      },
-      { type: 'error', error: new Error('プロジェクトの保存に失敗しました') },
-      handleError
-    );
-  }, [state.projectState.currentProject, handleError]);
-
-  const loadProject = useCallback(async (id: string) => {
-    await withAppError(
-      async () => {
-        transitionTo({ type: 'idle' });
-        const project = await services.projectService.loadProject(id);
-        dispatch({ type: 'SET_PROJECT', payload: { currentProject: project } });
-        transitionTo({ type: 'ready' });
-      },
-      { type: 'error', error: new Error('プロジェクトの読み込みに失敗しました') },
-      handleError
-    );
-  }, [transitionTo, handleError]);
-
-  // オーディオ操作
   const loadAudio = useCallback(async (file: File) => {
-    await withAppError(
-      async () => {
-        transitionTo({ type: 'loadingAudio', file });
-        
-        const audioBuffer = await services.audioService.playback.decodeAudioData(
-          await file.arrayBuffer()
-        );
-        
-        const source = {
-          file,
-          buffer: audioBuffer,
-          duration: audioBuffer.duration,
-          sampleRate: audioBuffer.sampleRate,
-          numberOfChannels: audioBuffer.numberOfChannels
+    transitionTo({ type: 'loadingAudio' });
+    let source: AudioSource | null = null;
+    try {
+      const buffer = await file.arrayBuffer();
+      const audioBuffer = await audioService.decodeAudioData(buffer);
+      source = { file, buffer: audioBuffer, duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate, numberOfChannels: audioBuffer.numberOfChannels };
+      await audioService.setAudioSource(source);
+      dispatch({ type: 'SET_AUDIO', payload: { source, duration: source.duration } }); 
+      
+      transitionTo({ type: 'analyzing' });
+
+      if (!source) {
+          throw new AppError(ErrorType.INVALID_STATE, "AudioSource is not available for analysis.");
+      }
+
+      try {
+        console.log("Starting audio analysis with AudioSource...");
+        const analysisResult = await analyzerService.analyze(source);
+        console.log("Audio analysis complete:"); 
+        // Combine source and analysis result
+        // Updated AudioSource definition now accepts both Float32Array[][] and Uint8Array[]
+        const sourceWithAnalysis = {
+           ...source, 
+           waveformData: analysisResult.waveformData,
+           frequencyData: analysisResult.frequencyData // Now compatible with updated AudioSource
         };
-        
-        await services.audioService.playback.setAudioSource(source);
-        
-        // 音声ソースと再生状態を更新
-        const playbackState = services.audioService.playback.getPlaybackState();
-        dispatch({
-          type: 'SET_AUDIO',
-          payload: {
-            source,
-            currentTime: playbackState.currentTime,
-            duration: playbackState.duration,
-            isPlaying: playbackState.isPlaying,
-            volume: playbackState.volume,
-            loop: playbackState.loop
-          }
-        });
-        
-        transitionTo({ type: 'analyzing' });
-        const analysis = await services.audioService.analyzer.analyze(source);
-        dispatch({ type: 'SET_AUDIO', payload: { analysis } });
-        
+        // Dispatch the original analysis result to state
+        dispatch({ type: 'SET_AUDIO', payload: { analysis: analysisResult } });
+
+        console.log("Adding default effects...");
+        const backgroundEffect = new BackgroundEffect(createDefaultBackgroundEffect());
+        const waveformEffect = new WaveformEffect(createDefaultWaveformEffect());
+        const watermarkEffect = new WatermarkEffect(createDefaultWatermarkEffect());
+
+        if (hasSetAudioSource(waveformEffect)) {
+          // Pass the combined object (with casted frequencyData)
+          waveformEffect.setAudioSource(sourceWithAnalysis);
+        }
+
+        // デフォルトエフェクトを追加（背景、波形、ウォーターマーク）
+        await addEffect(backgroundEffect);
+        await addEffect(waveformEffect);
+        await addEffect(watermarkEffect);
+        console.log("Default effects added.");
+
         transitionTo({ type: 'ready' });
-      },
-      { type: 'error', error: new Error('音声の読み込みに失敗しました') },
-      handleError
-    );
-  }, [transitionTo, handleError]);
+      } catch (analysisError) {
+        console.error("Audio analysis or default effect addition failed:", analysisError);
+        handleErrorCallback(analysisError instanceof AppError ? analysisError : new AppError(ErrorType.AUDIO_ANALYSIS_FAILED, "Failed to analyze audio or add default effects", analysisError as Error));
+      }
+
+    } catch (loadError) {
+      console.error("Audio loading/decoding failed:", loadError);
+      handleErrorCallback(loadError instanceof AppError ? loadError : new AppError(ErrorType.DECODE_AUDIO_DATA_ERROR, "Failed to load or decode audio", loadError as Error));
+    }
+  }, [audioService, analyzerService, transitionTo, handleErrorCallback, dispatch, addEffect]);
 
   const playAudio = useCallback(() => {
-    if (state.phase.type !== 'ready') return;
     try {
-      services.audioService.playback.play();
-      const playbackState = services.audioService.playback.getPlaybackState();
-      dispatch({
-        type: 'SET_AUDIO',
-        payload: {
-          currentTime: playbackState.currentTime,
-          duration: playbackState.duration,
-          isPlaying: playbackState.isPlaying,
-          volume: playbackState.volume,
-          loop: playbackState.loop
-        }
-      });
-      transitionTo({ type: 'playing' });
+      audioService.play();
     } catch (error) {
-      handleError(error instanceof AppError ? error : new AppError(
-        ErrorType.PlaybackError,
-        '再生に失敗しました'
-      ));
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.PLAYBACK_ERROR, "Failed to play audio", error));
     }
-  }, [state.phase.type, transitionTo, handleError]);
+  }, [audioService, handleErrorCallback]);
 
   const pauseAudio = useCallback(() => {
-    if (state.phase.type !== 'playing') return;
     try {
-      services.audioService.playback.pause();
-      const playbackState = services.audioService.playback.getPlaybackState();
-      dispatch({
-        type: 'SET_AUDIO',
-        payload: {
-          currentTime: playbackState.currentTime,
-          duration: playbackState.duration,
-          isPlaying: playbackState.isPlaying,
-          volume: playbackState.volume,
-          loop: playbackState.loop
-        }
-      });
-      transitionTo({ type: 'ready' });
+      audioService.pause();
     } catch (error) {
-      handleError(error instanceof AppError ? error : new AppError(
-        ErrorType.PlaybackError,
-        '一時停止に失敗しました'
-      ));
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.PLAYBACK_ERROR, "Failed to pause audio", error));
     }
-  }, [state.phase.type, transitionTo, handleError]);
+  }, [audioService, handleErrorCallback]);
 
   const seekAudio = useCallback((time: number) => {
     try {
-      services.audioService.playback.seek(time);
-      const playbackState = services.audioService.playback.getPlaybackState();
-      dispatch({
-        type: 'SET_AUDIO',
-        payload: {
-          currentTime: playbackState.currentTime,
-          duration: playbackState.duration,
-          isPlaying: playbackState.isPlaying,
-          volume: playbackState.volume,
-          loop: playbackState.loop
-        }
-      });
+      audioService.seek(time);
     } catch (error) {
-      handleError(error instanceof AppError ? error : new AppError(
-        ErrorType.PlaybackError,
-        'シークに失敗しました'
-      ));
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.SEEK_ERROR, "Failed to seek audio", error));
     }
-  }, [handleError]);
-
-  // エフェクト操作
-  const addEffect = useCallback(async (effect: EffectBase<EffectConfig>) => {
-    try {
-      const list = [...state.effectState.effects, effect];
-      dispatch({ type: 'SET_EFFECTS', payload: { effects: list } });
-      await saveProject();
-    } catch (error) {
-      handleError(error instanceof AppError ? error : new AppError(
-        ErrorType.EffectError,
-        'エフェクトの追加に失敗しました'
-      ));
-    }
-  }, [state.effectState.effects, saveProject, handleError]);
-
-  const removeEffect = useCallback(async (id: string) => {
-    try {
-      const list = state.effectState.effects.filter((effect: EffectBase<EffectConfig>) => 
-        effect.getId() !== id
-      );
-      dispatch({ type: 'SET_EFFECTS', payload: { effects: list } });
-      await saveProject();
-    } catch (error) {
-      handleError(error instanceof AppError ? error : new AppError(
-        ErrorType.EffectError,
-        'エフェクトの削除に失敗しました'
-      ));
-    }
-  }, [state.effectState.effects, saveProject, handleError]);
-
-  const updateEffect = useCallback((id: string, config: Partial<EffectConfig>) => {
-    try {
-      const list = state.effectState.effects.map((effect: EffectBase<EffectConfig>) => {
-        if (effect.getId() === id) {
-          effect.updateConfig(config);
-          return effect;
-        }
-        return effect;
-      });
-      dispatch({ type: 'SET_EFFECTS', payload: { effects: list } });
-      saveProject().catch(handleError);
-    } catch (error) {
-      handleError(error instanceof AppError ? error : new AppError(
-        ErrorType.EffectError,
-        'エフェクトの更新に失敗しました'
-      ));
-    }
-  }, [state.effectState.effects, saveProject, handleError]);
-
-  const moveEffect = useCallback(async (sourceId: string, targetId: string) => {
-    try {
-      const list = [...state.effectState.effects];
-      const sourceIndex = list.findIndex(effect => effect.getId() === sourceId);
-      const targetIndex = list.findIndex(effect => effect.getId() === targetId);
-
-      if (sourceIndex === -1 || targetIndex === -1) return;
-
-      const [movedEffect] = list.splice(sourceIndex, 1);
-      list.splice(targetIndex, 0, movedEffect);
-
-      dispatch({ type: 'SET_EFFECTS', payload: { effects: list } });
-      await saveProject();
-    } catch (error) {
-      handleError(error instanceof AppError ? error : new AppError(
-        ErrorType.EffectError,
-        'エフェクトの移動に失敗しました'
-      ));
-    }
-  }, [state.effectState.effects, saveProject, handleError]);
+  }, [audioService, handleErrorCallback]);
 
   const selectEffect = useCallback((id: string | null) => {
-    const selectedEffect = id ? state.effectState.effects.find(effect => effect.getId() === id) : null;
-    dispatch({ type: 'SET_EFFECTS', payload: { selectedEffect } });
-  }, [state.effectState.effects]);
+    dispatch({ type: 'SELECT_EFFECT', payload: id });
+    if (id) {
+      dispatch({ type: 'OPEN_SETTINGS_PANEL' });
+    } else {
+      dispatch({ type: 'CLOSE_SETTINGS_PANEL' });
+    }
+  }, []);
 
-  // エクスポート操作
+  const deselectEffect = useCallback(() => {
+    dispatch({ type: 'DESELECT_EFFECT' });
+    dispatch({ type: 'CLOSE_SETTINGS_PANEL' });
+  }, []);
+
+  const openSettingsPanel = useCallback(() => {
+    dispatch({ type: 'OPEN_SETTINGS_PANEL' });
+  }, []);
+
+  const closeSettingsPanel = useCallback(() => {
+    dispatch({ type: 'CLOSE_SETTINGS_PANEL' });
+  }, []);
+  
+  const updateEffect = useCallback((id: string, config: Partial<EffectConfig>) => {
+    try {
+      console.log('Updating effect:', id, config);
+      // EffectManagerを使用してエフェクトを更新
+      const effect = managerInstance.getEffect(id);
+      if (!effect) {
+        throw new AppError(ErrorType.EFFECT_NOT_FOUND, `エフェクトが見つかりません: ${id}`);
+      }
+      
+      // エフェクトの設定を更新
+      effect.updateConfig(config);
+      
+      // 更新されたエフェクトリストを取得して状態を更新
+      const updatedEffects = managerInstance.getEffects();
+      dispatch({ 
+        type: 'SET_EFFECTS', 
+        payload: { effects: updatedEffects }
+      });
+      
+      // アニメーションフレームでの再描画のために更新フラグを設定
+      // （必要に応じて実装）
+      
+      // 自動保存（オプション）
+      // saveProject(); 
+    } catch (error) {
+      console.error('エフェクト更新エラー:', error);
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.EFFECT_CONFIG_INVALID, `エフェクト設定の更新に失敗しました: ${id}`, error as Error));
+    }
+  }, [managerInstance, dispatch, handleErrorCallback]);
+
+  const removeEffect = useCallback(async (id: string) => {
+    log('Removing effect:', id);
+    try {
+      managerInstance.removeEffect(id);
+      const updatedEffects = managerInstance.getEffects();
+      dispatch({ type: 'SET_EFFECTS', payload: { effects: updatedEffects } });
+
+      if (state.ui.selectedEffectId === id) {
+        dispatch({ type: 'SELECT_EFFECT', payload: null });
+        dispatch({ type: 'CLOSE_SETTINGS_PANEL' });
+      }
+
+      log('Effect removed:', id);
+    } catch (error) {
+      console.error('Failed to remove effect:', error);
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.GENERIC_ERROR, `エフェクトの削除に失敗しました: ${id}`, error as Error));
+    }
+  }, [managerInstance, state.ui.selectedEffectId, dispatch, handleErrorCallback]);
+
+  const moveEffect = useCallback(async (sourceId: string, targetId: string) => {
+    log('Moving effect:', { sourceId, targetId });
+    try {
+      managerInstance.moveEffect(sourceId, targetId);
+      // moveEffect後はzIndexが変わるのでソート済みのリストを取得
+      const updatedEffects = managerInstance.getSortedEffects();
+      dispatch({ type: 'SET_EFFECTS', payload: { effects: updatedEffects } });
+      log('Effect moved');
+    } catch (error) {
+      console.error('Failed to move effect:', error);
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.GENERIC_ERROR, `エフェクトの移動に失敗しました`, error as Error));
+    }
+  }, [managerInstance, dispatch, handleErrorCallback]);
+
+  const createProject = useCallback(async (name: string, settings: VideoSettings) => {
+    console.log('[TODO] createProject called', name, settings);
+    // Implement project creation logic
+  }, []);
+
+  const saveProject = useCallback(async () => {
+    log('Attempting to save project...');
+    if (!state.projectState.currentProject) {
+      log('No current project to save.');
+      return;
+    }
+
+    try {
+      const projectDataToSave: ProjectData = {
+        ...state.projectState.currentProject,
+        // EffectManagerから最新のエフェクトリストを取得して設定を保存
+        effects: managerInstance.getEffects().map((effect: EffectBase<EffectConfig>) => effect.getConfig()),
+        // AudioBufferは保存しない（またはファイル参照/ArrayBuffer保存を検討）
+        audioBuffer: null,
+        updatedAt: Date.now(),
+      };
+
+      const projectService = ProjectService.getInstance();
+      await projectService.saveProject(projectDataToSave);
+
+      dispatch({ type: 'SET_PROJECT', payload: { lastSaved: projectDataToSave.updatedAt } });
+      log('Project saved successfully:', projectDataToSave.id);
+
+    } catch (error) {
+      console.error('Failed to save project:', error);
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.ProjectSaveFailed, 'プロジェクトの保存に失敗しました', error as Error));
+    }
+  }, [state.projectState.currentProject, managerInstance, dispatch, handleErrorCallback]);
+
+  const loadProject = useCallback(async (id: string) => {
+    log('Loading project:', id);
+    dispatch({ type: 'SET_PROJECT', payload: { isLoading: true } });
+    try {
+      const projectService = ProjectService.getInstance();
+      const loadedProjectData = await projectService.loadProject(id);
+
+      // プロジェクト基本情報の設定
+      dispatch({
+        type: 'SET_PROJECT',
+        payload: {
+          currentProject: { ...loadedProjectData, audioBuffer: null },
+          isLoading: false,
+          lastSaved: loadedProjectData.updatedAt
+        }
+      });
+
+      // エフェクトの復元
+      managerInstance.dispose();
+      loadedProjectData.effects.forEach((config: any) => {
+        try {
+          let effectInstance: EffectBase<any>;
+          if (config.type === 'background') {
+              effectInstance = new BackgroundEffect(config as BackgroundEffectConfig);
+          } else if (config.type === 'text') {
+              effectInstance = new TextEffect(config as TextEffectConfig);
+          } else if (config.type === 'waveform') {
+              effectInstance = new WaveformEffect(config as WaveformEffectConfig);
+          } else if (config.type === 'watermark') {
+              effectInstance = new WatermarkEffect(config as WatermarkEffectConfig);
+          } else {
+              throw new Error(`Unsupported effect type: ${config.type}`);
+          }
+          managerInstance.addEffect(effectInstance);
+        } catch (effectError) {
+           console.error(`Failed to restore effect ${config.id}:`, effectError);
+        }
+      });
+
+      const restoredEffects = managerInstance.getEffects();
+      dispatch({ type: 'SET_EFFECTS', payload: { effects: restoredEffects, selectedEffect: null } });
+
+      // UI状態リセット
+      dispatch({ type: 'SET_UI', payload: { selectedEffectId: null, isSettingsPanelOpen: false } });
+
+      // アプリケーションの状態を'ready'に遷移
+      dispatch({ type: 'TRANSITION', payload: { type: 'ready' } });
+
+      log('Project loaded successfully:', id);
+
+    } catch (error) {
+      console.error('Failed to load project:', error);
+      dispatch({ type: 'SET_PROJECT', payload: { isLoading: false } });
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.ProjectLoadFailed, `プロジェクトの読み込みに失敗しました: ${id}`, error as Error));
+      // エラー発生時は idle 状態に戻す
+      dispatch({ type: 'TRANSITION', payload: { type: 'idle' } });
+    }
+  }, [dispatch, managerInstance, handleErrorCallback]);
+
   const startExport = useCallback(async (settings: VideoSettings) => {
-    await withAppError(
-      async () => {
-        transitionTo({ type: 'exporting', settings });
-        // VideoEncoderServiceを使用してエクスポート
-        transitionTo({ type: 'ready' });
-      },
-      { type: 'error', error: new Error('エクスポートに失敗しました') },
-      handleError
-    );
-  }, [transitionTo, handleError]);
+    console.log('[TODO] startExport called', settings);
+    // Implement export logic
+  }, []);
 
   const cancelExport = useCallback(() => {
-    if (state.phase.type === 'exporting') {
-      // VideoEncoderServiceのエクスポートをキャンセル
-      transitionTo({ type: 'ready' });
-    }
-  }, [state.phase.type, transitionTo]);
+    console.log('[TODO] cancelExport called');
+    // Implement export cancellation logic
+  }, []);
 
-  // プロジェクト操作
-  const operations: AppOperations = {
+  const contextValue = useMemo<AppContextType>(() => ({
+    ...state,
+    dispatch,
+    managerInstance,
+    drawingManager,
     transitionTo,
-    createProject,
-    saveProject,
-    loadProject,
     loadAudio,
     playAudio,
     pauseAudio,
     seekAudio,
-    addEffect,
-    removeEffect,
-    updateEffect,
-    moveEffect,
     selectEffect,
+    deselectEffect,
+    openSettingsPanel,
+    closeSettingsPanel,
+    updateEffect,
+    removeEffect,
+    moveEffect,
+    createProject,
+    saveProject,
+    loadProject,
     startExport,
-    cancelExport
-  };
-
-  const value: AppContextType = {
-    ...state,
-    ...operations,
+    cancelExport,
+    addEffect,
+  }), [
+    state,
     dispatch,
-    services
-  };
+    managerInstance,
+    drawingManager,
+    transitionTo,
+    loadAudio,
+    playAudio,
+    pauseAudio,
+    seekAudio,
+    selectEffect,
+    deselectEffect,
+    openSettingsPanel,
+    closeSettingsPanel,
+    updateEffect,
+    removeEffect,
+    moveEffect,
+    createProject,
+    saveProject,
+    loadProject,
+    startExport,
+    cancelExport,
+    addEffect,
+  ]);
 
-  return (
-    <AppContext.Provider value={value}>
-      {children}
-    </AppContext.Provider>
-  );
+  return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>;
 };
 
-export const useApp = () => {
+export const useApp = (): AppContextType => {
   const context = useContext(AppContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useApp must be used within an AppProvider');
   }
+  // Remove the cast to ModifiedAppState
   return context;
 }; 

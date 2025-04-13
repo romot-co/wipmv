@@ -1,3 +1,7 @@
+.root {
+  padding: 0;
+}
+
 /* Base layout */
 .app {
   display: flex;

@@ -22,7 +22,7 @@ import { VideoEncoderService } from './VideoEncoderService';
 /**
  * エフェクトマネージャー
  * - エフェクトの管理（追加/削除/更新/ソート）
- * - エフェクトの描画
+ * - エフェクトの状態更新
  */
 export class EffectManager implements IEffectManager {
   private static readonly BASE_Z_INDEX = 1000; // 基準となるzIndex
@@ -32,21 +32,6 @@ export class EffectManager implements IEffectManager {
 
   private effects: EffectBase<EffectConfig>[] = [];
   private needsSort: boolean = false;
-  private renderer: Renderer | null = null;
-
-  /**
-   * レンダラーを設定
-   */
-  setRenderer(renderer: Renderer): void {
-    this.renderer = renderer;
-  }
-
-  /**
-   * レンダラーを取得
-   */
-  getRenderer(): Renderer | null {
-    return this.renderer;
-  }
 
   /**
    * 新しいzIndexを計算
@@ -62,8 +47,10 @@ export class EffectManager implements IEffectManager {
 
     const newZIndex = maxZIndex + EffectManager.Z_INDEX_STEP;
     if (newZIndex > EffectManager.MAX_Z_INDEX) {
+      // 無限再帰を避けるために正規化後に直接値を返す
       this.normalizeZIndices();
-      return this.calculateNewZIndex();
+      // 正規化後は BASE_Z_INDEX + 最後のエフェクトのインデックス * Z_INDEX_STEP + Z_INDEX_STEP を返す
+      return EffectManager.BASE_Z_INDEX + (this.effects.length * EffectManager.Z_INDEX_STEP);
     }
 
     return newZIndex;
@@ -74,17 +61,37 @@ export class EffectManager implements IEffectManager {
    */
   addEffect(effect: EffectBase<EffectConfig>, zIndex?: number): void {
     const config = effect.getConfig();
-    config.zIndex = zIndex ?? this.calculateNewZIndex();
     
-    if (config.zIndex < EffectManager.MIN_Z_INDEX || config.zIndex > EffectManager.MAX_Z_INDEX) {
-      throw new AppError(
-        ErrorType.EffectInitFailed,
-        'Invalid zIndex value'
-      );
+    try {
+      // 指定されたzIndexを使用するか、新しいzIndexを計算
+      config.zIndex = zIndex ?? this.calculateNewZIndex();
+      
+      // zIndexの範囲チェック
+      if (config.zIndex < EffectManager.MIN_Z_INDEX || config.zIndex > EffectManager.MAX_Z_INDEX) {
+        console.warn('Invalid zIndex value, normalizing:', config.zIndex);
+        this.normalizeZIndices();
+        config.zIndex = EffectManager.BASE_Z_INDEX + (this.effects.length * EffectManager.Z_INDEX_STEP);
+      }
+      
+      // すでに同じIDのエフェクトが存在するかチェック
+      const existingIndex = this.effects.findIndex(e => e.getId() === effect.getId());
+      if (existingIndex >= 0) {
+        console.warn('Duplicate effect ID detected, replacing existing effect:', effect.getId());
+        this.effects[existingIndex] = effect;
+      } else {
+        // 新しいエフェクトを追加
+        this.effects.push(effect);
+      }
+      
+      this.needsSort = true;
+    } catch (error) {
+      console.error('Error adding effect:', error);
+      // 最後の手段としてデフォルトのzIndexを設定
+      config.zIndex = EffectManager.BASE_Z_INDEX;
+      // それでも追加を試みる
+      this.effects.push(effect);
+      this.needsSort = true;
     }
-
-    this.effects.push(effect);
-    this.needsSort = true;
   }
 
   /**
@@ -102,9 +109,17 @@ export class EffectManager implements IEffectManager {
   }
 
   /**
-   * 全エフェクトを取得
+   * 全エフェクトを取得 (ソートされていない可能性あり)
    */
   getEffects(): EffectBase<EffectConfig>[] {
+    return [...this.effects];
+  }
+
+  /**
+   * ソート済みの全エフェクトを取得
+   */
+  getSortedEffects(): EffectBase<EffectConfig>[] {
+    this.sortEffectsByZIndex(); // 必要であればソートを実行
     return [...this.effects];
   }
 
@@ -115,7 +130,7 @@ export class EffectManager implements IEffectManager {
     const effect = this.getEffect(id);
     if (!effect) {
       throw new AppError(
-        ErrorType.EffectNotFound,
+        ErrorType.EFFECT_NOT_FOUND,
         'Effect not found'
       );
     }
@@ -131,121 +146,29 @@ export class EffectManager implements IEffectManager {
    */
   private sortEffectsByZIndex(): void {
     if (!this.needsSort) return;
-
     this.effects.sort((a, b) => {
       const aIndex = a.getConfig().zIndex ?? 0;
       const bIndex = b.getConfig().zIndex ?? 0;
       return aIndex - bIndex;
     });
-
     this.needsSort = false;
-  }
-
-  /**
-   * エフェクトの表示状態を更新
-   */
-  private updateEffectVisibility(currentTime: number): void {
-    for (const effect of this.effects) {
-      const config = effect.getConfig();
-      
-      // 開始時間と終了時間のチェック
-      const startTime = config.startTime ?? 0;
-      const endTime = (config.endTime === 0 || config.endTime === undefined) ? Infinity : config.endTime;
-      
-      // 表示状態を更新
-      const isVisible = currentTime >= startTime && currentTime <= endTime;
-      
-      // 表示状態が変化した時のみログを出力
-      if (config.visible !== isVisible) {
-        console.log('エフェクト表示状態更新:', {
-          effectId: effect.getId(),
-          currentTime,
-          startTime,
-          endTime,
-          visible: isVisible,
-          previousVisible: config.visible
-        });
-      }
-      
-      // 設定を更新
-      effect.updateConfig({
-        ...config,
-        visible: isVisible
-      });
-    }
   }
 
   /**
    * 全エフェクトの状態を更新
    */
   updateAll(currentTime: number): void {
-    if (!this.renderer) {
-      console.warn('レンダラーが設定されていません');
-      return;
-    }
-
-    // エフェクトの表示状態を更新
-    this.updateEffectVisibility(currentTime);
-
     // エフェクトを更新
     this.effects.forEach(effect => {
-      const config = effect.getConfig();
-      if (config.visible) {
-        try {
-          effect.update(currentTime);
-        } catch (error) {
-          console.error('エフェクト更新エラー:', {
-            effectId: effect.getId(),
-            error
-          });
-        }
+      try {
+        effect.update(currentTime);
+      } catch (error) {
+        console.error('エフェクト更新エラー:', {
+          effectId: effect.getId(),
+          error
+        });
       }
     });
-  }
-
-  /**
-   * 全エフェクトを描画
-   */
-  renderAll(currentTime: number, ctx?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
-    if (!this.renderer && !ctx) {
-      console.warn('レンダラーが設定されていません');
-      return;
-    }
-
-    try {
-      // エフェクトをソート
-      this.sortEffectsByZIndex();
-
-      // オフスクリーンに描画
-      const context = ctx ?? this.renderer!.getOffscreenContext();
-      if (!ctx && this.renderer) {
-        this.renderer.clear();
-      }
-
-      // 表示状態のエフェクトのみ描画
-      let hasVisibleEffects = false;
-      for (const effect of this.effects) {
-        const config = effect.getConfig();
-        if (config.visible) {
-          hasVisibleEffects = true;
-          try {
-            effect.render(context);
-          } catch (error) {
-            console.error('エフェクト描画エラー:', {
-              effectId: effect.getId(),
-              error
-            });
-          }
-        }
-      }
-
-      // メインキャンバスに転送
-      if (!ctx && this.renderer) {
-        this.renderer.drawToMain();
-      }
-    } catch (error) {
-      console.error('renderAllエラー:', error);
-    }
   }
 
   /**
@@ -257,7 +180,7 @@ export class EffectManager implements IEffectManager {
 
     if (!sourceEffect || !targetEffect) {
       throw new AppError(
-        ErrorType.EffectNotFound,
+        ErrorType.EFFECT_NOT_FOUND,
         'Effect not found'
       );
     }
@@ -315,30 +238,93 @@ export class EffectManager implements IEffectManager {
   dispose(): void {
     this.effects.forEach(effect => effect.dispose());
     this.effects = [];
-    this.renderer = null;
   }
 
-  /**
-   * エクスポート用のキャンバスを作成
-   */
-  createExportCanvas(options: { width: number; height: number }): HTMLCanvasElement {
-    const canvas = document.createElement('canvas');
-    canvas.width = options.width;
-    canvas.height = options.height;
-    return canvas;
-  }
+  // --- Direct Manipulation 用メソッド ---
 
   /**
-   * エクスポートフレームを描画
+   * 指定された座標にある最前面のエフェクトIDを取得
+   * @param x 相対座標X (0.0 - 1.0)
+   * @param y 相対座標Y (0.0 - 1.0)
+   * @param canvasWidth キャンバスの幅
+   * @param canvasHeight キャンバスの高さ
+   * @returns エフェクトID、見つからない場合は null
    */
-  renderExportFrame(canvas: HTMLCanvasElement, currentTime: number): void {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      throw new AppError(
-        ErrorType.RENDERER_ERROR,
-        'Failed to get canvas context'
-      );
+  getEffectAtPoint(x: number, y: number, canvasWidth: number, canvasHeight: number): string | null {
+    // キャンバス内の絶対座標に変換
+    const clickX = x * canvasWidth;
+    const clickY = y * canvasHeight;
+    
+    // ログ出力を削減（クリックイベント時のみ）
+    const isDebugEnabled = false; // デバッグログを無効化
+    
+    if (isDebugEnabled) {
+      console.log('getEffectAtPoint - Click coordinates:', { clickX, clickY, canvasWidth, canvasHeight });
     }
-    this.renderAll(currentTime, ctx);
+
+    // zIndex の降順（描画の前面）から判定
+    const sortedEffects = [...this.getSortedEffects()].reverse(); // getSortedEffects は昇順なので reverse
+    
+    if (isDebugEnabled) {
+      console.log('getEffectAtPoint - Checking effects (total):', sortedEffects.length);
+    }
+
+    for (const effect of sortedEffects) {
+      // 各エフェクトの情報をログ出力（デバッグモード時のみ）
+      const config = effect.getConfig();
+      
+      if (isDebugEnabled) {
+        console.log(`Checking effect: ${effect.getId()} (${config.type}), visible: ${config.visible}, isDraggable: ${effect.isDraggable}`);
+      }
+      
+      // 非表示のエフェクトはスキップ
+      if (!config.visible) {
+        if (isDebugEnabled) {
+          console.log(`Skipping invisible effect: ${effect.getId()}`);
+        }
+        continue;
+      }
+
+      try {
+        const boundingBox = effect.getBoundingBox(canvasWidth, canvasHeight);
+        
+        if (boundingBox) {
+          const { x: boxX, y: boxY, width: boxWidth, height: boxHeight } = boundingBox;
+          
+          // クリック判定（デバッグモード時のみ詳細ログを出力）
+          const isInside = (
+            clickX >= boxX &&
+            clickX <= boxX + boxWidth &&
+            clickY >= boxY &&
+            clickY <= boxY + boxHeight
+          );
+          
+          if (isDebugEnabled) {
+            console.log(`BoundingBox for ${effect.getId()} (${config.type}):`, { 
+              x: boxX, y: boxY, width: boxWidth, height: boxHeight,
+              isInside
+            });
+          }
+          
+          // クリック座標がバウンディングボックス内にあれば、そのエフェクトIDを返す
+          if (isInside) {
+            console.log(`Effect found at point: ${effect.getId()} (${config.type})`);
+            return effect.getId();
+          }
+        } else if (isDebugEnabled) {
+          console.log(`No bounding box for effect: ${effect.getId()}`);
+        }
+      } catch (error) {
+        // getBoundingBox が未実装の場合などにエラーが発生する可能性がある
+        console.error('Error getting bounding box for effect:', effect.getId(), error);
+        // エラーが発生しても処理を続行
+      }
+    }
+
+    // どのエフェクトにもヒットしなかった場合
+    if (isDebugEnabled) {
+      console.log('No effect found at point:', { x, y, clickX, clickY });
+    }
+    return null;
   }
 }

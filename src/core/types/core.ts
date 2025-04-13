@@ -13,10 +13,14 @@ export type { EffectConfig };
  */
 export abstract class EffectBase<T extends EffectConfig> implements HasAudioSource, Disposable {
   protected config: T;
+  protected visible: boolean;
   protected audioSource: AudioSource | null = null;
+  public readonly isDraggable: boolean;
 
-  constructor(config: T) {
+  constructor(config: T, isDraggable: boolean = false) {
     this.config = config;
+    this.isDraggable = isDraggable;
+    this.visible = config.visible !== undefined ? config.visible : true;
   }
 
   getId(): string {
@@ -33,11 +37,25 @@ export abstract class EffectBase<T extends EffectConfig> implements HasAudioSour
 
   isActive(currentTime: number): boolean {
     const { startTime = 0, endTime = Infinity } = this.config;
-    return currentTime >= startTime && currentTime <= endTime;
+    const effectiveEndTime = (endTime === undefined || endTime === 0) ? Infinity : endTime;
+    return currentTime >= startTime && currentTime <= effectiveEndTime;
+  }
+
+  isVisible(): boolean {
+    return this.visible;
   }
 
   abstract update(currentTime: number): void;
   abstract render(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
+
+  /**
+   * エフェクトの描画領域（バウンディングボックス）をキャンバス座標で取得します。
+   * クリック判定などに使用します。
+   * @param canvasWidth 現在のキャンバス幅 (ピクセル)
+   * @param canvasHeight 現在のキャンバス高さ (ピクセル)
+   * @returns バウンディングボックス { x, y, width, height } または null (クリック不可の場合)
+   */
+  abstract getBoundingBox(canvasWidth: number, canvasHeight: number): { x: number, y: number, width: number, height: number } | null;
 
   dispose(): void {
     // 継承先で必要に応じてオーバーライド
@@ -59,19 +77,16 @@ export abstract class EffectBase<T extends EffectConfig> implements HasAudioSour
  * エフェクトマネージャーのインターフェース
  */
 export interface EffectManager extends Disposable {
-  setRenderer(renderer: Renderer | null): void;
-  getRenderer(): Renderer | null;
   addEffect(effect: EffectBase<EffectConfig>, zIndex?: number): void;
   removeEffect(id: string): void;
   getEffect(id: string): EffectBase<EffectConfig> | undefined;
   getEffects(): EffectBase<EffectConfig>[];
+  getSortedEffects(): EffectBase<EffectConfig>[];
   updateEffectConfig(id: string, config: Partial<EffectConfig>): void;
   updateAll(currentTime: number): void;
-  renderAll(currentTime: number, ctx?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
   moveEffect(sourceId: string, targetId: string): void;
   dispose(): void;
-  createExportCanvas(options: { width: number; height: number }): HTMLCanvasElement;
-  renderExportFrame(canvas: HTMLCanvasElement, currentTime: number): void;
+  getEffectAtPoint(x: number, y: number, canvasWidth: number, canvasHeight: number): string | null;
 }
 
 /**
@@ -92,7 +107,6 @@ export interface Renderer extends Disposable {
  * エクスポートボタンのプロパティ
  */
 export interface ExportButtonProps {
-  manager: EffectManager | null;
   onError: (error: Error) => void;
   onProgress?: (progress: number) => void;
   videoSettings: {

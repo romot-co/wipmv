@@ -19,6 +19,7 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
       ...config,
       backgroundType: config.backgroundType ?? 'solid',
       color: config.color ?? '#000000',
+      imagePosition: config.imagePosition ?? { x: 0, y: 0 },
       opacity: config.opacity ?? 1,
       blendMode: config.blendMode ?? 'source-over'
     });
@@ -33,9 +34,14 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
    * 現在時刻に応じて内部状態を更新
    */
   update(currentTime: number): void {
+    // 表示状態を更新
+    this.visible = this.isActive(currentTime);
+    if (!this.visible) return;
+
+    // 時間経過による背景の変化（アニメーションなど）を処理
     if (this.config.animation && this.animationController) {
       const { startTime = 0, endTime = Infinity } = this.config;
-      const duration = endTime - startTime;
+      const duration = endTime === Infinity ? Infinity : endTime - startTime;
       this.animationController.update(currentTime, startTime, duration);
     }
   }
@@ -161,5 +167,15 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
   dispose(): void {
     this.image = null;
     this.animationController = null;
+  }
+
+  getBoundingBox(canvasWidth: number, canvasHeight: number): { x: number; y: number; width: number; height: number; } | null {
+    // 背景エフェクトは全画面を覆うため、キャンバス全体のサイズを返す
+    return {
+      x: 0,
+      y: 0,
+      width: canvasWidth,
+      height: canvasHeight
+    };
   }
 } 

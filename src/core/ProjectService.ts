@@ -103,7 +103,7 @@ export class IndexedDBProjectRepository implements ProjectRepository {
           updatedAt
         }));
       },
-      ErrorType.DatabaseOperationFailed,
+      ErrorType.GENERIC_ERROR,
       'プロジェクト一覧の取得に失敗しました'
     );
   }

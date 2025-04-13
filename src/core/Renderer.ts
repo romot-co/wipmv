@@ -6,7 +6,6 @@
  */
 
 import { AppError, ErrorType } from './types/error';
-import { Disposable } from './types/base';
 
 // プレビュー用の最大解像度を定義
 const PREVIEW_MAX_WIDTH = 1280;
@@ -32,7 +31,7 @@ export class Renderer {
     });
     if (!this.ctx) {
       throw new AppError(
-        ErrorType.RENDERER_INIT_FAILED,
+        ErrorType.RENDERER_ERROR,
         'Failed to get canvas context'
       );
     }
@@ -49,7 +48,7 @@ export class Renderer {
     });
     if (!this.offscreenCtx) {
       throw new AppError(
-        ErrorType.RENDERER_INIT_FAILED,
+        ErrorType.RENDERER_ERROR,
         'Failed to get offscreen context'
       );
     }

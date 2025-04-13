@@ -24,7 +24,7 @@ export interface AudioSource {
   sampleRate: number;
   numberOfChannels: number;
   waveformData?: Float32Array[];
-  frequencyData?: Uint8Array[];
+  frequencyData?: Float32Array[][] | Uint8Array[];
 }
 
 /**

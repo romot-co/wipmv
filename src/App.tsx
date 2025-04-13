@@ -1,22 +1,26 @@
-import React, { useCallback, useMemo, useEffect, useRef } from 'react';
-import { Container, Flex, Box, Card, Section } from '@radix-ui/themes';
+import React, { useCallback, useMemo, useEffect, useRef, useState } from 'react';
+import { Container, Flex, Box, Card, Section, IconButton, Heading, Text, Tooltip } from '@radix-ui/themes';
+import { PlusIcon, DownloadIcon } from '@radix-ui/react-icons';
 import { PlaybackControls } from './ui/PlaybackControls';
-import { EffectList } from './ui/EffectList';
-import { EffectSettings } from './ui/EffectSettings';
 import { PreviewCanvas } from './ui/PreviewCanvas';
 import { ExportButton } from './ui/ExportButton';
 import { AudioUploader } from './ui/AudioUploader';
+import { SettingsPanel } from './ui/SettingsPanel';
 import { useApp } from './contexts/AppContext';
 import { ErrorBoundary, CustomErrorFallback } from './ErrorBoundary';
 import { EffectManager } from './core/EffectManager';
-import { EffectBase } from './core/types/core';
+import { EffectBase, EffectConfig } from './core/types';
 import { 
   EffectType,
-  EffectConfig,
 } from './core/types/effect';
 import { AudioSource, VideoSettings } from './core/types/base';
 import debug from 'debug';
 import { Renderer } from './core/Renderer';
+import { AppError, ErrorType } from './core/types/error';
+import { AudioPlaybackService } from './core/AudioPlaybackService';
+import { Timeline } from './ui/Timeline';
+import styled, { createGlobalStyle } from 'styled-components';
+import { AppProvider, AppContextType } from './contexts/AppContext';
 
 // エフェクトのインポート
 import { BackgroundEffect } from './features/background/BackgroundEffect';
@@ -56,30 +60,377 @@ function createEffectByType(type: EffectType): EffectBase<EffectConfig> {
 
 const log = debug('app:App');
 
-export const App: React.FC = () => {
+// --- Styled Components --- 
+const AppContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
+  padding: 0;
+  background-color: var(--bg-primary);
+`;
+
+const Content = styled.div`
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+`;
+
+const Main = styled.main`
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+`;
+
+const Sidebar = styled.aside`
+  width: 240px;
+  height: 100%;
+  border-right: 1px solid var(--border-color);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+`;
+
+const SidebarContent = styled.div`
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--border-color);
+    border-radius: 4px;
+  }
+`;
+
+const Header = styled.header`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+`;
+
+const HeaderLeft = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const HeaderCenter = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+`;
+
+const HeaderRight = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+`;
+
+const EffectList = styled.ul`
+  list-style: none;
+  margin: 0;
+  padding: 0;
+`;
+
+const EffectItem = styled.li`
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: var(--bg-hover);
+  }
+
+  &.selected {
+    background-color: var(--primary-color);
+    font-weight: 500;
+  }
+`;
+
+const EffectItemContent = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+`;
+
+const EffectName = styled.div`
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+`;
+
+const EffectActions = styled.div`
+  display: flex;
+  gap: 4px;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+
+  &:hover {
+    opacity: 1;
+  }
+`;
+
+const SectionTitle = styled.h3`
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin: 16px 12px 8px 12px;
+`;
+
+const Logo = styled.div`
+  fontSize: 16px;
+  fontWeight: 600;
+  color: var(--text-primary);
+`;
+
+const DropdownContainer = styled.div`
+  position: relative;
+  display: inline-block;
+  z-index: 1000;
+`;
+
+const DropdownButton = styled.button`
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  alignItems: center;
+  justifyContent: center;
+  padding: 4px;
+  borderRadius: 4px;
+  color: var(--text-primary);
+
+  &:hover {
+    backgroundColor: var(--bg-hover);
+  }
+`;
+
+const DropdownContent = styled.div<{ isOpen: boolean }>`
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1001;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  display: ${props => props.isOpen ? 'block' : 'none'};
+  padding: 4px 0;
+  margin-top: 4px;
+`;
+
+const DropdownItem = styled.div`
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+
+  &:hover {
+    background-color: var(--bg-hover);
+  }
+`;
+
+const Footer = styled.footer`
+  border-top: 1px solid var(--border-color);
+  padding: 8px 12px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: var(--bg-secondary);
+  min-height: 150px;
+  z-index: 10;
+`;
+
+const PlaybackControlsContainer = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+  width: 100%;
+`;
+
+const TimelineContainer = styled.div`
+  height: 100px;
+  width: 100%;
+  position: relative;
+  margin-bottom: 12px;
+  overflow: visible;
+  
+  & > div {
+    &::-webkit-scrollbar {
+      height: 8px;
+    }
+    &::-webkit-scrollbar-track {
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--border-color);
+      border-radius: 4px;
+    }
+    &::-webkit-scrollbar-thumb:hover {
+      background-color: var(--text-muted);
+    }
+  }
+`;
+
+// ★ GlobalStyle を定義
+const GlobalStyle = createGlobalStyle`
+  :root {
+    /* Light theme colors (for future use) */
+    --light-primary-color: #0366d6;
+    --light-primary-hover: #0250a4;
+    --light-success-color: #20c997;
+    --light-warning-color: #fab005;
+    --light-danger-color: #e03131;
+    --light-text-primary: #2c3e50;
+    --light-text-secondary: #64748b;
+    --light-text-muted: #94a3b8;
+    --light-bg-primary: #ffffff;
+    --light-bg-secondary: #fafafa;
+    --light-bg-tertiary: #f1f5f9;
+    --light-bg-hover: #f9fafb;
+    --light-border-color: #f1f5f9;
+    --light-border-focus: #90cdf4;
+    
+    /* Dark theme colors (default) */
+    --dark-primary-color: #3b82f6;
+    --dark-primary-hover: #60a5fa;
+    --dark-success-color: #10b981;
+    --dark-warning-color: #f59e0b;
+    --dark-danger-color: #ef4444;
+    --dark-text-primary: #e5e7eb;
+    --dark-text-secondary: #9ca3af;
+    --dark-text-muted: #6b7280;
+    --dark-bg-primary: #111827;
+    --dark-bg-secondary: #1f2937;
+    --dark-bg-tertiary: #374151;
+    --dark-bg-hover: #2d3748;
+    --dark-border-color: #374151;
+    --dark-border-focus: #60a5fa;
+    
+    /* Set default theme to dark */
+    --primary-color: var(--dark-primary-color);
+    --primary-hover: var(--dark-primary-hover);
+    --success-color: var(--dark-success-color);
+    --warning-color: var(--dark-warning-color);
+    --danger-color: var(--dark-danger-color);
+    --text-primary: var(--dark-text-primary);
+    --text-secondary: var(--dark-text-secondary);
+    --text-muted: var(--dark-text-muted);
+    --bg-primary: var(--dark-bg-primary);
+    --bg-secondary: var(--dark-bg-secondary);
+    --bg-tertiary: var(--dark-bg-tertiary);
+    --bg-hover: var(--dark-bg-hover);
+    --border-color: var(--dark-border-color);
+    --border-focus: var(--dark-border-focus);
+  }
+
+  /* Radix UI Theme 変数の上書き */
+  :root, .dark-theme, .dark {
+    --color-panel-solid: var(--bg-secondary);
+    --color-panel-background: var(--bg-secondary);
+    --color-background: var(--bg-primary);
+    --color-surface: var(--bg-secondary);
+    --color-tooltip: var(--bg-tertiary);
+    --color-card: var(--bg-secondary);
+    --accent-9: var(--primary-color);
+    --accent-8: var(--primary-hover);
+    --gray-1: var(--text-primary);
+    --gray-2: var(--text-secondary);
+    --gray-3: var(--text-muted);
+    --gray-4: var(--border-color);
+    --gray-5: var(--border-focus);
+    --gray-6: var(--bg-hover);
+    --color-border: var(--border-color);
+  }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  
+  button, input, select, textarea {
+    font-family: inherit;
+    color: var(--text-primary);
+    background-color: var(--bg-secondary);
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  /* ダイアログやポップオーバーの背景色を修正 */
+  [data-radix-popper-content-wrapper], [data-radix-dialog-overlay], [data-radix-dialog-content] {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary) !important;
+  }
+`;
+
+function App() {
+  const appContext = useApp();
   const {
     phase,
     projectState,
     audioState,
     effectState,
-    transitionTo,
-    createProject,
-    saveProject,
-    loadProject,
+    ui,
     loadAudio,
     playAudio,
     pauseAudio,
     seekAudio,
+    selectEffect,
+    deselectEffect, // Will be used in PreviewCanvas onClick
+    updateEffect,
     addEffect,
     removeEffect,
-    updateEffect,
     moveEffect,
-    selectEffect,
-    startExport,
-    cancelExport,
-    dispatch,
-    services
-  } = useApp();
+    saveProject,
+    openSettingsPanel, // Used in handleAddEffectClick
+    transitionTo, // Used for error handling
+    dispatch, // For direct state updates if needed
+    managerInstance, // Needed for interactions
+    drawingManager // Needed for interactions
+  } = appContext;
+
+  const isIdle = phase.type === 'idle';
+  const isInteractive = !isIdle && phase.type !== 'loadingAudio' && phase.type !== 'analyzing' && phase.type !== 'error';
 
   const currentTimeRef = useRef(0);
   const isLoopRunningRef = useRef(false);
@@ -97,21 +448,16 @@ export const App: React.FC = () => {
     return false;
   };
 
-  // エフェクトマネージャー
-  const manager = useMemo(() => {
-    if (shouldLog('manager-init')) {
-      log('App: EffectManager初期化');
-    }
-    return new EffectManager();
-  }, []);
-
-  // プレビューキャンバスのレンダラー設定
+  // レンダラー初期化コールバック
   const handleRendererInit = useCallback((renderer: Renderer) => {
     if (shouldLog('renderer-init')) {
-      log('App: レンダラーを設定');
+      log('App: レンダラー初期化コールバック受信');
     }
-    manager.setRenderer(renderer);
-  }, [manager]);
+    drawingManager?.setRenderer(renderer);
+  }, [drawingManager]);
+
+  // アニメーションループのために直接AudioPlaybackServiceを取得
+  const audioService = useMemo(() => AudioPlaybackService.getInstance(), []);
 
   // アニメーションループの制御
   useEffect(() => {
@@ -123,44 +469,48 @@ export const App: React.FC = () => {
       if (!isLoopRunningRef.current) return;
       
       try {
-        const currentTime = services.audioService.playback.getCurrentTime();
+        // 参照元を AppContext の audioState.currentTime に変更
+        const currentPlaybackTime = audioState.currentTime;
         
-        if (manager && manager.getRenderer()) {
+        // 最新の再生時間をサービスから直接取得し、必要に応じて更新
+        if (audioState.isPlaying) {
+          const actualPlaybackTime = audioService.getCurrentTime();
+          if (Math.abs(audioState.currentTime - actualPlaybackTime) > 0.01) {
+            dispatch({ 
+              type: 'SET_AUDIO', 
+              payload: { currentTime: actualPlaybackTime } 
+            });
+          }
+        }
+        
+        if (drawingManager && drawingManager.getRenderer()) {
           const now = performance.now();
           
           // 状態が大きく変化した時のみログを出力
-          if ((Math.abs(lastStateRef.current.currentTime - currentTime) > 1.0 || 
+          if ((Math.abs(lastStateRef.current.currentTime - currentPlaybackTime) > 1.0 || 
                lastStateRef.current.isPlaying !== audioState.isPlaying) &&
               now - lastLogTime > LOG_INTERVAL) {
             if (shouldLog('animation-frame')) {
               console.log('アニメーションフレーム詳細:', {
-                currentTime,
+                currentTime: currentPlaybackTime,
                 phase: phase.type,
                 isPlaying: audioState.isPlaying,
                 hasRenderer: true,
-                effectCount: manager.getEffects().length,
+                effectCount: managerInstance.getEffects().length,
                 isLoopRunning: isLoopRunningRef.current
               });
             }
             
             lastStateRef.current = {
-              currentTime,
+              currentTime: currentPlaybackTime,
               isPlaying: audioState.isPlaying
             };
             lastLogTime = now;
           }
 
-          manager.updateAll(currentTime);
-          manager.renderAll(currentTime);
-          
-          if (Math.abs(currentTime - audioState.currentTime) > 0.01) {
-            dispatch({
-              type: 'SET_AUDIO',
-              payload: {
-                currentTime
-              }
-            });
-          }
+          // エフェクトの更新と描画を実行
+          managerInstance.updateAll(currentPlaybackTime);
+          drawingManager.renderAll(currentPlaybackTime, undefined, ui.selectedEffectId);
         }
         
         rafId = requestAnimationFrame(animate);
@@ -170,12 +520,12 @@ export const App: React.FC = () => {
       }
     };
 
-    if (manager && manager.getRenderer() && !isLoopRunningRef.current) {
+    if (isInteractive && drawingManager && drawingManager.getRenderer() && !isLoopRunningRef.current) {
       if (shouldLog('animation-loop')) {
         console.log('アニメーションループ開始:', {
           phase: phase.type,
           currentTime: audioState.currentTime,
-          hasManager: true,
+          hasManager: !!managerInstance,
           hasRenderer: true
         });
       }
@@ -192,7 +542,7 @@ export const App: React.FC = () => {
         cancelAnimationFrame(rafId);
       }
     };
-  }, [manager, services, phase.type, dispatch]);
+  }, [managerInstance, drawingManager, isInteractive, audioState.currentTime, audioState.isPlaying, ui.selectedEffectId, audioService]);
 
   // audioStateの変更を監視（ログ出力を間引く）
   const lastAudioStateLogRef = useRef(0);
@@ -210,63 +560,84 @@ export const App: React.FC = () => {
 
   // エフェクトマネージャーの初期化
   useEffect(() => {
-    if (!manager || !effectState.effects.length) return;
+    if (!managerInstance || !effectState.effects.length) return;
 
     if (shouldLog('effect-restore')) {
       log('App: 既存エフェクトの復元開始');
     }
 
-    // 既存のエフェクトを復元
-    effectState.effects.forEach((effect: EffectBase<EffectConfig>) => {
-      manager.addEffect(effect);
-      
-      if (hasSetAudioSource(effect) && audioState.source) {
-        const audioSource = {
-          ...audioState.source,
-          waveformData: audioState.analysis?.waveformData || [],
-          frequencyData: audioState.analysis?.frequencyData?.map(data => 
-            data instanceof Uint8Array ? data : new Uint8Array(data.length)
-          ) || []
-        };
-        effect.setAudioSource(audioSource);
-      }
-    });
-
     try {
-      manager.updateAll(0);
-      manager.renderAll(0);
-    } catch (error) {
-      console.error('エフェクト初期描画エラー:', error);
-    }
+      // エフェクトIDのセットを作成して重複チェック
+      const effectIds = new Set<string>();
+      
+      // 既存のエフェクトを復元
+      effectState.effects.forEach((effect: EffectBase<EffectConfig>) => {
+        const effectId = effect.getId();
+        
+        // 重複チェック
+        if (effectIds.has(effectId)) {
+          console.warn(`重複するエフェクトID検出: ${effectId}、スキップします`);
+          return;
+        }
+        
+        // セットにIDを追加
+        effectIds.add(effectId);
+        
+        // マネージャーにエフェクトを追加
+        try {
+          managerInstance.addEffect(effect);
+          
+          if (hasSetAudioSource(effect) && audioState.source) {
+            const audioSource = {
+              ...audioState.source,
+              waveformData: audioState.analysis?.waveformData || [],
+              frequencyData: audioState.analysis?.frequencyData?.map(data => 
+                data instanceof Uint8Array ? data : new Uint8Array(data.length)
+              ) || []
+            };
+            effect.setAudioSource(audioSource);
+          }
+        } catch (error) {
+          console.error(`エフェクト復元エラー: ${effectId}`, error);
+        }
+      });
 
-    if (shouldLog('effect-restore')) {
-      log('App: 既存エフェクトの復元完了');
+      if (shouldLog('effect-restore')) {
+        log(`App: ${effectIds.size}個のエフェクトを復元完了`);
+      }
+    } catch (error) {
+      console.error('エフェクト復元中に予期せぬエラー:', error);
     }
-  }, [manager, effectState.effects]);
+  }, [managerInstance, effectState.effects, audioState.source]);
+
+  // ドロップダウンの開閉状態
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // エフェクト追加
-  const handleAddEffect = useCallback(async (type: EffectType) => {
+  const handleAddEffectClick = useCallback(async (type: EffectType) => {
     try {
-      if (shouldLog('effect-add')) {
-        log('エフェクト追加:', type);
+      console.log('Adding effect:', type);
+      const newEffect = createEffectByType(type);
+      if (hasSetAudioSource(newEffect) && audioState.source) {
+        newEffect.setAudioSource(audioState.source); // Set audio source immediately
       }
-      const effect = createEffectByType(type);
-      await addEffect(effect);
-      selectEffect(effect.getId());
+      // Use the addEffect from context which should handle managerInstance internally
+      await addEffect(newEffect); 
+      selectEffect(newEffect.getId()); // Select the newly added effect
+      // openSettingsPanel(); // selectEffect should handle opening the panel
+      await saveProject(); // Trigger auto-save
     } catch (error) {
-      log('エフェクト追加エラー:', error);
-      if (error instanceof Error) {
-        transitionTo({ type: 'error', error });
-      } else {
-        transitionTo({ type: 'error', error: new Error('Unknown error') });
-      }
+      console.error('エフェクト追加エラー:', error);
+      transitionTo({ type: 'error', error: error instanceof Error ? error : new Error('Unknown error adding effect') });
     }
-  }, [addEffect, selectEffect, transitionTo]);
+  }, [addEffect, selectEffect, audioState.source, saveProject, transitionTo]);
 
   // エフェクト削除時の処理
   const handleEffectDelete = useCallback(async (id: string) => {
     try {
       await removeEffect(id);
+      // 削除後に保存を実行
+      await saveProject();
     } catch (error) {
       if (error instanceof Error) {
         transitionTo({ type: 'error', error });
@@ -274,12 +645,14 @@ export const App: React.FC = () => {
         transitionTo({ type: 'error', error: new Error('Unknown error') });
       }
     }
-  }, [removeEffect, transitionTo]);
+  }, [removeEffect, saveProject, transitionTo]);
 
   // エフェクト移動時の処理
   const handleEffectMove = useCallback(async (sourceId: string, targetId: string) => {
     try {
       await moveEffect(sourceId, targetId);
+      // 移動後に保存を実行
+      await saveProject();
     } catch (error) {
       if (error instanceof Error) {
         transitionTo({ type: 'error', error });
@@ -287,7 +660,7 @@ export const App: React.FC = () => {
         transitionTo({ type: 'error', error: new Error('Unknown error') });
       }
     }
-  }, [moveEffect, transitionTo]);
+  }, [moveEffect, saveProject, transitionTo]);
 
   // エフェクト設定の更新
   const handleEffectUpdate = useCallback((id: string, newConfig: Partial<EffectConfig>) => {
@@ -315,11 +688,6 @@ export const App: React.FC = () => {
     }
   }, [loadAudio, transitionTo]);
 
-  // 選択中のエフェクトを取得
-  const selectedEffect = useMemo(() => {
-    return effectState.selectedEffect;
-  }, [effectState.selectedEffect]);
-
   // エクスポート設定の更新
   const handleVideoSettingsUpdate = useCallback(async (settings: VideoSettings) => {
     if (projectState.currentProject) {
@@ -342,7 +710,7 @@ export const App: React.FC = () => {
         transitionTo({ type: 'error', error: error as Error });
       }
     }
-  }, [projectState.currentProject, dispatch, transitionTo, saveProject]);
+  }, [projectState.currentProject, dispatch, saveProject]);
 
   const onVolumeChange = useCallback((volume: number) => {
     dispatch({
@@ -358,105 +726,160 @@ export const App: React.FC = () => {
     });
   }, [dispatch]);
 
+  // Define onError handler for AudioUploader
+  const handleUploaderError = useCallback((error: Error) => {
+      transitionTo({ type: 'error', error: error instanceof AppError ? error : new AppError(ErrorType.FILE_LOAD_ERROR, "Failed to process file", error) });
+  }, [transitionTo]);
+
+  // Default video settings (use context or defaults)
+  const currentVideoSettings = projectState.currentProject?.videoSettings ?? { 
+      width: 1280, height: 720, frameRate: 30, videoBitrate: 5000000, audioBitrate: 128000 
+  };
+
   return (
     <ErrorBoundary fallback={CustomErrorFallback}>
-      <div className="app">
-        <Container>
-          <Section>
-            <Flex direction="column" gap="4">
-              {phase.type === 'idle' ? (
-                <Card className="upload-section">
-                  <AudioUploader
-                    onFileSelect={handleAudioFileSelect}
-                    onError={(error: Error) => transitionTo({ type: 'error', error })}
+      <GlobalStyle />
+      <AppContainer>
+        <Header>
+          <HeaderLeft>
+            <Logo>WIP Motion Video</Logo>
+          </HeaderLeft>
+          <HeaderCenter>
+            {/* Header Center Actions - Show only when interactive */} 
+            {isInteractive && (
+              <Flex gap="3" align="center">
+                {/* 独自のドロップダウンメニューに置き換え */}
+                <DropdownContainer>
+                  <Tooltip content="エフェクトを追加">
+                    <IconButton 
+                      variant="ghost" 
+                      onClick={() => {
+                        console.log('Toggle dropdown');
+                        setIsDropdownOpen(!isDropdownOpen);
+                      }}
+                    >
+                      <PlusIcon width="18" height="18" />
+                    </IconButton>
+                  </Tooltip>
+                  <DropdownContent isOpen={isDropdownOpen}>
+                    <DropdownItem 
+                      onClick={() => {
+                        console.log('Background effect clicked');
+                        handleAddEffectClick('background');
+                        setIsDropdownOpen(false);
+                      }}
+                    >
+                      背景
+                    </DropdownItem>
+                    <DropdownItem 
+                      onClick={() => {
+                        console.log('Text effect clicked');
+                        handleAddEffectClick('text'); 
+                        setIsDropdownOpen(false);
+                      }}
+                    >
+                      テキスト
+                    </DropdownItem>
+                    <DropdownItem 
+                      onClick={() => {
+                        console.log('Waveform effect clicked');
+                        handleAddEffectClick('waveform');
+                        setIsDropdownOpen(false);
+                      }}
+                    >
+                      波形
+                    </DropdownItem>
+                    <DropdownItem 
+                      onClick={() => {
+                        console.log('Watermark effect clicked');
+                        handleAddEffectClick('watermark');
+                        setIsDropdownOpen(false);
+                      }}
+                    >
+                      透かし
+                    </DropdownItem>
+                  </DropdownContent>
+                </DropdownContainer>
+              </Flex>
+            )}
+          </HeaderCenter>
+          <HeaderRight>
+            {/* Export Button */} 
+            <ExportButton 
+              onError={(error) => transitionTo({ type: 'error', error })} 
+              onProgress={(progress) => console.log('Export progress:', progress)}
+              videoSettings={currentVideoSettings}
+              onSettingsChange={handleVideoSettingsUpdate}
+              audioSource={audioState.source}
+              disabled={phase.type === 'exporting'}
+            />
+          </HeaderRight>
+        </Header>
+
+        <Content>
+          <Main>
+            {/* Show Uploader only in Idle state */} 
+            {isIdle && (
+              <Card size="4" style={{ width: '80%', maxWidth: '600px' }}>
+                  <AudioUploader 
+                    onFileSelect={handleAudioFileSelect} 
+                    onError={handleUploaderError} 
                   />
-                </Card>
-              ) : (
-                <Box className="main-content">
-                  <Card className="preview-section">
-                    <PreviewCanvas
-                      width={1280}
-                      height={720}
-                      onRendererInit={handleRendererInit}
-                    />
-                    <Box className="controls-section">
-                      <PlaybackControls
-                        currentTime={audioState.currentTime}
-                        duration={audioState.duration}
-                        isPlaying={audioState.isPlaying}
-                        onPlay={playAudio}
-                        onPause={pauseAudio}
-                        onSeek={seekAudio}
-                        volume={audioState.volume}
-                        onVolumeChange={onVolumeChange}
-                        loop={audioState.loop}
-                        onLoopChange={onLoopChange}
-                      />
-                    </Box>
-                  </Card>
+              </Card>
+            )}
+            
+            {/* Show PreviewCanvas when interactive */} 
+            {isInteractive && (
+              <PreviewCanvas
+                width={currentVideoSettings.width}
+                height={currentVideoSettings.height}
+                currentTime={audioState.currentTime}
+              />
+            )}
+          </Main>
+          <Sidebar>
+            {/* Settings Panel - Conditionally rendered by its own state via useApp */} 
+            <SettingsPanel /> 
+          </Sidebar>
+        </Content>
 
-                  <Box className="right-pane">
-                    <Card className="toolbar">
-                      <ExportButton
-                        manager={manager}
-                        onError={(error: Error) => transitionTo({ type: 'error', error })}
-                        videoSettings={projectState.currentProject?.videoSettings ?? {
-                          width: 1280,
-                          height: 720,
-                          frameRate: 30,
-                          videoBitrate: 5000000,
-                          audioBitrate: 128000
-                        }}
-                        onSettingsChange={handleVideoSettingsUpdate}
-                        audioSource={audioState.source}
-                        onExportStart={() => {
-                          const settings = projectState.currentProject?.videoSettings ?? {
-                            width: 1280,
-                            height: 720,
-                            frameRate: 30,
-                            videoBitrate: 5000000,
-                            audioBitrate: 128000
-                          };
-                          startExport(settings);
-                        }}
-                        onExportComplete={() => console.log('エクスポート完了')}
-                        onExportError={(error: Error) => transitionTo({ type: 'error', error })}
-                        disabled={phase.type === 'error'}
-                      />
-                    </Card>
-
-                    <Card className="effects-panel">
-                      <Flex direction="column" gap="4">
-                        <EffectList
-                          effects={effectState.effects}
-                          selectedEffectId={selectedEffect?.getId() ?? null}
-                          onEffectSelect={(id) => selectEffect(id)}
-                          onEffectAdd={handleAddEffect}
-                          onEffectRemove={handleEffectDelete}
-                          onEffectMove={handleEffectMove}
-                          isLoading={phase.type === 'loadingAudio' || phase.type === 'analyzing'}
-                          disabled={phase.type === 'error'}
-                        />
-                        {selectedEffect && (
-                          <Box className="effect-settings-container">
-                            <EffectSettings
-                              effect={selectedEffect}
-                              onUpdate={(config) => handleEffectUpdate(selectedEffect.getId(), config)}
-                              duration={audioState.duration}
-                            />
-                          </Box>
-                        )}
-                      </Flex>
-                    </Card>
-                  </Box>
-                </Box>
-              )}
-            </Flex>
-          </Section>
-        </Container>
-      </div>
+        <Footer>
+            {/* Show PlaybackControls and Timeline when interactive */} 
+            {isInteractive && (
+              <>
+                <PlaybackControlsContainer>
+                  <PlaybackControls
+                    currentTime={audioState.currentTime}
+                    duration={audioState.duration}
+                    isPlaying={audioState.isPlaying}
+                    volume={audioState.volume}
+                    loop={audioState.loop}
+                    onPlay={playAudio}
+                    onPause={pauseAudio}
+                    onSeek={seekAudio}
+                    onVolumeChange={onVolumeChange}
+                    onLoopChange={onLoopChange}
+                  />
+                </PlaybackControlsContainer>
+                <TimelineContainer>
+                  <Timeline 
+                    duration={audioState.duration}
+                    currentTime={audioState.currentTime}
+                    effects={effectState.effects.map((e: EffectBase<EffectConfig>) => e.getConfig())}
+                    selectedEffectId={ui.selectedEffectId}
+                    onSelectEffect={selectEffect}
+                    onSeek={seekAudio}
+                    onEffectTimeChange={(id, startTime, endTime) => 
+                      updateEffect(id, { startTime, endTime })
+                    }
+                  />
+                </TimelineContainer>
+              </>
+            )}
+        </Footer>
+      </AppContainer>
     </ErrorBoundary>
   );
-};
+}
 
 export default App;

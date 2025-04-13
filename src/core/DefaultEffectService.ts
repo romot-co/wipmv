@@ -18,10 +18,10 @@ export function createDefaultBackgroundEffect(audioSource?: AudioSource): Backgr
     visible: true,
     startTime: 0,
     endTime: audioSource?.duration ?? 0,
-    zIndex: 0,
+    zIndex: 10,
     position: { x: 0, y: 0 },
-    size: { width: 100, height: 100 },
-    coordinateSystem: 'relative'
+    size: { width: 1280, height: 720 },
+    coordinateSystem: 'absolute'
   };
 }
 
@@ -44,9 +44,9 @@ export function createDefaultWaveformEffect(audioSource?: AudioSource): Waveform
     visible: true,
     startTime: 0,
     endTime: audioSource?.duration ?? 0,
-    zIndex: 1,
-    position: { x: 0, y: 0 },
-    size: { width: 1280, height: 720 },
+    zIndex: 30,
+    position: { x: 0, y: 100 },
+    size: { width: 1280, height: 520 },
     coordinateSystem: 'absolute',
     mirror: {
       vertical: true,
@@ -66,16 +66,16 @@ export function createDefaultTextEffect(audioSource?: AudioSource): TextEffectCo
       weight: 'bold'
     },
     color: '#ffffff',
-    position: { x: 400, y: 300 },
-    size: { width: 200, height: 60 },
-    coordinateSystem: 'relative',
+    position: { x: 640, y: 360 },
+    size: { width: 300, height: 60 },
+    coordinateSystem: 'absolute',
     alignment: 'center',
     opacity: 1,
     blendMode: 'source-over',
     visible: true,
     startTime: 0,
     endTime: audioSource?.duration ?? 0,
-    zIndex: 0
+    zIndex: 100
   };
 }
 
@@ -84,15 +84,16 @@ export function createDefaultWatermarkEffect(audioSource?: AudioSource): Waterma
     id: crypto.randomUUID(),
     type: 'watermark',
     imageUrl: '/assets/default-watermark.svg',
-    position: { x: 20, y: 20 },
-    size: { width: 100, height: 100 },
+    position: { x: 640, y: 360 },
+    size: { width: 200, height: 140 },
     rotation: 0,
     repeat: false,
-    opacity: 0.5,
+    opacity: 0.8,
     blendMode: 'source-over',
     visible: true,
     startTime: 0,
     endTime: audioSource?.duration ?? 0,
-    zIndex: 0
+    zIndex: 40,
+    coordinateSystem: 'absolute'
   };
 } 

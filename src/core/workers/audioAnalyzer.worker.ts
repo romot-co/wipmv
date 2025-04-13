@@ -107,7 +107,8 @@ async function analyzeAudio(audioData: AudioData, config: AnalysisConfig = DEFAU
     }
 
     const waveformData: Float32Array[] = [];
-    const frequencyData: Float32Array[] = [];
+    // ★ 時間変化する周波数データを格納する配列 (Float32Array[]) の配列
+    const frequencyFrames: Float32Array[][] = Array.from({ length: numberOfChannels }, () => []);
 
     // 各チャンネルを処理
     for (let channel = 0; channel < numberOfChannels; channel++) {
@@ -152,12 +153,10 @@ async function analyzeAudio(audioData: AudioData, config: AnalysisConfig = DEFAU
 
       waveformData.push(currentWaveformData);
 
-      // 周波数データの解析（メモリ効率化）
+      // 周波数データの解析（時間変化を保持）
       const numFrames = Math.floor((downsampledData.length - config.fftSize) / config.hopSize) + 1;
-      const currentFrequencyData = new Float32Array(config.fftSize / 2);
-      let frameCount = 0;
+      const channelFrequencyFrames: Float32Array[] = []; // このチャンネルのフレーム別周波数データ
 
-      // 各フレームでFFTを計算し、平均を取る
       for (let frame = 0; frame < numFrames; frame++) {
         // キャンセルチェック（定期的に）
         if (frame % 10 === 0 && isCancelled) {
@@ -167,26 +166,13 @@ async function analyzeAudio(audioData: AudioData, config: AnalysisConfig = DEFAU
         const startIndex = frame * config.hopSize;
         const segment = downsampledData.slice(startIndex, startIndex + config.fftSize);
         
-        // 十分なデータがある場合のみFFT実行
         if (segment.length === config.fftSize) {
-          const fft = computeFFT(segment, config.fftSize);
-          
-          // 周波数ビンごとに加算
-          for (let i = 0; i < config.fftSize / 2; i++) {
-            currentFrequencyData[i] += fft[i];
-          }
-          frameCount++;
+          const fftMagnitudes = computeFFT(segment, config.fftSize);
+          channelFrequencyFrames.push(fftMagnitudes); // ★ フレームごとの結果を配列に追加
         }
       }
 
-      // 平均化
-      if (frameCount > 0) {
-        for (let i = 0; i < config.fftSize / 2; i++) {
-          currentFrequencyData[i] /= frameCount;
-        }
-      }
-
-      frequencyData.push(currentFrequencyData);
+      frequencyFrames[channel] = channelFrequencyFrames; // ★ チャンネルの結果を格納
     }
 
     return {
@@ -194,7 +180,7 @@ async function analyzeAudio(audioData: AudioData, config: AnalysisConfig = DEFAU
       sampleRate: sampleRate / config.downsampleFactor,
       numberOfChannels,
       waveformData,
-      frequencyData
+      frequencyData: frequencyFrames // ★ フレームごとのデータ配列の配列
     };
 
   } catch (error) {
@@ -252,21 +238,28 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     });
     
     const result = await analyzeAudio(e.data.audioData, adjustedConfig);
-    
-    if ('type' in result && result.type === 'cancelled') {
+
+    // 結果に基づいてメッセージを送信
+    if (result && 'waveformData' in result && 'frequencyData' in result) {
+      // 成功した場合
+      console.log('Worker: 解析完了、結果を送信');
+      const transferableObjects: Transferable[] = [];
+      result.waveformData!.forEach(arr => transferableObjects.push(arr.buffer));
+      result.frequencyData!.forEach(channelFrames => 
+        channelFrames.forEach(frame => transferableObjects.push(frame.buffer))
+      );
+      // ★ postMessage の呼び出し方を修正
+      self.postMessage({ type: 'success', data: result }, { transfer: transferableObjects });
+    } else if (result && 'type' in result && result.type === 'cancelled') {
+      // キャンセルされた場合
+      console.log('Worker: 解析キャンセルを通知');
       self.postMessage({ type: 'cancelled' });
-      return;
+    } else {
+      // その他のエラーケース（analyzeAudio内でエラーが投げられなかった場合）
+      console.error('Worker: 不明な解析結果', result);
+      self.postMessage({ type: 'error', error: '不明な解析結果です' });
     }
 
-    console.log('Worker: 解析完了', {
-      waveformLength: result.waveformData?.map(ch => ch.length),
-      frequencyLength: result.frequencyData?.map(ch => ch.length)
-    });
-
-    self.postMessage({ 
-      type: 'success', 
-      data: result 
-    });
   } catch (error) {
     console.error('Worker: エラー発生', error);
     self.postMessage({ 

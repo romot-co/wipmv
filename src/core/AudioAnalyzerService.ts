@@ -75,8 +75,8 @@ export class AudioAnalyzerService implements AudioAnalyzer {
             if (event.data.type === 'success' && event.data.data) {
               const { waveformData, frequencyData } = event.data.data;
               this.analysisResult = {
-                waveformData: waveformData.map((data: Float32Array) => new Float32Array(data)),
-                frequencyData: frequencyData.map((data: Float32Array) => new Float32Array(data)),
+                waveformData: waveformData as Float32Array[],
+                frequencyData: frequencyData as Float32Array[][],
                 duration: buffer.duration,
                 sampleRate: buffer.sampleRate,
                 numberOfChannels: buffer.numberOfChannels
@@ -114,7 +114,7 @@ export class AudioAnalyzerService implements AudioAnalyzer {
           });
         });
       },
-      ErrorType.AudioAnalysisFailed,
+      ErrorType.AUDIO_ANALYSIS_FAILED,
       '音声解析に失敗しました'
     );
   }

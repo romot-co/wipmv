@@ -12,6 +12,7 @@ import { ErrorType, AudioSource, AudioPlayback, AudioSourceControl, PlaybackStat
  */
 class PlaybackStateManager {
   private state: PlaybackState;
+  private listeners: Set<(state: PlaybackState) => void> = new Set();
 
   constructor() {
     this.state = {
@@ -25,10 +26,24 @@ class PlaybackStateManager {
 
   update(partial: Partial<PlaybackState>): void {
     this.state = { ...this.state, ...partial };
+    this.notifyListeners();
   }
 
   get(): PlaybackState {
     return { ...this.state };
+  }
+
+  addListener(callback: (state: PlaybackState) => void): void {
+    this.listeners.add(callback);
+  }
+
+  removeListener(callback: (state: PlaybackState) => void): void {
+    this.listeners.delete(callback);
+  }
+
+  private notifyListeners(): void {
+    const state = this.get();
+    this.listeners.forEach(listener => listener(state));
   }
 }
 
@@ -425,5 +440,13 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
         error
       );
     }
+  }
+
+  public addStateChangeListener(callback: (state: PlaybackState) => void): void {
+    this.stateManager.addListener(callback);
+  }
+
+  public removeStateChangeListener(callback: (state: PlaybackState) => void): void {
+    this.stateManager.removeListener(callback);
   }
 }

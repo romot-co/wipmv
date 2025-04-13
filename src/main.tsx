@@ -19,7 +19,7 @@ root.render(
       appearance="dark"
       accentColor="blue"
       grayColor="slate"
-      scaling="95%"
+      scaling="100%"
       radius="medium"
     >
       <AppProvider>
