@@ -199,4 +199,4 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       height: absoluteRectData.size.height
     };
   }
-} 
+}

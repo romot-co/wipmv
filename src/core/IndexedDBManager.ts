@@ -150,4 +150,4 @@ export class IndexedDBManager {
       this.initPromise = null;
     }
   }
-} 
+}

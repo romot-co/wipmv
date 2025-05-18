@@ -625,4 +625,4 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
       height: absoluteRectData.size.height
     };
   }
-} 
+}

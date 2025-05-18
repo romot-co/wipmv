@@ -141,4 +141,4 @@ export class DrawingManager {
     // EffectManager の参照は解除するが、EffectManager 自体の dispose はここでは行わない
     // this.effectManager = null;
   }
-} 
+}

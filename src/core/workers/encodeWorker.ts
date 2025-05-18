@@ -206,4 +206,4 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
     videoEncoder?.close();
     audioEncoder?.close();
   }
-}; 
+};

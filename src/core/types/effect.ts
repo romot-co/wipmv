@@ -108,4 +108,4 @@ export type EffectConfig =
   | BackgroundEffectConfig 
   | TextEffectConfig 
   | WaveformEffectConfig 
-  | WatermarkEffectConfig; 
+  | WatermarkEffectConfig;

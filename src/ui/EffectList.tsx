@@ -209,4 +209,4 @@ export const EffectList = memo<EffectListProps>(({
   );
 });
 
-EffectList.displayName = 'EffectList'; 
+EffectList.displayName = 'EffectList';

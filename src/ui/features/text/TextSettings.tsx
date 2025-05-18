@@ -218,4 +218,4 @@ export const TextSettings = memo<TextSettingsProps>(({
       </Flex>
     </div>
   );
-}); 
+});

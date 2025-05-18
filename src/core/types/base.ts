@@ -79,4 +79,4 @@ export type BlendMode =
   | 'hard-light'
   | 'soft-light'
   | 'difference'
-  | 'exclusion'; 
+  | 'exclusion';

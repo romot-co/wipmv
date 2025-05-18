@@ -9,4 +9,4 @@ const SUPPORTED_FORMATS = [
 
 export const isAudioFormatSupported = (mimeType: string): boolean => {
   return SUPPORTED_FORMATS.includes(mimeType.toLowerCase());
-}; 
+};
