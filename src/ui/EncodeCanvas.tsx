@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import { EffectManager } from '../core/EffectManager';
 import { VideoSettings } from '../core/types/base';
+import debug from 'debug';
+
+const log = debug('app:EncodeCanvas');
 
 interface EncodeCanvasProps {
   manager: EffectManager;
@@ -16,7 +19,7 @@ interface EncodeCanvasProps {
  */
 export function EncodeCanvas({ manager, videoSettings, currentTime, onFrame }: EncodeCanvasProps) {
   useEffect(() => {
-    console.log('EncodeCanvas: フレームのレンダリング開始', { currentTime });
+    log('EncodeCanvas: フレームのレンダリング開始', { currentTime });
 
     // エクスポート用の一時キャンバスを作成
     const canvas = manager.createExportCanvas({
@@ -30,7 +33,7 @@ export function EncodeCanvas({ manager, videoSettings, currentTime, onFrame }: E
     // レンダリング結果を親コンポーネントに通知
     onFrame(canvas);
 
-    console.log('EncodeCanvas: フレームのレンダリング完了');
+    log('EncodeCanvas: フレームのレンダリング完了');
   }, [manager, videoSettings.width, videoSettings.height, currentTime, onFrame]);
 
   // 実際のDOMには表示しない（非表示のワーキングキャンバス）

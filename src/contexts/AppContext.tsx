@@ -44,7 +44,7 @@ const PHASE_TRANSITIONS: Record<AppPhase['type'], AppPhase['type'][]> = {
 // 状態遷移のバリデーション
 function validatePhaseTransition(current: AppPhase['type'], next: AppPhase['type']): boolean {
   const isValid = PHASE_TRANSITIONS[current]?.includes(next) ?? false;
-  console.log(`フェーズ遷移: ${current} -> ${next} (${isValid ? '有効' : '無効'})`);
+  log(`フェーズ遷移: ${current} -> ${next} (${isValid ? '有効' : '無効'})`);
   return isValid;
 }
 
@@ -307,9 +307,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       try {
-        console.log("Starting audio analysis with AudioSource...");
+        log("Starting audio analysis with AudioSource...");
         const analysisResult = await analyzerService.analyze(source);
-        console.log("Audio analysis complete:"); 
+        log("Audio analysis complete:"); 
         // Combine source and analysis result
         // Updated AudioSource definition now accepts both Float32Array[][] and Uint8Array[]
         const sourceWithAnalysis = {
@@ -320,7 +320,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Dispatch the original analysis result to state
         dispatch({ type: 'SET_AUDIO', payload: { analysis: analysisResult } });
 
-        console.log("Adding default effects...");
+        log("Adding default effects...");
         const backgroundEffect = new BackgroundEffect(createDefaultBackgroundEffect());
         const waveformEffect = new WaveformEffect(createDefaultWaveformEffect());
         const watermarkEffect = new WatermarkEffect(createDefaultWatermarkEffect());
@@ -334,7 +334,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await addEffect(backgroundEffect);
         await addEffect(waveformEffect);
         await addEffect(watermarkEffect);
-        console.log("Default effects added.");
+        log("Default effects added.");
 
         transitionTo({ type: 'ready' });
       } catch (analysisError) {
@@ -396,7 +396,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   
   const updateEffect = useCallback((id: string, config: Partial<EffectConfig>) => {
     try {
-      console.log('Updating effect:', id, config);
+      log('Updating effect:', id, config);
       // EffectManagerを使用してエフェクトを更新
       const effect = managerInstance.getEffect(id);
       if (!effect) {
@@ -458,7 +458,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [managerInstance, dispatch, handleErrorCallback]);
 
   const createProject = useCallback(async (name: string, settings: VideoSettings) => {
-    console.log('[TODO] createProject called', name, settings);
+    log('[TODO] createProject called', name, settings);
     // Implement project creation logic
   }, []);
 
@@ -551,12 +551,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [dispatch, managerInstance, handleErrorCallback]);
 
   const startExport = useCallback(async (settings: VideoSettings) => {
-    console.log('[TODO] startExport called', settings);
+    log('[TODO] startExport called', settings);
     // Implement export logic
   }, []);
 
   const cancelExport = useCallback(() => {
-    console.log('[TODO] cancelExport called');
+    log('[TODO] cancelExport called');
     // Implement export cancellation logic
   }, []);
 

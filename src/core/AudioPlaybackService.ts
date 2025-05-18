@@ -6,6 +6,9 @@
  */
 
 import { ErrorType, AudioSource, AudioPlayback, AudioSourceControl, PlaybackState, withAudioError, AppError } from './types/index';
+import debug from 'debug';
+
+const log = debug('app:AudioPlaybackService');
 
 /**
  * 再生状態を管理するクラス
@@ -96,14 +99,14 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   private initAudioContext(): AudioContext {
     if (!this.audioContext) {
       if (this.shouldLog('audio-context-init')) {
-        console.log('AudioContext: 初期化開始');
+        log('AudioContext: 初期化開始');
       }
       this.audioContext = new AudioContext();
       this.gainNode = this.audioContext.createGain();
       this.gainNode.connect(this.audioContext.destination);
       this.gainNode.gain.value = this.stateManager.get().volume;
       if (this.shouldLog('audio-context-init')) {
-        console.log('AudioContext: 初期化完了');
+        log('AudioContext: 初期化完了');
       }
     }
     return this.audioContext;
@@ -117,7 +120,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
     return withAudioError(
       async () => {
         if (this.shouldLog('audio-source-set')) {
-          console.log('AudioSource設定開始:', {
+          log('AudioSource設定開始:', {
             hasBuffer: !!source.buffer,
             hasWaveformData: !!source.waveformData,
             hasFrequencyData: !!source.frequencyData
@@ -135,7 +138,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
 
         const duration = this.audioBuffer?.duration || 0;
         if (this.shouldLog('audio-source-set')) {
-          console.log('オーディオソース設定: duration =', duration);
+          log('オーディオソース設定: duration =', duration);
         }
         
         this.stateManager.update({
@@ -147,7 +150,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
         });
 
         if (this.shouldLog('audio-source-set')) {
-          console.log('AudioSource設定完了');
+          log('AudioSource設定完了');
         }
       },
       ErrorType.AudioPlaybackFailed,
@@ -180,7 +183,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
     if (!this.audioBuffer || !this.gainNode) return;
 
     if (this.shouldLog('playback')) {
-      console.log('再生開始:', {
+      log('再生開始:', {
         duration: this.audioBuffer.duration,
         currentTime: this.getCurrentTime(),
         offset: this.offset,
@@ -278,7 +281,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
       }
       
       if (this.shouldLog('get-current-time')) {
-        console.log('getCurrentTime詳細:', {
+        log('getCurrentTime詳細:', {
           elapsed,
           currentTime,
           offset: this.offset,
@@ -316,7 +319,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
     const duration = this.audioBuffer.duration;
 
     if (this.shouldLog('playback-state')) {
-      console.log('再生状態更新:', {
+      log('再生状態更新:', {
         currentTime,
         duration,
         isPlaying: this.isPlaying,
@@ -340,7 +343,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
         try {
           if (!this.loop && currentTime >= duration) {
             if (this.shouldLog('playback-end')) {
-              console.log('再生終了判定:', {
+              log('再生終了判定:', {
                 currentTime,
                 duration,
                 loop: this.loop
@@ -382,7 +385,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
     this.stateManager.update({ loop: value });
     
     if (this.shouldLog('loop-change')) {
-      console.log('ループ設定変更:', {
+      log('ループ設定変更:', {
         loop: value,
         currentTime: this.getCurrentTime(),
         isPlaying: this.isPlaying
@@ -391,7 +394,7 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   }
 
   public dispose(): void {
-    console.log('AudioPlaybackService: リソースの解放開始');
+    log('AudioPlaybackService: リソースの解放開始');
     
     this.stop();
     
@@ -415,18 +418,18 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
     this.audioSource = null;
     AudioPlaybackService.instance = null;
     
-    console.log('AudioPlaybackService: リソースの解放完了');
+    log('AudioPlaybackService: リソースの解放完了');
   }
 
   public async decodeAudioData(buffer: ArrayBuffer): Promise<AudioBuffer> {
-    console.log('オーディオデコード開始');
+    log('オーディオデコード開始');
     
     // AudioContextの初期化
     const audioContext = this.initAudioContext();
 
     try {
       const audioBuffer = await audioContext.decodeAudioData(buffer);
-      console.log('オーディオデコード完了:', {
+      log('オーディオデコード完了:', {
         duration: audioBuffer.duration,
         sampleRate: audioBuffer.sampleRate,
         numberOfChannels: audioBuffer.numberOfChannels

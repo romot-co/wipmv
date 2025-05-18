@@ -1,5 +1,8 @@
 import React from 'react';
 import { Button } from '@radix-ui/themes';
+import debug from 'debug';
+
+const log = debug('app:AudioUploader');
 
 export interface AudioUploaderProps {
   onFileSelect: (file: File) => Promise<void>;
@@ -61,7 +64,7 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({ onFileSelect, onEr
     }
 
     try {
-      console.log('音声ファイル選択:', {
+      log('音声ファイル選択:', {
         name: file.name,
         size: file.size,
         type: file.type

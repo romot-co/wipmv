@@ -1,6 +1,9 @@
 // src/core/workers/encodeWorker.ts
 import { MP4Muxer } from '../MP4Muxer';
 import { EncoderConfig } from '../VideoEncoderService'; // 型定義をインポート
+import debug from 'debug';
+
+const log = debug('app:encodeWorker');
 
 let videoEncoder: VideoEncoder | null = null;
 let audioEncoder: AudioEncoder | null = null;
@@ -86,13 +89,13 @@ export type {
 
 self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
   const message = event.data;
-  console.log('[Worker] Received message:', message.type);
+  log('[Worker] Received message:', message.type);
 
   try {
     if (message.type === 'cancel') {
       isCancelled = true;
       // TODO: 実行中のエンコード処理があれば中断する
-      console.log('[Worker] Cancel requested');
+      log('[Worker] Cancel requested');
       // 必要であればエンコーダー等を閉じる
       videoEncoder?.close();
       audioEncoder?.close();
@@ -143,7 +146,7 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
       });
       
       isInitialized = true;
-      console.log('[Worker] Initialized');
+      log('[Worker] Initialized');
 
     } else if (message.type === 'encodeVideo') {
       if (!isInitialized || !videoEncoder || isCancelled || !currentConfig) return;
@@ -182,7 +185,7 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
       
     } else if (message.type === 'finalize') {
       if (!isInitialized || isCancelled) return;
-      console.log('[Worker] Finalizing...');
+      log('[Worker] Finalizing...');
 
       await videoEncoder?.flush();
       await audioEncoder?.flush();
@@ -191,7 +194,7 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
 
       const result = muxer?.finalize();
       if (result) {
-        console.log('[Worker] Finalized. Sending result.');
+        log('[Worker] Finalized. Sending result.');
         self.postMessage({ type: 'result', data: result }, { transfer: [result.buffer] });
       } else {
          self.postMessage({ type: 'error', message: 'Muxer finalize failed' });

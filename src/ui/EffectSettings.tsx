@@ -8,6 +8,9 @@ import { BackgroundSettings } from './features/background/BackgroundSettings';
 import { WatermarkSettings } from './features/watermark/WatermarkSettings';
 import { WaveformSettings } from './features/waveform/WaveformSettings';
 import { TextSettings } from './features/text/TextSettings';
+import debug from 'debug';
+
+const log = debug('app:EffectSettings');
 import './EffectSettings.css';
 
 type EffectConfig = BackgroundEffectConfig | TextEffectConfig | WaveformEffectConfig | WatermarkEffectConfig;
@@ -41,7 +44,7 @@ export const EffectSettings = memo<EffectSettingsProps>(({
   useEffect(() => {
     try {
       const newConfig = effect.getConfig();
-      console.log('エフェクト設定更新:', { effectId: effect.getId(), newConfig });
+      log('エフェクト設定更新:', { effectId: effect.getId(), newConfig });
       setConfig(newConfig);
     } catch (error) {
       onError?.(new AppError(

@@ -6,6 +6,9 @@
  */
 
 import { AppError, ErrorType } from './types/error';
+import debug from 'debug';
+
+const log = debug('app:Renderer');
 
 // プレビュー用の最大解像度を定義
 const PREVIEW_MAX_WIDTH = 1280;
@@ -94,7 +97,7 @@ export class Renderer {
     // スケールを計算
     this.scale = width / previewWidth;
 
-    console.log('プレビュー解像度を設定:', {
+    log('プレビュー解像度を設定:', {
       original: { width, height },
       preview: { width: previewWidth, height: previewHeight },
       scale: this.scale

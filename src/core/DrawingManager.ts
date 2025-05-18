@@ -2,6 +2,9 @@ import { EffectManager } from './EffectManager';
 import { Renderer } from './Renderer';
 import { EffectBase, EffectConfig } from './types';
 import { AppError, ErrorType } from './types/error';
+import debug from 'debug';
+
+const log = debug('app:DrawingManager');
 
 /**
  * 描画処理を統括するクラス
@@ -58,7 +61,7 @@ export class DrawingManager {
         return true;
       });
       
-      console.log('DrawingManager.renderAll: Drawing', uniqueEffects.length, 'unique effects at time', currentTime);
+      log('DrawingManager.renderAll: Drawing', uniqueEffects.length, 'unique effects at time', currentTime);
       
       const context = ctx ?? this.renderer!.getOffscreenContext();
       if (!ctx && this.renderer) {
@@ -68,7 +71,7 @@ export class DrawingManager {
       // 表示状態のエフェクトのみ描画
       for (const effect of uniqueEffects) {
         if (effect.isVisible()) { 
-          console.log(`Drawing effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
+          log(`Drawing effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
           try {
             effect.render(context);
           } catch (error) {
@@ -76,7 +79,7 @@ export class DrawingManager {
             // TODO: エラーハンドリングを改善
           }
         } else {
-          console.log(`Skipping invisible effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
+          log(`Skipping invisible effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
         }
       }
 

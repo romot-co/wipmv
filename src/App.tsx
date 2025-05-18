@@ -491,7 +491,7 @@ function App() {
                lastStateRef.current.isPlaying !== audioState.isPlaying) &&
               now - lastLogTime > LOG_INTERVAL) {
             if (shouldLog('animation-frame')) {
-              console.log('アニメーションフレーム詳細:', {
+              log('アニメーションフレーム詳細:', {
                 currentTime: currentPlaybackTime,
                 phase: phase.type,
                 isPlaying: audioState.isPlaying,
@@ -522,7 +522,7 @@ function App() {
 
     if (isInteractive && drawingManager && drawingManager.getRenderer() && !isLoopRunningRef.current) {
       if (shouldLog('animation-loop')) {
-        console.log('アニメーションループ開始:', {
+        log('アニメーションループ開始:', {
           phase: phase.type,
           currentTime: audioState.currentTime,
           hasManager: !!managerInstance,
@@ -536,7 +536,7 @@ function App() {
     return () => {
       if (isLoopRunningRef.current) {
         if (shouldLog('animation-loop')) {
-          console.log('アニメーションループ停止');
+          log('アニメーションループ停止');
         }
         isLoopRunningRef.current = false;
         cancelAnimationFrame(rafId);
@@ -549,7 +549,7 @@ function App() {
   useEffect(() => {
     const now = performance.now();
     if (now - lastAudioStateLogRef.current > 1000) {
-      console.log('audioState更新:', {
+      log('audioState更新:', {
         currentTime: audioState.currentTime,
         isPlaying: audioState.isPlaying,
         phase: phase.type
@@ -616,7 +616,7 @@ function App() {
   // エフェクト追加
   const handleAddEffectClick = useCallback(async (type: EffectType) => {
     try {
-      console.log('Adding effect:', type);
+      log('Adding effect:', type);
       const newEffect = createEffectByType(type);
       if (hasSetAudioSource(newEffect) && audioState.source) {
         newEffect.setAudioSource(audioState.source); // Set audio source immediately
@@ -754,7 +754,7 @@ function App() {
                     <IconButton 
                       variant="ghost" 
                       onClick={() => {
-                        console.log('Toggle dropdown');
+                        log('Toggle dropdown');
                         setIsDropdownOpen(!isDropdownOpen);
                       }}
                     >
@@ -764,7 +764,7 @@ function App() {
                   <DropdownContent isOpen={isDropdownOpen}>
                     <DropdownItem 
                       onClick={() => {
-                        console.log('Background effect clicked');
+                        log('Background effect clicked');
                         handleAddEffectClick('background');
                         setIsDropdownOpen(false);
                       }}
@@ -773,7 +773,7 @@ function App() {
                     </DropdownItem>
                     <DropdownItem 
                       onClick={() => {
-                        console.log('Text effect clicked');
+                        log('Text effect clicked');
                         handleAddEffectClick('text'); 
                         setIsDropdownOpen(false);
                       }}
@@ -782,7 +782,7 @@ function App() {
                     </DropdownItem>
                     <DropdownItem 
                       onClick={() => {
-                        console.log('Waveform effect clicked');
+                        log('Waveform effect clicked');
                         handleAddEffectClick('waveform');
                         setIsDropdownOpen(false);
                       }}
@@ -791,7 +791,7 @@ function App() {
                     </DropdownItem>
                     <DropdownItem 
                       onClick={() => {
-                        console.log('Watermark effect clicked');
+                        log('Watermark effect clicked');
                         handleAddEffectClick('watermark');
                         setIsDropdownOpen(false);
                       }}
@@ -807,7 +807,7 @@ function App() {
             {/* Export Button */} 
             <ExportButton 
               onError={(error) => transitionTo({ type: 'error', error })} 
-              onProgress={(progress) => console.log('Export progress:', progress)}
+              onProgress={(progress) => log('Export progress:', progress)}
               videoSettings={currentVideoSettings}
               onSettingsChange={handleVideoSettingsUpdate}
               audioSource={audioState.source}

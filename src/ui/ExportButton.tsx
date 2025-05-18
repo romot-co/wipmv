@@ -6,6 +6,9 @@ import { ExportButtonProps } from '../core/types/core';
 import { VideoEncoderService, ProgressCallback } from '../core/VideoEncoderService';
 import { AppError, ErrorType } from '../core/types/error';
 import { useApp } from '../contexts/AppContext';
+import debug from 'debug';
+
+const log = debug('app:ExportButton');
 
 /**
  * ExportButton コンポーネント
@@ -58,7 +61,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         const progress = totalFrames > 0 ? (processedFrames / totalFrames) * 100 : 0;
         setExportProgress(progress);
         onProgress?.(progress);
-        console.log(`Export Progress: ${progress.toFixed(1)}% (${processedFrames}/${totalFrames})`);
+        log(`Export Progress: ${progress.toFixed(1)}% (${processedFrames}/${totalFrames})`);
       };
 
       encoderRef.current = new VideoEncoderService({
@@ -73,17 +76,17 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       const encoder = encoderRef.current;
 
       const totalFrames = Math.ceil(buffer.duration * videoSettings.frameRate);
-      console.log(`Starting export for ${totalFrames} frames.`);
+      log(`Starting export for ${totalFrames} frames.`);
 
       await encoder.initialize(handleProgress, totalFrames);
-      console.log("Encoder initialized successfully.");
+      log("Encoder initialized successfully.");
 
       const canvas = drawingManager.createExportCanvas({
         width: videoSettings.width,
         height: videoSettings.height
       });
 
-      console.log("Starting frame encoding loop...");
+      log("Starting frame encoding loop...");
       for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
         const currentTime = (frameIndex / videoSettings.frameRate);
 
@@ -93,10 +96,10 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         encoder.encodeVideoFrame(canvas, frameIndex);
         encoder.encodeAudioBuffer(buffer, frameIndex);
       }
-      console.log("Frame encoding loop finished. Finalizing...");
+      log("Frame encoding loop finished. Finalizing...");
 
       const mp4Binary = await encoder.finalize();
-      console.log("Export finalized, MP4 size:", mp4Binary.byteLength);
+      log("Export finalized, MP4 size:", mp4Binary.byteLength);
 
       const blob = new Blob([mp4Binary], { type: 'video/mp4' });
       const url = URL.createObjectURL(blob);
@@ -108,14 +111,14 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      console.log("MP4 download initiated.");
+      log("MP4 download initiated.");
       onExportComplete?.();
 
     } catch (error) {
       console.error('エクスポート処理中にエラー発生:', error);
       if (error instanceof AppError) {
         if (error.type === ErrorType.EXPORT_CANCELLED) {
-          console.log("Export was cancelled by user request.");
+          log("Export was cancelled by user request.");
           onExportError?.(error);
         } else {
           onError(error);
@@ -127,7 +130,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         onExportError?.(genericError);
       }
     } finally {
-      console.log("Cleaning up export resources...");
+      log("Cleaning up export resources...");
       encoderRef.current?.dispose();
       encoderRef.current = null;
       setIsExporting(false);
@@ -147,7 +150,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
 
   const handleCancel = useCallback(() => {
     if (encoderRef.current) {
-      console.log("User requested export cancellation...");
+      log("User requested export cancellation...");
       encoderRef.current.cancel();
     } else {
        console.warn("Cannot cancel export: encoder instance not found.");
