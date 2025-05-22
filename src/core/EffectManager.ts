@@ -18,6 +18,9 @@ import { AudioPlaybackService } from './AudioPlaybackService';
 import { Renderer } from './Renderer';
 import { updateRectForResize } from '../utils/coordinates';
 import { VideoEncoderService } from './VideoEncoderService';
+import debug from 'debug';
+
+const log = debug('app:EffectManager');
 
 /**
  * エフェクトマネージャー
@@ -259,14 +262,14 @@ export class EffectManager implements IEffectManager {
     const isDebugEnabled = false; // デバッグログを無効化
     
     if (isDebugEnabled) {
-      console.log('getEffectAtPoint - Click coordinates:', { clickX, clickY, canvasWidth, canvasHeight });
+      log('getEffectAtPoint - Click coordinates:', { clickX, clickY, canvasWidth, canvasHeight });
     }
 
     // zIndex の降順（描画の前面）から判定
     const sortedEffects = [...this.getSortedEffects()].reverse(); // getSortedEffects は昇順なので reverse
     
     if (isDebugEnabled) {
-      console.log('getEffectAtPoint - Checking effects (total):', sortedEffects.length);
+      log('getEffectAtPoint - Checking effects (total):', sortedEffects.length);
     }
 
     for (const effect of sortedEffects) {
@@ -274,13 +277,13 @@ export class EffectManager implements IEffectManager {
       const config = effect.getConfig();
       
       if (isDebugEnabled) {
-        console.log(`Checking effect: ${effect.getId()} (${config.type}), visible: ${config.visible}, isDraggable: ${effect.isDraggable}`);
+        log(`Checking effect: ${effect.getId()} (${config.type}), visible: ${config.visible}, isDraggable: ${effect.isDraggable}`);
       }
       
       // 非表示のエフェクトはスキップ
       if (!config.visible) {
         if (isDebugEnabled) {
-          console.log(`Skipping invisible effect: ${effect.getId()}`);
+          log(`Skipping invisible effect: ${effect.getId()}`);
         }
         continue;
       }
@@ -300,7 +303,7 @@ export class EffectManager implements IEffectManager {
           );
           
           if (isDebugEnabled) {
-            console.log(`BoundingBox for ${effect.getId()} (${config.type}):`, { 
+            log(`BoundingBox for ${effect.getId()} (${config.type}):`, { 
               x: boxX, y: boxY, width: boxWidth, height: boxHeight,
               isInside
             });
@@ -308,11 +311,11 @@ export class EffectManager implements IEffectManager {
           
           // クリック座標がバウンディングボックス内にあれば、そのエフェクトIDを返す
           if (isInside) {
-            console.log(`Effect found at point: ${effect.getId()} (${config.type})`);
+            log(`Effect found at point: ${effect.getId()} (${config.type})`);
             return effect.getId();
           }
         } else if (isDebugEnabled) {
-          console.log(`No bounding box for effect: ${effect.getId()}`);
+          log(`No bounding box for effect: ${effect.getId()}`);
         }
       } catch (error) {
         // getBoundingBox が未実装の場合などにエラーが発生する可能性がある
@@ -323,7 +326,7 @@ export class EffectManager implements IEffectManager {
 
     // どのエフェクトにもヒットしなかった場合
     if (isDebugEnabled) {
-      console.log('No effect found at point:', { x, y, clickX, clickY });
+      log('No effect found at point:', { x, y, clickX, clickY });
     }
     return null;
   }

@@ -1,4 +1,7 @@
 import FFT from 'fft.js';
+import debug from 'debug';
+
+const log = debug('app:audioAnalyzerWorker');
 
 interface AudioData {
   readonly channelData: Float32Array[];  // 複数チャンネルに対応
@@ -185,7 +188,7 @@ async function analyzeAudio(audioData: AudioData, config: AnalysisConfig = DEFAU
 
   } catch (error) {
     if (error instanceof Error && error.message === 'cancelled') {
-      console.log('音声解析がキャンセルされました');
+      log('音声解析がキャンセルされました');
       return { type: 'cancelled' };
     }
     console.error('音声解析エラー:', error);
@@ -197,7 +200,7 @@ async function analyzeAudio(audioData: AudioData, config: AnalysisConfig = DEFAU
 self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
   try {
     if (e.data.type === 'cancel') {
-      console.log('Worker: キャンセル要求を受信');
+      log('Worker: キャンセル要求を受信');
       isCancelled = true;
       return;
     }
@@ -229,7 +232,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       };
     }
 
-    console.log('Worker: 解析開始', {
+    log('Worker: 解析開始', {
       sampleRate: e.data.audioData.sampleRate,
       duration: e.data.audioData.duration,
       numberOfChannels: e.data.audioData.numberOfChannels,
@@ -242,7 +245,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     // 結果に基づいてメッセージを送信
     if (result && 'waveformData' in result && 'frequencyData' in result) {
       // 成功した場合
-      console.log('Worker: 解析完了、結果を送信');
+      log('Worker: 解析完了、結果を送信');
       const transferableObjects: Transferable[] = [];
       result.waveformData!.forEach(arr => transferableObjects.push(arr.buffer));
       result.frequencyData!.forEach(channelFrames => 
@@ -252,7 +255,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       self.postMessage({ type: 'success', data: result }, { transfer: transferableObjects });
     } else if (result && 'type' in result && result.type === 'cancelled') {
       // キャンセルされた場合
-      console.log('Worker: 解析キャンセルを通知');
+      log('Worker: 解析キャンセルを通知');
       self.postMessage({ type: 'cancelled' });
     } else {
       // その他のエラーケース（analyzeAudio内でエラーが投げられなかった場合）

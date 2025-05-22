@@ -3,6 +3,9 @@ import { WaveformEffectConfig } from '../../core/types/effect';
 import { AnimationController } from '../../core/animation/AnimationController';
 import { Color, AudioSource } from '../../core/types/base';
 import { convertRect } from '../../utils/coordinates';
+import debug from 'debug';
+
+const log = debug('app:WaveformEffect');
 
 /**
  * 波形エフェクト
@@ -114,7 +117,7 @@ export class WaveformEffect extends EffectBase<WaveformEffectConfig> {
       return;
     }
 
-    console.log('波形エフェクト: 音声ソース設定完了', {
+    log('波形エフェクト: 音声ソース設定完了', {
       hasWaveformData: true,
       hasFrequencyData: frequencyDataValid,
       channels: source.waveformData.length,
