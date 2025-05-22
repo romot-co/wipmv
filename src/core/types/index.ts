@@ -10,10 +10,13 @@ export type {
   Position,
   Size,
   Rectangle,
+  BoundingBox,
   Color,
   Disposable,
   BlendMode
 } from './base';
+
+export type { RenderContext } from './render';
 
 // アニメーション関連
 export type {

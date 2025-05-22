@@ -1,11 +1,9 @@
 import { EffectBase } from '../../core/types/core';
 import { TextEffectConfig } from '../../core/types/effect';
 import { AnimationController } from '../../core/animation/AnimationController';
-import { Color } from '../../core/types/base';
+import { Color, AudioSource, BoundingBox } from '../../core/types/base';
 import { convertPosition } from '../../utils/coordinates';
-import { AudioSource } from '../../core/audio/AudioSource';
 import { RenderContext } from '../../core/types/render';
-
 interface CanvasTextRenderingContext2D extends CanvasRenderingContext2D {
   fontKerning?: string;
   textRendering?: string;
