@@ -72,8 +72,19 @@ export class DrawingManager {
           try {
             effect.render(context);
           } catch (error) {
-            console.error('Effect render error:', { effectId: effect.getId(), error });
-            // TODO: エラーハンドリングを改善
+            const appError =
+              error instanceof AppError
+                ? error
+                : new AppError(
+                    ErrorType.RENDERER_ERROR,
+                    'Effect render failed',
+                    error
+                  );
+            console.error('Effect render error:', {
+              effectId: effect.getId(),
+              error: appError,
+            });
+            // 個々のエフェクトの描画失敗は致命的ではないため継続する
           }
         } else {
           console.log(`Skipping invisible effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
@@ -106,8 +117,16 @@ export class DrawingManager {
       }
 
     } catch (error) {
-      console.error('DrawingManager renderAll error:', error);
-      // TODO: エラーハンドリング
+      const appError =
+        error instanceof AppError
+          ? error
+          : new AppError(
+              ErrorType.RENDERER_ERROR,
+              'Failed to render all effects',
+              error
+            );
+      console.error('DrawingManager renderAll error:', appError);
+      // 上位へは投げずにログのみ行う
     }
   }
 

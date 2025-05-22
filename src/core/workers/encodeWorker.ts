@@ -12,6 +12,7 @@ let lastAudioTimestamp = 0;
 let frameInterval = 0;
 let samplesPerFrame = 0;
 let isCancelled = false;
+let processedFrames = 0;
 
 interface WorkerInitializeMessage {
   type: 'initialize';
@@ -91,6 +92,7 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
   try {
     if (message.type === 'cancel') {
       isCancelled = true;
+      processedFrames = 0;
       // TODO: 実行中のエンコード処理があれば中断する
       console.log('[Worker] Cancel requested');
       // 必要であればエンコーダー等を閉じる
@@ -101,6 +103,7 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
 
     if (message.type === 'initialize') {
       isCancelled = false;
+      processedFrames = 0;
       currentConfig = message.config;
       frameInterval = Math.floor(1_000_000 / currentConfig.frameRate);
       samplesPerFrame = Math.floor(currentConfig.sampleRate / currentConfig.frameRate);
@@ -158,9 +161,14 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
       videoEncoder.encode(frame);
       frame.close();
       message.bitmap.close(); // Bitmap も閉じる
-      // TODO: 進捗を通知 (例: 10フレームごと)
-      if (message.frameIndex % 10 === 0) {
-         // self.postMessage({ type: 'progress', processedFrames: message.frameIndex });
+      processedFrames = message.frameIndex + 1;
+      if (processedFrames % 10 === 0) {
+        const progressMessage: WorkerProgressMessage = {
+          type: 'progress',
+          processedFrames,
+          totalFrames: 0,
+        };
+        self.postMessage(progressMessage);
       }
 
     } else if (message.type === 'encodeAudio') {
@@ -192,6 +200,13 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
       const result = muxer?.finalize();
       if (result) {
         console.log('[Worker] Finalized. Sending result.');
+        // Ensure final progress message is sent
+        const progressMessage: WorkerProgressMessage = {
+          type: 'progress',
+          processedFrames,
+          totalFrames: 0,
+        };
+        self.postMessage(progressMessage);
         self.postMessage({ type: 'result', data: result }, { transfer: [result.buffer] });
       } else {
          self.postMessage({ type: 'error', message: 'Muxer finalize failed' });
