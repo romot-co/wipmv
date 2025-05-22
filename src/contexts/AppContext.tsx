@@ -20,12 +20,13 @@ import { WatermarkEffect } from '../features/watermark/WatermarkEffect';
 import { TextEffect } from '../features/text/TextEffect';
 import { ProjectData } from '../core/types/state';
 import {
-  BackgroundEffectConfig, 
-  TextEffectConfig, 
-  WaveformEffectConfig, 
+  BackgroundEffectConfig,
+  TextEffectConfig,
+  WaveformEffectConfig,
   WatermarkEffectConfig
 } from '../core/types/effect';
 import { PlaybackState } from '../core/types/audio';
+import { VideoEncoderService } from '../core/VideoEncoderService';
 import debug from 'debug';
 
 const log = debug('app:AppContext');
@@ -238,6 +239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const managerInstance = useMemo(() => new EffectManager(), []);
   const drawingManager = useMemo(() => new DrawingManager(managerInstance), [managerInstance]);
   const analyzerService = useMemo(() => AudioAnalyzerService.getInstance(), []);
+  const encoderRef = useRef<VideoEncoderService | null>(null);
 
   const handleErrorCallback = useCallback((error: AppError) => {
     log('Handling error:', error);
@@ -458,9 +460,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [managerInstance, dispatch, handleErrorCallback]);
 
   const createProject = useCallback(async (name: string, settings: VideoSettings) => {
-    console.log('[TODO] createProject called', name, settings);
-    // Implement project creation logic
-  }, []);
+    try {
+      const projectService = ProjectService.getInstance();
+      const project = await projectService.createProject(name, settings);
+
+      // Dispose existing effects and reset state
+      managerInstance.dispose();
+      dispatch({ type: 'SET_EFFECTS', payload: { effects: [], selectedEffect: null } });
+
+      dispatch({
+        type: 'SET_PROJECT',
+        payload: {
+          currentProject: { ...project, audioBuffer: null },
+          lastSaved: project.updatedAt
+        }
+      });
+
+      dispatch({
+        type: 'SET_AUDIO',
+        payload: { source: null, currentTime: 0, duration: 0, isPlaying: false }
+      });
+
+      transitionTo({ type: 'idle' });
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.ProjectCreateFailed, 'プロジェクトの作成に失敗しました', error as Error));
+    }
+  }, [dispatch, managerInstance, handleErrorCallback, transitionTo]);
 
   const saveProject = useCallback(async () => {
     log('Attempting to save project...');
@@ -551,14 +577,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [dispatch, managerInstance, handleErrorCallback]);
 
   const startExport = useCallback(async (settings: VideoSettings) => {
-    console.log('[TODO] startExport called', settings);
-    // Implement export logic
-  }, []);
+    const buffer = state.audioState.source?.buffer;
+    if (!buffer) {
+      handleErrorCallback(new AppError(ErrorType.INVALID_STATE, '音声が読み込まれていません'));
+      return;
+    }
+
+    try {
+      transitionTo({ type: 'exporting', settings });
+
+      encoderRef.current = new VideoEncoderService({
+        width: settings.width,
+        height: settings.height,
+        frameRate: settings.frameRate,
+        videoBitrate: settings.videoBitrate,
+        audioBitrate: settings.audioBitrate,
+        sampleRate: buffer.sampleRate,
+        channels: buffer.numberOfChannels
+      });
+      const encoder = encoderRef.current;
+
+      const totalFrames = Math.ceil(buffer.duration * settings.frameRate);
+      await encoder.initialize(undefined, totalFrames);
+
+      const canvas = drawingManager.createExportCanvas({
+        width: settings.width,
+        height: settings.height
+      });
+
+      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+        const currentTime = frameIndex / settings.frameRate;
+        managerInstance.updateAll(currentTime);
+        drawingManager.renderExportFrame(canvas, currentTime);
+        await encoder.encodeVideoFrame(canvas, frameIndex);
+        await encoder.encodeAudioBuffer(buffer, frameIndex);
+      }
+
+      const mp4Binary = await encoder.finalize();
+      const blob = new Blob([mp4Binary], { type: 'video/mp4' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'output.mp4';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      transitionTo({ type: 'ready' });
+    } catch (error) {
+      console.error('Export failed:', error);
+      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.EXPORT_ENCODE_FAILED, 'エクスポートに失敗しました', error as Error));
+      transitionTo({ type: 'ready' });
+    } finally {
+      encoderRef.current?.dispose();
+      encoderRef.current = null;
+    }
+  }, [state.audioState.source, drawingManager, managerInstance, handleErrorCallback, transitionTo]);
 
   const cancelExport = useCallback(() => {
-    console.log('[TODO] cancelExport called');
-    // Implement export cancellation logic
-  }, []);
+    if (encoderRef.current) {
+      encoderRef.current.cancel();
+      encoderRef.current.dispose();
+      encoderRef.current = null;
+    }
+    transitionTo({ type: 'ready' });
+  }, [transitionTo]);
 
   const contextValue = useMemo<AppContextType>(() => ({
     ...state,
