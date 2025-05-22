@@ -191,4 +191,4 @@ export const EffectSettings = memo<EffectSettingsProps>(({
   );
 });
 
-EffectSettings.displayName = 'EffectSettings'; 
+EffectSettings.displayName = 'EffectSettings';

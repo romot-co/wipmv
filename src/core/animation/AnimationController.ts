@@ -261,4 +261,4 @@ export class AnimationController {
         return progress;
     }
   }
-} 
+}

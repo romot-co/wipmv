@@ -90,4 +90,4 @@ export const ColorInput = memo<ColorInputProps>(({
   );
 });
 
-ColorInput.displayName = 'ColorInput'; 
+ColorInput.displayName = 'ColorInput';

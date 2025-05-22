@@ -70,4 +70,4 @@ export interface AudioPlayback {
 export interface AudioSourceControl {
   getAudioSource(): AudioSource | null;
   setAudioSource(source: AudioSource): Promise<void>;
-} 
+}

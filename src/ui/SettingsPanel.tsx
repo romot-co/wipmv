@@ -62,4 +62,4 @@ export const SettingsPanel: React.FC = () => {
       </Box>
     </Box>
   );
-}; 
+};

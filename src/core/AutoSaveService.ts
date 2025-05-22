@@ -63,4 +63,4 @@ export class AutoSaveService {
   getCurrentProject(): ProjectData | null {
     return this.currentProject;
   }
-} 
+}

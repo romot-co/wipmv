@@ -224,4 +224,4 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
   dispose(): void {
     this.animationController = null;
   }
-} 
+}

@@ -65,4 +65,4 @@ export const ImageUploader = memo<ImageUploaderProps>(({
   );
 });
 
-ImageUploader.displayName = 'ImageUploader'; 
+ImageUploader.displayName = 'ImageUploader';

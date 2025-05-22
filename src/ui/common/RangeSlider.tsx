@@ -41,4 +41,4 @@ export const RangeSlider: React.FC<RangeSliderProps> = ({
       </div>
     </label>
   );
-}; 
+};

@@ -123,4 +123,4 @@ export type Animation =
   | MoveAnimation
   | ColorAnimation
   | WaveformAnimation
-  | WatermarkAnimation; 
+  | WatermarkAnimation;

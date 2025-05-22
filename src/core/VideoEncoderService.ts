@@ -145,8 +145,11 @@ export class VideoEncoderService implements Disposable {
           switch (message.type) {
             case 'progress':
               if (this.onProgress) {
-                // Pass progress info back via callback
-                this.onProgress(message.processedFrames, this.totalFrames);
+                const total = message.totalFrames > 0 ? message.totalFrames : this.totalFrames;
+                if (this.totalFrames === 0 && message.totalFrames > 0) {
+                  this.totalFrames = message.totalFrames;
+                }
+                this.onProgress(message.processedFrames, total);
               }
               break;
             case 'result':
