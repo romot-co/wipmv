@@ -132,4 +132,4 @@ export const CoordinateSystemSettings = memo<CoordinateSystemSettingsProps>(({
   );
 });
 
-CoordinateSystemSettings.displayName = 'CoordinateSystemSettings'; 
+CoordinateSystemSettings.displayName = 'CoordinateSystemSettings';

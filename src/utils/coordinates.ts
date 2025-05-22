@@ -130,4 +130,4 @@ export function isValidSize(size: Size, system: CoordinateSystem): boolean {
     return size.width >= 0 && size.width <= 1 && size.height >= 0 && size.height <= 1;
   }
   return size.width >= 0 && size.height >= 0;
-} 
+}

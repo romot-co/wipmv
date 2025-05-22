@@ -84,4 +84,4 @@ export const CustomErrorFallback: React.FC<{ error: Error; reset: () => void }> 
       再試行
     </Button>
   </Card>
-); 
+);

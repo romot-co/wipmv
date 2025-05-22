@@ -166,4 +166,4 @@ export function detectPeaks(data: Float32Array, threshold = 0.5): number[] {
     }
   }
   return peaks;
-} 
+}

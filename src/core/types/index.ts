@@ -78,4 +78,4 @@ export type {
   AudioSourceControl,
   PlaybackState
 } from './audio';
-export { withAudioError } from './audio'; 
+export { withAudioError } from './audio';

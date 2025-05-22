@@ -153,4 +153,4 @@ export const EffectTimeSettings = memo<EffectTimeSettingsProps>(({
   );
 });
 
-EffectTimeSettings.displayName = 'EffectTimeSettings'; 
+EffectTimeSettings.displayName = 'EffectTimeSettings';

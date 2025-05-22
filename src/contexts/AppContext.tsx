@@ -618,4 +618,4 @@ export const useApp = (): AppContextType => {
   }
   // Remove the cast to ModifiedAppState
   return context;
-}; 
+};

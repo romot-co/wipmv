@@ -35,4 +35,4 @@ export function EncodeCanvas({ manager, videoSettings, currentTime, onFrame }: E
 
   // 実際のDOMには表示しない（非表示のワーキングキャンバス）
   return null;
-} 
+}

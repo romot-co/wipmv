@@ -366,4 +366,4 @@ export const WaveformSettings = memo<WaveformSettingsProps>(({
   );
 });
 
-WaveformSettings.displayName = 'WaveformSettings'; 
+WaveformSettings.displayName = 'WaveformSettings';

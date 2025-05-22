@@ -116,4 +116,4 @@ export const EncodeSettings: React.FC<EncodeSettingsProps> = ({
       </div>
     </div>
   );
-}; 
+};

@@ -64,4 +64,4 @@ self.onmessage = async (event: MessageEvent<ArrayBuffer>) => {
     console.error('[Worker] Unexpected error:', error);
     self.postMessage({ success: false, error: 'Unexpected worker error' });
   }
-}; 
+};

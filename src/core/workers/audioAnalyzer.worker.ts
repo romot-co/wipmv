@@ -270,4 +270,4 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
   }
 };
 
-export {}; 
+export {};
