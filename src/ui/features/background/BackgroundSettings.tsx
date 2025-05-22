@@ -243,4 +243,4 @@ export const BackgroundSettings = memo<BackgroundSettingsProps>(({
   );
 });
 
-BackgroundSettings.displayName = 'BackgroundSettings'; 
+BackgroundSettings.displayName = 'BackgroundSettings';

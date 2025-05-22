@@ -178,4 +178,4 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
       height: canvasHeight
     };
   }
-} 
+}

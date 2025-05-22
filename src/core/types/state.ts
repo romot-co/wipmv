@@ -156,4 +156,4 @@ export interface UseProjectResult {
   createProject: (name: string, videoSettings: VideoSettings) => Promise<ProjectData>;
   saveProject: () => Promise<void>;
   updateVideoSettings: (settings: VideoSettings) => Promise<void>;
-} 
+}

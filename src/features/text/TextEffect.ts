@@ -4,6 +4,11 @@ import { AnimationController } from '../../core/animation/AnimationController';
 import { Color, AudioSource, BoundingBox } from '../../core/types/base';
 import { convertPosition } from '../../utils/coordinates';
 import { RenderContext } from '../../core/types/render';
+interface CanvasTextRenderingContext2D extends CanvasRenderingContext2D {
+  fontKerning?: string;
+  textRendering?: string;
+}
+import { BoundingBox } from '../../core/types/base';
 
 /**
  * テキストエフェクト
@@ -64,10 +69,10 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
     
     // テキストレンダリングの最適化（高品質設定）
     if ('fontKerning' in ctx) {
-      (ctx as any).fontKerning = 'normal';
+      (ctx as CanvasTextRenderingContext2D).fontKerning = 'normal';
     }
     if ('textRendering' in ctx) {
-      (ctx as any).textRendering = 'optimizeLegibility';
+      (ctx as CanvasTextRenderingContext2D).textRendering = 'optimizeLegibility';
     }
     
     // フォント設定の最適化（より正確なピクセル合わせ）
@@ -222,4 +227,4 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
   dispose(): void {
     this.animationController = null;
   }
-} 
+}

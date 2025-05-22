@@ -11,6 +11,9 @@ import {
     WorkerEncodeAudioMessage,
     WorkerFinalizeMessage
 } from './workers/encodeWorker';
+import debug from 'debug';
+
+const log = debug('app:VideoEncoderService');
 
 // Define and export EncoderConfig locally
 export interface EncoderConfig {
@@ -50,7 +53,7 @@ export class VideoEncoderService implements Disposable {
   // Promise for finalize result
   private finalizePromise: Promise<Uint8Array> | null = null;
   private resolveFinalize: ((value: Uint8Array | PromiseLike<Uint8Array>) => void) | null = null;
-  private rejectFinalize: ((reason?: any) => void) | null = null;
+  private rejectFinalize: ((reason?: AppError) => void) | null = null;
 
   // Progress callback
   private onProgress: ProgressCallback | null = null;
@@ -68,7 +71,7 @@ export class VideoEncoderService implements Disposable {
    */
   public cancel(): void {
     if (this.isDisposed || this.isCancelled) return;
-    console.log('VideoEncoderService: Cancelling...');
+    log('VideoEncoderService: Cancelling...');
     this.isCancelled = true;
     if (this.worker) {
       // Send cancel message to worker
@@ -135,15 +138,18 @@ export class VideoEncoderService implements Disposable {
         // --- Worker Message Handler ---
         this.worker.onmessage = (event: MessageEvent<WorkerOutgoingMessage>) => {
           const message = event.data;
-          // console.log('[Main] Received message from worker:', message.type); // Verbose log
+          // log('[Main] Received message from worker:', message.type); // Verbose log
 
           if (this.isDisposed) return; // Ignore messages if disposed
 
           switch (message.type) {
             case 'progress':
               if (this.onProgress) {
-                // Pass progress info back via callback
-                this.onProgress(message.processedFrames, this.totalFrames);
+                const total = message.totalFrames > 0 ? message.totalFrames : this.totalFrames;
+                if (this.totalFrames === 0 && message.totalFrames > 0) {
+                  this.totalFrames = message.totalFrames;
+                }
+                this.onProgress(message.processedFrames, total);
               }
               break;
             case 'result':
@@ -180,7 +186,7 @@ export class VideoEncoderService implements Disposable {
             // Handle potential 'initialized' confirmation message from worker if needed
             // case 'initialized':
             //   this.isInitialized = true;
-            //   console.log('VideoEncoderService: Worker confirmed initialization.');
+            //   log('VideoEncoderService: Worker confirmed initialization.');
             //   resolve(); // Resolve the initialize promise here
             //   break;
           }
@@ -214,7 +220,7 @@ export class VideoEncoderService implements Disposable {
         // Assume initialization is successful immediately after posting message.
         // For robust handling, wait for an 'initialized' confirmation from worker.
         this.isInitialized = true;
-        console.log('VideoEncoderService: Worker initialization message sent.');
+        log('VideoEncoderService: Worker initialization message sent.');
         resolve(); // Resolve the initialize promise now
 
       } catch (error: unknown) {
@@ -301,7 +307,7 @@ export class VideoEncoderService implements Disposable {
       );
 
       if (sampleCount <= 0) {
-        // console.log(`No audio samples for frame ${frameIndex}`);
+        // log(`No audio samples for frame ${frameIndex}`);
         return; // No samples for this frame index
       }
 
@@ -384,7 +390,7 @@ export class VideoEncoderService implements Disposable {
         this.rejectFinalize = reject;
 
         // Send finalize message to worker
-        console.log('VideoEncoderService: Sending finalize message to worker.');
+        log('VideoEncoderService: Sending finalize message to worker.');
         const message: WorkerFinalizeMessage = { type: 'finalize' };
         try {
           this.worker!.postMessage(message);
@@ -408,7 +414,7 @@ export class VideoEncoderService implements Disposable {
    */
   public dispose(): void {
     if (this.isDisposed) return;
-    console.log('VideoEncoderService: Disposing...');
+    log('VideoEncoderService: Disposing...');
     this.isDisposed = true; // Mark as disposed first
     if (this.worker) {
       this.worker.terminate(); // Terminate the worker

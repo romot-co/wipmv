@@ -1,3 +1,7 @@
+import debug from 'debug';
+
+const log = debug('app:decodeAudioWorker');
+
 /**
  * オーディオデコード処理を行う Web Worker
  */
@@ -6,7 +10,7 @@ self.onmessage = async (event: MessageEvent<ArrayBuffer>) => {
   const arrayBuffer = event.data;
 
   try {
-    console.log('[Worker] Audio decode request received');
+    log('[Worker] Audio decode request received');
     // OfflineAudioContext を使ってデコードを試みる
     // AudioBuffer は transferable ではないため、OfflineAudioContext が使えるか確認
     // (仕様上は Worker 内で OfflineAudioContext は利用可能)
@@ -40,7 +44,7 @@ self.onmessage = async (event: MessageEvent<ArrayBuffer>) => {
       // しかし Worker 内で AudioContext は作れない。OfflineAudioContext は作れるが...
       const tempContext = new OfflineAudioContext(1, 1, 44100); // dummy values
       const audioBuffer = await tempContext.decodeAudioData(arrayBuffer);
-      console.log('[Worker] Audio decode successful');
+      log('[Worker] Audio decode successful');
       // AudioBuffer は転送できないので、Float32Array に変換して送る？
       const channels = [];
       for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
@@ -64,4 +68,4 @@ self.onmessage = async (event: MessageEvent<ArrayBuffer>) => {
     console.error('[Worker] Unexpected error:', error);
     self.postMessage({ success: false, error: 'Unexpected worker error' });
   }
-}; 
+};
