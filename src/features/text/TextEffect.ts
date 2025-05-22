@@ -5,6 +5,11 @@ import { Color } from '../../core/types/base';
 import { convertPosition } from '../../utils/coordinates';
 import { AudioSource } from '../../core/audio/AudioSource';
 import { RenderContext } from '../../core/types/render';
+
+interface CanvasTextRenderingContext2D extends CanvasRenderingContext2D {
+  fontKerning?: string;
+  textRendering?: string;
+}
 import { BoundingBox } from '../../core/types/base';
 
 /**
@@ -66,10 +71,10 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
     
     // テキストレンダリングの最適化（高品質設定）
     if ('fontKerning' in ctx) {
-      (ctx as any).fontKerning = 'normal';
+      (ctx as CanvasTextRenderingContext2D).fontKerning = 'normal';
     }
     if ('textRendering' in ctx) {
-      (ctx as any).textRendering = 'optimizeLegibility';
+      (ctx as CanvasTextRenderingContext2D).textRendering = 'optimizeLegibility';
     }
     
     // フォント設定の最適化（より正確なピクセル合わせ）

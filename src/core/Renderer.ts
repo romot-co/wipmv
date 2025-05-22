@@ -15,8 +15,8 @@ const PREVIEW_MAX_WIDTH = 1280;
 const PREVIEW_MAX_HEIGHT = 720;
 
 export class Renderer {
-  private canvas: HTMLCanvasElement;
-  private offscreenCanvas: HTMLCanvasElement;
+  private canvas: HTMLCanvasElement | null;
+  private offscreenCanvas: HTMLCanvasElement | null;
   private ctx: CanvasRenderingContext2D | null = null;
   private offscreenCtx: CanvasRenderingContext2D | null = null;
   private scale: number = 1;
@@ -89,10 +89,10 @@ export class Renderer {
       previewWidth = Math.round(PREVIEW_MAX_HEIGHT * aspectRatio);
     }
 
-    this.canvas.width = previewWidth;
-    this.canvas.height = previewHeight;
-    this.offscreenCanvas.width = previewWidth;
-    this.offscreenCanvas.height = previewHeight;
+    this.canvas!.width = previewWidth;
+    this.canvas!.height = previewHeight;
+    this.offscreenCanvas!.width = previewWidth;
+    this.offscreenCanvas!.height = previewHeight;
 
     // スケールを計算
     this.scale = width / previewWidth;
@@ -111,8 +111,8 @@ export class Renderer {
     this.scale = scale;
     
     // スケールに応じてオフスクリーンキャンバスのサイズを調整
-    this.offscreenCanvas.width = Math.round(this.canvas.width * scale);
-    this.offscreenCanvas.height = Math.round(this.canvas.height * scale);
+    this.offscreenCanvas!.width = Math.round(this.canvas!.width * scale);
+    this.offscreenCanvas!.height = Math.round(this.canvas!.height * scale);
     
     // 描画設定を再適用
     if (this.offscreenCtx) {
@@ -141,21 +141,21 @@ export class Renderer {
     if (!this.ctx || !this.offscreenCtx) return;
 
     // メインキャンバスをクリア
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.clearRect(0, 0, this.canvas!.width, this.canvas!.height);
 
     // スケールを考慮して描画
     if (this.scale !== 1) {
       this.ctx.save();
       this.ctx.scale(1 / this.scale, 1 / this.scale);
       this.ctx.drawImage(
-        this.offscreenCanvas,
+        this.offscreenCanvas!,
         0, 0,
-        this.offscreenCanvas.width,
-        this.offscreenCanvas.height
+        this.offscreenCanvas!.width,
+        this.offscreenCanvas!.height
       );
       this.ctx.restore();
     } else {
-      this.ctx.drawImage(this.offscreenCanvas, 0, 0);
+      this.ctx.drawImage(this.offscreenCanvas!, 0, 0);
     }
   }
 
@@ -165,9 +165,10 @@ export class Renderer {
   clear(): void {
     if (this.offscreenCtx) {
       this.offscreenCtx.clearRect(
-        0, 0,
-        this.offscreenCanvas.width,
-        this.offscreenCanvas.height
+        0,
+        0,
+        this.offscreenCanvas!.width,
+        this.offscreenCanvas!.height
       );
     }
   }
@@ -177,8 +178,8 @@ export class Renderer {
    */
   getOriginalSize(): { width: number; height: number } {
     return this.originalSize ?? {
-      width: Math.round(this.canvas.width * this.scale),
-      height: Math.round(this.canvas.height * this.scale)
+      width: Math.round(this.canvas!.width * this.scale),
+      height: Math.round(this.canvas!.height * this.scale)
     };
   }
 
@@ -187,8 +188,8 @@ export class Renderer {
    */
   getCurrentSize(): { width: number; height: number } {
     return {
-      width: this.canvas.width,
-      height: this.canvas.height
+      width: this.canvas!.width,
+      height: this.canvas!.height
     };
   }
 
@@ -208,8 +209,14 @@ export class Renderer {
 
   /**
    * キャンバス要素を取得
-   */
+  */
   getCanvas(): HTMLCanvasElement {
+    if (!this.canvas) {
+      throw new AppError(
+        ErrorType.RENDERER_ERROR,
+        'Canvas is not available'
+      );
+    }
     return this.canvas;
   }
 
@@ -225,7 +232,7 @@ export class Renderer {
     this.offscreenCtx = null;
     
     // キャンバス要素の参照を解放
-    this.canvas = null as any;
-    this.offscreenCanvas = null as any;
+    this.canvas = null;
+    this.offscreenCanvas = null;
   }
 }

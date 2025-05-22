@@ -53,7 +53,7 @@ export class VideoEncoderService implements Disposable {
   // Promise for finalize result
   private finalizePromise: Promise<Uint8Array> | null = null;
   private resolveFinalize: ((value: Uint8Array | PromiseLike<Uint8Array>) => void) | null = null;
-  private rejectFinalize: ((reason?: any) => void) | null = null;
+  private rejectFinalize: ((reason?: AppError) => void) | null = null;
 
   // Progress callback
   private onProgress: ProgressCallback | null = null;

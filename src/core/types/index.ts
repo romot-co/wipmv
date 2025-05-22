@@ -58,6 +58,8 @@ export type {
   Renderer
 } from './core';
 
+export type { RenderContext } from './render';
+
 // 状態管理関連
 export type { AppPhase } from './state';
 export type {

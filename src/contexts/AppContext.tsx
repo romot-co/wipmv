@@ -249,7 +249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [dispatch]);
 
-  const addEffect = useCallback(async (effect: EffectBase<any>) => {
+  const addEffect = useCallback(async (effect: EffectBase<EffectConfig>) => {
     try {
       await managerInstance.addEffect(effect);
       // Get the updated list from the manager to ensure consistency
@@ -547,9 +547,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // エフェクトの復元
       managerInstance.dispose();
-      loadedProjectData.effects.forEach((config: any) => {
+      loadedProjectData.effects.forEach((config: EffectConfig) => {
         try {
-          let effectInstance: EffectBase<any>;
+          let effectInstance: EffectBase<EffectConfig>;
           if (config.type === 'background') {
               effectInstance = new BackgroundEffect(config as BackgroundEffectConfig);
           } else if (config.type === 'text') {

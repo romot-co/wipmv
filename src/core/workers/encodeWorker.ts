@@ -217,9 +217,10 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
       isInitialized = false; // 完了したらリセット
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown worker error';
     console.error('[Worker] Error:', error);
-    self.postMessage({ type: 'error', message: error.message || 'Unknown worker error' });
+    self.postMessage({ type: 'error', message });
     isInitialized = false; // エラー時もリセット
     videoEncoder?.close();
     audioEncoder?.close();
