@@ -146,4 +146,32 @@ export class ProjectService {
   async listProjects(): Promise<ProjectMetadata[]> {
     return this.repository.list();
   }
+
+  /**
+   * 最後に開いたプロジェクトIDを保存
+   */
+  async setLastOpenedProject(id: string): Promise<void> {
+    return withErrorHandling(
+      () => {
+        const settings = { id: 'main', lastProjectId: id };
+        return IndexedDBManager.getInstance().put('appSettings', settings);
+      },
+      ErrorType.GENERIC_ERROR,
+      '最後に開いたプロジェクトの保存に失敗しました'
+    );
+  }
+
+  /**
+   * 最後に開いたプロジェクトIDを取得
+   */
+  async getLastOpenedProject(): Promise<string | null> {
+    return withErrorHandling(
+      async () => {
+        const settings = await IndexedDBManager.getInstance().get<{ id: string; lastProjectId: string }>('appSettings', 'main');
+        return settings?.lastProjectId || null;
+      },
+      ErrorType.GENERIC_ERROR,
+      '最後に開いたプロジェクトの取得に失敗しました'
+    );
+  }
 }

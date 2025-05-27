@@ -185,8 +185,8 @@ export const Timeline: React.FC<TimelineProps> = ({
         className="timeline-content"
         style={{
           backgroundImage: `
-            linear-gradient(to right, rgba(203, 213, 225, 0.3) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(203, 213, 225, 0.5) 1px, transparent 1px)
+            linear-gradient(to right, rgba(100, 116, 139, 0.3) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(100, 116, 139, 0.5) 1px, transparent 1px)
           `,
           backgroundSize: `calc(100% / ${Math.min(Math.ceil(duration), 10)}) 25px`,
         }}
@@ -205,7 +205,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                 className="timeline-mark"
                 style={{ 
                   left: `${percentage}%`,
-                  borderRight: i < Math.min(Math.ceil(duration), 10) ? '1px solid #94A3B8' : 'none',
+                  borderRight: i < Math.min(Math.ceil(duration), 10) ? '1px solid var(--border-color)' : 'none',
                 }}
               >
                 {i}s

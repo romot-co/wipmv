@@ -46,6 +46,10 @@ export class IndexedDBManager {
           const store = db.createObjectStore(this.storeName, { keyPath: 'id' });
           store.createIndex('updatedAt', 'updatedAt');
         }
+        // アプリケーション設定用のストア
+        if (!db.objectStoreNames.contains('appSettings')) {
+          db.createObjectStore('appSettings', { keyPath: 'id' });
+        }
       };
     });
 

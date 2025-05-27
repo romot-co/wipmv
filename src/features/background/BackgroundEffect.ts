@@ -28,6 +28,34 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
     if (config.animation) {
       this.animationController = new AnimationController(config.animation);
     }
+
+    // 初期画像の読み込み
+    if (config.imageUrl) {
+      this.setImage(config.imageUrl).catch(error => {
+        console.error('Failed to load initial background image:', error);
+      });
+    }
+  }
+
+  /**
+   * 設定の更新（imageUrlの変更を検出して画像を自動読み込み）
+   */
+  updateConfig(newConfig: Partial<BackgroundEffectConfig>): void {
+    const oldImageUrl = this.config.imageUrl;
+    super.updateConfig(newConfig);
+    
+    // imageUrlが変更された場合、新しい画像を読み込む
+    const newImageUrl = this.config.imageUrl;
+    if (newImageUrl !== oldImageUrl) {
+      if (newImageUrl) {
+        this.setImage(newImageUrl).catch(error => {
+          console.error('Failed to load background image:', error);
+        });
+      } else {
+        // imageUrlが空になった場合は画像をクリア
+        this.image = null;
+      }
+    }
   }
 
   /**
@@ -59,6 +87,8 @@ export class BackgroundEffect extends EffectBase<BackgroundEffectConfig> {
       opacity = 1,
       blendMode = 'source-over'
     } = this.config;
+
+
 
     // アニメーション値の適用
     const effectiveOpacity = this.animationController?.getValue<number>('opacity') ?? opacity;

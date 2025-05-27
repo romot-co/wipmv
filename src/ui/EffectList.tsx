@@ -1,212 +1,277 @@
-import React, { memo, useState } from 'react';
-import { Card, Flex, Text, IconButton, Button, DropdownMenu } from '@radix-ui/themes';
-import { 
-  ChevronUpIcon, 
-  ChevronDownIcon, 
-  Cross2Icon, 
-  BackpackIcon, 
-  TextIcon, 
-  ActivityLogIcon, 
-  ImageIcon,
-  PlusIcon,
-  DragHandleDots2Icon
-} from '@radix-ui/react-icons';
-import { EffectBase, EffectConfig } from '../core/types/core';
-import { EffectType } from '../core/types/effect';
-import { AppError, ErrorType } from '../core/types/error';
-import './EffectList.css';
+import React from 'react';
+import { Flex, Text, IconButton, Tooltip, Badge } from '@radix-ui/themes';
+import { EyeOpenIcon, EyeClosedIcon, TrashIcon, DragHandleDots2Icon } from '@radix-ui/react-icons';
+import type { EffectConfig } from '../core/types/effect';
+import styled from 'styled-components';
 
-/**
- * エフェクトリストのプロパティ
- */
+const ListContainer = styled.div`
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 12px;
+`;
+
+const ListTitle = styled.h4`
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin: 0 0 8px 0;
+  padding: 0 4px;
+`;
+
+const EffectItem = styled.div<{ 
+  isSelected: boolean; 
+  isDragging: boolean; 
+  isDragOver: boolean; 
+}>`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  background-color: ${props => {
+    if (props.isDragging) return 'var(--primary-color)40';
+    if (props.isDragOver) return 'var(--primary-color)20';
+    if (props.isSelected) return 'var(--primary-color)';
+    return 'transparent';
+  }};
+  border: 2px solid ${props => {
+    if (props.isDragOver) return 'var(--primary-color)';
+    if (props.isSelected) return 'var(--primary-color)';
+    return 'transparent';
+  }};
+  opacity: ${props => props.isDragging ? 0.5 : 1};
+  transform: ${props => props.isDragging ? 'scale(0.98)' : 'scale(1)'};
+  
+  &:hover {
+    background-color: ${props => {
+      if (props.isDragging) return 'var(--primary-color)40';
+      if (props.isSelected) return 'var(--primary-hover)';
+      return 'var(--bg-hover)';
+    }};
+  }
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const DragHandle = styled.div<{ isSelected: boolean }>`
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+  
+  &:hover {
+    background-color: ${props => props.isSelected ? 'rgba(255,255,255,0.1)' : 'var(--bg-hover)'};
+  }
+  
+  &:active {
+    cursor: grabbing;
+  }
+`;
+
+const EffectInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+`;
+
+const EffectName = styled.span<{ isSelected: boolean }>`
+  font-size: 13px;
+  font-weight: 500;
+  color: ${props => props.isSelected ? 'white' : 'var(--text-primary)'};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const EffectType = styled.span<{ isSelected: boolean }>`
+  font-size: 11px;
+  color: ${props => props.isSelected ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)'};
+`;
+
+const EffectActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.7;
+  
+  &:hover {
+    opacity: 1;
+  }
+`;
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 16px 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+`;
+
 interface EffectListProps {
-  effects: EffectBase<EffectConfig>[];
+  effects: EffectConfig[];
   selectedEffectId: string | null;
-  onEffectSelect: (id: string) => void;
-  onEffectRemove: (id: string) => void;
-  onEffectMove: (sourceId: string, targetId: string) => void;
-  onEffectAdd: (type: EffectType) => void;
-  onError?: (error: AppError) => void;
-  isLoading?: boolean;
-  disabled?: boolean;
+  onSelectEffect: (id: string) => void;
+  onDeleteEffect: (id: string) => void;
+  onToggleVisibility: (id: string, visible: boolean) => void;
+  onMoveEffect?: (sourceId: string, targetId: string) => void;
 }
 
-// エフェクトタイプごとのアイコンとラベル
-const effectTypeInfo: {
-  [K in 'background' | 'text' | 'waveform' | 'watermark']: { 
-    icon: React.FC; 
-    label: string;
-  }
-} = {
-  'background': { icon: BackpackIcon, label: '背景' },
-  'text': { icon: TextIcon, label: 'テキスト' },
-  'waveform': { icon: ActivityLogIcon, label: '波形' },
-  'watermark': { icon: ImageIcon, label: '透かし' }
+// エフェクトタイプの日本語名マッピング
+const effectTypeNames: Record<string, string> = {
+  background: '背景',
+  text: 'テキスト', 
+  waveform: '波形',
+  watermark: '透かし'
 };
 
-/**
- * エフェクトリストコンポーネント
- * - エフェクトの一覧表示
- * - エフェクトの追加・削除・移動
- * - ドラッグ&ドロップによる並び替え
- */
-export const EffectList = memo<EffectListProps>(({
+export const EffectList: React.FC<EffectListProps> = ({
   effects,
   selectedEffectId,
-  onEffectSelect,
-  onEffectRemove,
-  onEffectMove,
-  onEffectAdd,
-  onError,
-  isLoading = false,
-  disabled = false
+  onSelectEffect,
+  onDeleteEffect,
+  onToggleVisibility,
+  onMoveEffect
 }) => {
-  // エフェクトリストをz-indexの降順でソート
-  const sortedEffects = [...effects].sort((a, b) => 
-    (b.getConfig().zIndex ?? 0) - (a.getConfig().zIndex ?? 0)
-  );
+  const [dragState, setDragState] = React.useState<{
+    draggedId: string | null;
+    dragOverId: string | null;
+  }>({
+    draggedId: null,
+    dragOverId: null
+  });
 
-  // ドラッグ&ドロップの状態管理
-  const [draggedId, setDraggedId] = useState<string | null>(null);
+  if (effects.length === 0) {
+    return (
+      <ListContainer>
+        <ListTitle>エフェクト</ListTitle>
+        <EmptyState>
+          エフェクトがありません<br />
+          上のツールバーから追加してください
+        </EmptyState>
+      </ListContainer>
+    );
+  }
 
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
-    try {
-      e.dataTransfer.setData('text/plain', id);
-      setDraggedId(id);
-    } catch (error) {
-      onError?.(new AppError(
-        ErrorType.EffectError,
-        'エフェクトのドラッグ開始に失敗しました'
-      ));
-    }
+  // エフェクトをzIndexの降順でソート（前景が上、背景が下）
+  const sortedEffects = [...effects].sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0));
+
+  const handleDragStart = (e: React.DragEvent, effectId: string) => {
+    setDragState(prev => ({ ...prev, draggedId: effectId }));
+    e.dataTransfer.setData('text/plain', effectId);
+    e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragEnd = () => {
+    setDragState({ draggedId: null, dragOverId: null });
+  };
+
+  const handleDragOver = (e: React.DragEvent, effectId: string) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragState(prev => ({ ...prev, dragOverId: effectId }));
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetId: string) => {
-    try {
-      e.preventDefault();
-      const sourceId = e.dataTransfer.getData('text/plain');
-      if (sourceId !== targetId) {
-        onEffectMove(sourceId, targetId);
-      }
-      setDraggedId(null);
-    } catch (error) {
-      onError?.(new AppError(
-        ErrorType.EffectError,
-        'エフェクトの移動に失敗しました'
-      ));
+  const handleDragLeave = () => {
+    setDragState(prev => ({ ...prev, dragOverId: null }));
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    
+    if (sourceId && sourceId !== targetId && onMoveEffect) {
+      onMoveEffect(sourceId, targetId);
     }
+    
+    setDragState({ draggedId: null, dragOverId: null });
   };
 
   return (
-    <Flex direction="column" gap="3" className="effect-list-container">
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger>
-          <Button 
-            size="2" 
-            variant="soft" 
-            className="add-effect-button"
-            disabled={isLoading || disabled}
-          >
-            <PlusIcon />
-            エフェクトを追加
-          </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Content>
-          {Object.entries(effectTypeInfo).map(([type, info]) => (
-            <DropdownMenu.Item 
-              key={type}
-              onClick={() => onEffectAdd(type as EffectType)}
-              disabled={isLoading || disabled}
-            >
-              <Flex gap="2" align="center">
-                <info.icon />
-                {info.label}を追加
-              </Flex>
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Root>
-
-      <Flex direction="column" gap="2" className="effect-list">
-        {sortedEffects.map(effect => {
-          const config = effect.getConfig();
-          const TypeIcon = effectTypeInfo[config.type].icon;
-          const isSelected = config.id === selectedEffectId;
-          const isDragging = config.id === draggedId;
-
+    <ListContainer>
+      <ListTitle>エフェクト ({effects.length})</ListTitle>
+      <div>
+        {sortedEffects.map((effect) => {
+          const isSelected = effect.id === selectedEffectId;
+          const isDragging = dragState.draggedId === effect.id;
+          const isDragOver = dragState.dragOverId === effect.id;
+          const typeName = effectTypeNames[effect.type] || effect.type;
+          
           return (
-            <Card
-              key={config.id}
-              variant={isSelected ? 'classic' : 'surface'}
-              className={`effect-item ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`}
-              onClick={() => onEffectSelect(config.id)}
-              draggable={!disabled}
-              onDragStart={(e) => handleDragStart(e, config.id)}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, config.id)}
+            <EffectItem
+              key={effect.id}
+              isSelected={isSelected}
+              isDragging={isDragging}
+              isDragOver={isDragOver}
+              draggable
+              onDragStart={(e) => handleDragStart(e, effect.id)}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => handleDragOver(e, effect.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, effect.id)}
+              onClick={() => !isDragging && onSelectEffect(effect.id)}
             >
-              <Flex justify="between" align="center" gap="3">
-                <Flex align="center" gap="2">
-                  <DragHandleDots2Icon className="drag-handle" />
-                  <TypeIcon />
-                  <Text size="2">{effectTypeInfo[config.type].label}</Text>
-                  <Text size="1" color="gray">
-                    (z-index: {config.zIndex})
-                  </Text>
-                </Flex>
-                <Flex gap="1">
+              <EffectInfo>
+                <DragHandle 
+                  isSelected={isSelected}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <DragHandleDots2Icon width="12" height="12" style={{ 
+                    color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)' 
+                  }} />
+                </DragHandle>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <EffectName isSelected={isSelected}>
+                    {typeName}
+                    {effect.type === 'text' && effect.text && ` (${effect.text.slice(0, 10)}${effect.text.length > 10 ? '...' : ''})`}
+                  </EffectName>
+                  <br />
+                  <EffectType isSelected={isSelected}>
+                    {effect.startTime?.toFixed(1)}s - {effect.endTime ? `${effect.endTime.toFixed(1)}s` : '終了まで'}
+                  </EffectType>
+                </div>
+                {!effect.visible && (
+                  <Badge color="gray" size="1">非表示</Badge>
+                )}
+              </EffectInfo>
+              
+              <EffectActions onClick={(e) => e.stopPropagation()}>
+                <Tooltip content={effect.visible ? '非表示にする' : '表示する'}>
                   <IconButton
-                    size="1"
                     variant="ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const prevEffect = sortedEffects[effects.indexOf(effect) - 1];
-                      if (prevEffect) {
-                        onEffectMove(config.id, prevEffect.getConfig().id);
-                      }
-                    }}
-                    disabled={isLoading || disabled || effects.indexOf(effect) === 0}
+                    size="1"
+                    onClick={() => onToggleVisibility(effect.id, !effect.visible)}
+                    style={{ color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)' }}
                   >
-                    <ChevronUpIcon />
+                    {effect.visible ? <EyeOpenIcon width="12" height="12" /> : <EyeClosedIcon width="12" height="12" />}
                   </IconButton>
+                </Tooltip>
+                
+                <Tooltip content="削除">
                   <IconButton
-                    size="1"
                     variant="ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const nextEffect = sortedEffects[effects.indexOf(effect) + 1];
-                      if (nextEffect) {
-                        onEffectMove(config.id, nextEffect.getConfig().id);
-                      }
-                    }}
-                    disabled={isLoading || disabled || effects.indexOf(effect) === effects.length - 1}
-                  >
-                    <ChevronDownIcon />
-                  </IconButton>
-                  <IconButton
                     size="1"
-                    variant="ghost"
-                    color="red"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEffectRemove(config.id);
-                    }}
-                    disabled={isLoading || disabled}
+                    onClick={() => onDeleteEffect(effect.id)}
+                    style={{ color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)' }}
                   >
-                    <Cross2Icon />
+                    <TrashIcon width="12" height="12" />
                   </IconButton>
-                </Flex>
-              </Flex>
-            </Card>
+                </Tooltip>
+              </EffectActions>
+            </EffectItem>
           );
         })}
-      </Flex>
-    </Flex>
+      </div>
+    </ListContainer>
   );
-});
-
-EffectList.displayName = 'EffectList'; 
+}; 

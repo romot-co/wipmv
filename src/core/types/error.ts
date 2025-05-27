@@ -34,6 +34,7 @@ export enum ErrorType {
   // Effects
   EFFECT_CONFIG_INVALID = 'effect/config-invalid',
   EFFECT_NOT_FOUND = 'effect/not-found',
+  EffectError = 'effect/error',
 
   // Project
   ProjectCreateFailed = 'project/create-failed',
@@ -76,6 +77,7 @@ export const ErrorMessages: { [key in ErrorType]: string } = {
 
   [ErrorType.EFFECT_CONFIG_INVALID]: 'エフェクトの設定が無効です。',
   [ErrorType.EFFECT_NOT_FOUND]: '指定されたエフェクトが見つかりません。',
+  [ErrorType.EffectError]: 'エフェクト処理中にエラーが発生しました。',
 
   [ErrorType.ProjectCreateFailed]: 'プロジェクトの作成に失敗しました。',
   [ErrorType.ProjectLoadFailed]: 'プロジェクトの読み込みに失敗しました。',

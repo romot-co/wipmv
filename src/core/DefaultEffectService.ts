@@ -12,7 +12,7 @@ export function createDefaultBackgroundEffect(audioSource?: AudioSource): Backgr
     id: crypto.randomUUID(),
     type: 'background',
     backgroundType: 'solid',
-    color: '#000000',
+    color: '#3b82f6', // 一時的に青色に変更してテスト
     opacity: 1,
     blendMode: 'source-over',
     visible: true,

@@ -247,6 +247,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [dispatch]);
 
+  // アプリ起動時の自動復元
+  useEffect(() => {
+    const autoRestoreProject = async () => {
+      try {
+        const projectService = ProjectService.getInstance();
+        const lastProjectId = await projectService.getLastOpenedProject();
+        
+        if (lastProjectId) {
+          log('Attempting to restore last project:', lastProjectId);
+          // loadProject関数は後で定義されるため、直接プロジェクト読み込み処理を実装
+          const loadedProjectData = await projectService.loadProject(lastProjectId);
+          
+          dispatch({
+            type: 'SET_PROJECT',
+            payload: {
+              currentProject: { ...loadedProjectData, audioBuffer: null },
+              lastSaved: loadedProjectData.updatedAt
+            }
+          });
+
+          // エフェクトの復元
+          loadedProjectData.effects.forEach((config: any) => {
+            try {
+              let effectInstance: EffectBase<any>;
+              if (config.type === 'background') {
+                  effectInstance = new BackgroundEffect(config as BackgroundEffectConfig);
+              } else if (config.type === 'text') {
+                  effectInstance = new TextEffect(config as TextEffectConfig);
+              } else if (config.type === 'waveform') {
+                  effectInstance = new WaveformEffect(config as WaveformEffectConfig);
+              } else if (config.type === 'watermark') {
+                  effectInstance = new WatermarkEffect(config as WatermarkEffectConfig);
+              } else {
+                  throw new Error(`Unsupported effect type: ${config.type}`);
+              }
+              managerInstance.addEffect(effectInstance);
+            } catch (effectError) {
+               console.error(`Failed to restore effect ${config.id}:`, effectError);
+            }
+          });
+
+          const restoredEffects = managerInstance.getEffects();
+          dispatch({ type: 'SET_EFFECTS', payload: { effects: restoredEffects } });
+
+          log('Last project restored successfully:', lastProjectId);
+        } else {
+          log('No last project found, starting with empty state');
+        }
+      } catch (error) {
+        console.warn('Failed to restore last project:', error);
+        // エラーが発生しても正常にアプリを起動する
+      }
+    };
+
+    autoRestoreProject();
+  }, [managerInstance, dispatch]);
+
   const addEffect = useCallback(async (effect: EffectBase<any>) => {
     try {
       await managerInstance.addEffect(effect);
@@ -265,12 +322,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     // 状態変更リスナーのコールバック
     const handlePlaybackStateChange = (state: PlaybackState) => {
-      // アニメーションフレームとの同期を考慮し、再生状態と現在時刻のみ更新
+      // AudioPlaybackService からの状態変更をそのまま反映
       dispatch({ 
         type: 'SET_AUDIO', 
         payload: { 
+          currentTime: state.currentTime,
           isPlaying: state.isPlaying,
-          // currentTimeはアニメーションフレームで更新するため除外
           volume: state.volume,
           loop: state.loop,
         }
@@ -285,6 +342,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       audioService.removeStateChangeListener(handlePlaybackStateChange);
     };
   }, [audioService, dispatch]);
+
+  // アプリケーション状態からAudioPlaybackServiceに設定を反映
+  useEffect(() => {
+    audioService.setVolume(state.audioState.volume);
+    audioService.setLoop(state.audioState.loop);
+  }, [audioService, state.audioState.volume, state.audioState.loop]);
+
+  // アプリケーション終了時のクリーンアップ
+  useEffect(() => {
+    return () => {
+      // エフェクトマネージャのリソース解放
+      managerInstance.dispose();
+      // 描画マネージャのリソース解放
+      drawingManager.dispose();
+      // オーディオサービスのリソース解放
+      audioService.dispose();
+      // アナライザーサービスのリソース解放
+      analyzerService.dispose();
+    };
+  }, []); // シングルトンサービスは依存配列から除外
 
   const transitionTo = useCallback((phase: AppPhase) => {
     dispatch({ type: 'TRANSITION', payload: phase });
@@ -403,6 +480,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw new AppError(ErrorType.EFFECT_NOT_FOUND, `エフェクトが見つかりません: ${id}`);
       }
       
+      // 型安全性のチェック：エフェクトタイプが一致するかを確認
+      const currentConfig = effect.getConfig();
+      if (config.type && config.type !== currentConfig.type) {
+        throw new AppError(
+          ErrorType.EFFECT_CONFIG_INVALID, 
+          `エフェクトタイプが一致しません。期待値: ${currentConfig.type}, 実際: ${config.type}`
+        );
+      }
+      
       // エフェクトの設定を更新
       effect.updateConfig(config);
       
@@ -412,9 +498,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'SET_EFFECTS', 
         payload: { effects: updatedEffects }
       });
-      
-      // アニメーションフレームでの再描画のために更新フラグを設定
-      // （必要に応じて実装）
       
       // 自動保存（オプション）
       // saveProject(); 
@@ -481,6 +564,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const projectService = ProjectService.getInstance();
       await projectService.saveProject(projectDataToSave);
+      
+      // 最後に開いたプロジェクトとして記録
+      await projectService.setLastOpenedProject(projectDataToSave.id);
 
       dispatch({ type: 'SET_PROJECT', payload: { lastSaved: projectDataToSave.updatedAt } });
       log('Project saved successfully:', projectDataToSave.id);
@@ -535,6 +621,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // UI状態リセット
       dispatch({ type: 'SET_UI', payload: { selectedEffectId: null, isSettingsPanelOpen: false } });
+
+      // 最後に開いたプロジェクトとして記録
+      await projectService.setLastOpenedProject(id);
 
       // アプリケーションの状態を'ready'に遷移
       dispatch({ type: 'TRANSITION', payload: { type: 'ready' } });

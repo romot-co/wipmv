@@ -3,14 +3,31 @@
  */
 
 /**
- * 動画設定
+ * 動画設定 (webcodecs-encoder対応)
  */
 export interface VideoSettings {
   width: number;
   height: number;
-  frameRate: number;  // fpsと同じ
-  videoBitrate: number;  // bitrateと同じ
+  frameRate: number;
+  videoBitrate: number;
   audioBitrate: number;
+  // WebCodecs Encoder固有の設定
+  codec?: {
+    video?: 'avc' | 'hevc' | 'vp8' | 'vp9' | 'av1';
+    audio?: 'aac' | 'opus';
+  };
+  container?: 'mp4' | 'webm';
+  latencyMode?: 'quality' | 'realtime';
+  sampleRate?: number;
+  channels?: number;
+  hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software';
+  codecString?: {
+    video?: string;
+    audio?: string;
+  };
+  audioEncoderConfig?: {
+    bitrateMode?: 'constant' | 'variable';
+  };
 }
 
 /**

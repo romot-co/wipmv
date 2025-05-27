@@ -3,6 +3,7 @@ import { BlendMode } from '../../../core/types/base';
 import { TextEffectConfig } from '../../../core/types/effect';
 import { Flex, Box, Text, Select, Slider, TextArea } from '@radix-ui/themes';
 import { ColorInput } from '../../common/ColorInput';
+import styled from 'styled-components';
 import '../../EffectSettings.css';
 
 interface TextSettingsProps {
@@ -11,30 +12,133 @@ interface TextSettingsProps {
   disabled?: boolean;
 }
 
+const CompactGroup = styled.div`
+  margin-bottom: 8px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const CompactLabel = styled(Text)`
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 4px;
+`;
+
+const CompactRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+`;
+
+const SmallInput = styled.input`
+  width: 50px;
+  padding: 2px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+  text-align: center;
+
+  &:focus {
+    outline: none;
+    border-color: var(--primary-color);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const CompactTextArea = styled(TextArea)`
+  min-height: 60px;
+  font-size: 12px;
+`;
+
+// サポートしているフォント（システムフォント中心）
+const supportedFonts = [
+  { value: 'Arial', label: 'Arial' },
+  { value: 'Helvetica', label: 'Helvetica' },
+  { value: 'Times New Roman', label: 'Times New Roman' },
+  { value: 'Courier New', label: 'Courier New' },
+  { value: 'Meiryo', label: 'メイリオ' },
+  { value: 'Yu Gothic', label: '游ゴシック' },
+  { value: 'Yu Mincho', label: '游明朝' }
+];
+
+// サポートしているフォントウェイト
+const supportedWeights = [
+  { value: 'normal', label: '標準' },
+  { value: 'bold', label: '太字' },
+  { value: '300', label: 'Light' },
+  { value: '500', label: 'Medium' },
+  { value: '700', label: 'Bold' }
+];
+
 export const TextSettings = memo<TextSettingsProps>(({
   config,
   onChange,
-  disabled
+  disabled = false
 }) => {
   return (
     <div className="effect-settings">
-      <Flex direction="column" gap="3">
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            テキスト
-          </Text>
-          <TextArea
+      <Flex direction="column" gap="2">
+        {/* テキスト内容 */}
+        <CompactGroup>
+          <CompactLabel>テキスト</CompactLabel>
+          <CompactTextArea
             value={config.text}
             onChange={(e) => onChange({ text: e.target.value })}
-            rows={3}
+            rows={2}
             disabled={disabled}
+            size="1"
           />
-        </Box>
+        </CompactGroup>
 
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            フォント
-          </Text>
+        {/* 位置設定（%表示） */}
+        <CompactGroup>
+          <CompactLabel>位置 (%)</CompactLabel>
+          <CompactRow>
+            <Text size="1">X:</Text>
+            <SmallInput
+              type="number"
+              value={(config.position.x * 100).toFixed(0)}
+              onChange={(e) => onChange({
+                position: {
+                  x: Number(e.target.value) / 100,
+                  y: config.position.y
+                }
+              })}
+              min={-50}
+              max={150}
+              disabled={disabled}
+            />
+            <Text size="1">Y:</Text>
+            <SmallInput
+              type="number"
+              value={(config.position.y * 100).toFixed(0)}
+              onChange={(e) => onChange({
+                position: {
+                  x: config.position.x,
+                  y: Number(e.target.value) / 100
+                }
+              })}
+              min={-50}
+              max={150}
+              disabled={disabled}
+            />
+          </CompactRow>
+        </CompactGroup>
+
+        {/* フォント設定 */}
+        <CompactGroup>
+          <CompactLabel>フォント</CompactLabel>
           <Select.Root
             value={config.font.family}
             onValueChange={(value) => onChange({
@@ -44,28 +148,23 @@ export const TextSettings = memo<TextSettingsProps>(({
               }
             })}
             disabled={disabled}
+            size="1"
           >
             <Select.Trigger />
             <Select.Content>
-              <Select.Item value="Arial">Arial</Select.Item>
-              <Select.Item value="Helvetica">Helvetica</Select.Item>
-              <Select.Item value="Times New Roman">Times New Roman</Select.Item>
-              <Select.Item value="Courier New">Courier New</Select.Item>
-              <Select.Item value="Georgia">Georgia</Select.Item>
-              <Select.Item value="Meiryo">メイリオ</Select.Item>
-              <Select.Item value="MS Gothic">ＭＳ ゴシック</Select.Item>
-              <Select.Item value="MS Mincho">ＭＳ 明朝</Select.Item>
-              <Select.Item value="Yu Gothic">游ゴシック</Select.Item>
-              <Select.Item value="Yu Mincho">游明朝</Select.Item>
+              {supportedFonts.map(font => (
+                <Select.Item key={font.value} value={font.value}>
+                  {font.label}
+                </Select.Item>
+              ))}
             </Select.Content>
           </Select.Root>
-        </Box>
+        </CompactGroup>
 
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            フォントサイズ
-          </Text>
-          <Flex gap="3" align="center">
+        {/* サイズ・太さ */}
+        <CompactGroup>
+          <CompactLabel>サイズ・太さ</CompactLabel>
+          <CompactRow>
             <Slider
               value={[config.font.size]}
               min={8}
@@ -78,15 +177,11 @@ export const TextSettings = memo<TextSettingsProps>(({
                 }
               })}
               disabled={disabled}
+              size="1"
+              style={{ flex: 1 }}
             />
-            <Text size="2">{config.font.size}px</Text>
-          </Flex>
-        </Box>
-
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            フォントの太さ
-          </Text>
+            <Text size="1" style={{ minWidth: '30px' }}>{config.font.size}px</Text>
+          </CompactRow>
           <Select.Root
             value={config.font.weight?.toString() ?? 'normal'}
             onValueChange={(value) => onChange({
@@ -96,93 +191,48 @@ export const TextSettings = memo<TextSettingsProps>(({
               }
             })}
             disabled={disabled}
+            size="1"
           >
             <Select.Trigger />
             <Select.Content>
-              <Select.Item value="normal">通常</Select.Item>
-              <Select.Item value="bold">太字</Select.Item>
-              <Select.Item value="100">Thin (100)</Select.Item>
-              <Select.Item value="300">Light (300)</Select.Item>
-              <Select.Item value="400">Regular (400)</Select.Item>
-              <Select.Item value="500">Medium (500)</Select.Item>
-              <Select.Item value="700">Bold (700)</Select.Item>
-              <Select.Item value="900">Black (900)</Select.Item>
+              {supportedWeights.map(weight => (
+                <Select.Item key={weight.value} value={weight.value}>
+                  {weight.label}
+                </Select.Item>
+              ))}
             </Select.Content>
           </Select.Root>
-        </Box>
+        </CompactGroup>
 
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            テキストカラー
-          </Text>
-          <ColorInput
-            value={config.color}
-            onChange={(value) => onChange({ color: value })}
-            disabled={disabled}
-          />
-        </Box>
+        {/* 色・配置 */}
+        <CompactGroup>
+          <CompactLabel>色・配置</CompactLabel>
+          <CompactRow>
+            <ColorInput
+              value={config.color}
+              onChange={(value) => onChange({ color: value })}
+              disabled={disabled}
+            />
+            <Select.Root
+              value={config.alignment ?? 'left'}
+              onValueChange={(value) => onChange({ alignment: value as 'left' | 'center' | 'right' })}
+              disabled={disabled}
+              size="1"
+            >
+              <Select.Trigger />
+              <Select.Content>
+                <Select.Item value="left">左</Select.Item>
+                <Select.Item value="center">中央</Select.Item>
+                <Select.Item value="right">右</Select.Item>
+              </Select.Content>
+            </Select.Root>
+          </CompactRow>
+        </CompactGroup>
 
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            テキストの位置
-          </Text>
-          <Flex direction="column" gap="2">
-            <Flex gap="3" align="center">
-              <Text size="2" weight="medium">X座標</Text>
-              <input
-                type="number"
-                value={config.position.x}
-                onChange={(e) => onChange({
-                  position: {
-                    x: Number(e.target.value),
-                    y: config.position.y
-                  }
-                })}
-                className="number-input"
-                disabled={disabled}
-              />
-            </Flex>
-            <Flex gap="3" align="center">
-              <Text size="2" weight="medium">Y座標</Text>
-              <input
-                type="number"
-                value={config.position.y}
-                onChange={(e) => onChange({
-                  position: {
-                    x: config.position.x,
-                    y: Number(e.target.value)
-                  }
-                })}
-                className="number-input"
-                disabled={disabled}
-              />
-            </Flex>
-          </Flex>
-        </Box>
-
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            テキストの配置
-          </Text>
-          <Select.Root
-            value={config.alignment ?? 'left'}
-            onValueChange={(value) => onChange({ alignment: value as 'left' | 'center' | 'right' })}
-            disabled={disabled}
-          >
-            <Select.Trigger />
-            <Select.Content>
-              <Select.Item value="left">左揃え</Select.Item>
-              <Select.Item value="center">中央揃え</Select.Item>
-              <Select.Item value="right">右揃え</Select.Item>
-            </Select.Content>
-          </Select.Root>
-        </Box>
-
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            不透明度
-          </Text>
-          <Flex gap="3" align="center">
+        {/* 不透明度 */}
+        <CompactGroup>
+          <CompactLabel>不透明度</CompactLabel>
+          <Flex gap="2" align="center">
             <Slider
               value={[config.opacity ?? 1]}
               min={0}
@@ -190,19 +240,20 @@ export const TextSettings = memo<TextSettingsProps>(({
               step={0.1}
               onValueChange={(value) => onChange({ opacity: value[0] })}
               disabled={disabled}
+              size="1"
             />
-            <Text size="2">{config.opacity ?? 1}</Text>
+            <Text size="1" style={{ minWidth: '30px' }}>{((config.opacity ?? 1) * 100).toFixed(0)}%</Text>
           </Flex>
-        </Box>
+        </CompactGroup>
 
-        <Box>
-          <Text as="label" size="2" weight="bold" mb="2">
-            ブレンドモード
-          </Text>
+        {/* ブレンドモード（サポートしているもののみ） */}
+        <CompactGroup>
+          <CompactLabel>ブレンドモード</CompactLabel>
           <Select.Root
             value={config.blendMode ?? 'source-over'}
             onValueChange={(value) => onChange({ blendMode: value as BlendMode })}
             disabled={disabled}
+            size="1"
           >
             <Select.Trigger />
             <Select.Content>
@@ -214,8 +265,10 @@ export const TextSettings = memo<TextSettingsProps>(({
               <Select.Item value="lighten">明るく</Select.Item>
             </Select.Content>
           </Select.Root>
-        </Box>
+        </CompactGroup>
       </Flex>
     </div>
   );
-}); 
+});
+
+TextSettings.displayName = 'TextSettings'; 

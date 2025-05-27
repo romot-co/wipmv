@@ -58,7 +58,7 @@ export class DrawingManager {
         return true;
       });
       
-      console.log('DrawingManager.renderAll: Drawing', uniqueEffects.length, 'unique effects at time', currentTime);
+      // console.log('DrawingManager.renderAll: Drawing', uniqueEffects.length, 'unique effects at time', currentTime);
       
       const context = ctx ?? this.renderer!.getOffscreenContext();
       if (!ctx && this.renderer) {
@@ -68,7 +68,7 @@ export class DrawingManager {
       // 表示状態のエフェクトのみ描画
       for (const effect of uniqueEffects) {
         if (effect.isVisible()) { 
-          console.log(`Drawing effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
+          // console.log(`Drawing effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
           try {
             effect.render(context);
           } catch (error) {

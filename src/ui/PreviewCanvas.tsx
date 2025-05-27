@@ -198,7 +198,6 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
     openSettingsPanel, 
     closeSettingsPanel, 
     updateEffect,
-    effectState: { effects },
     ui: { selectedEffectId },
     saveProject,
     audioState: { isPlaying }
@@ -227,56 +226,67 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
     position: Position;
   } | null>(null);
   
-  // プレビュー用の解像度を計算
-  const { previewWidth, previewHeight } = useMemo(() => {
-    const aspectRatio = width / height;
-    let previewWidth = width;
-    let previewHeight = height;
-
-    if (previewWidth > PREVIEW_MAX_WIDTH) {
-      previewWidth = PREVIEW_MAX_WIDTH;
-      previewHeight = Math.round(PREVIEW_MAX_WIDTH / aspectRatio);
-    }
-
-    if (previewHeight > PREVIEW_MAX_HEIGHT) {
-      previewHeight = PREVIEW_MAX_HEIGHT;
-      previewWidth = Math.round(PREVIEW_MAX_HEIGHT * aspectRatio);
-    }
-
-    // devicePixelRatioを考慮した高解像度対応
-    const pixelRatio = window.devicePixelRatio || 1;
-    
-    debugLog('プレビュー解像度を計算:', {
-      originalWidth: width,
-      originalHeight: height,
-      previewWidth,
-      previewHeight,
-      pixelRatio
-    });
-
-    return { 
-      previewWidth: Math.floor(previewWidth * pixelRatio), 
-      previewHeight: Math.floor(previewHeight * pixelRatio) 
-    };
-  }, [width, height]);
+  // 元の解像度をそのまま使用（フル品質）
+  console.log('PreviewCanvas props:', {
+    width,
+    height,
+    aspectRatio: (width / height).toFixed(3)
+  });
 
   // キャンバスとレンダラーの初期化
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // キャンバスの描画サイズを設定 (内部解像度)
-    canvas.width = previewWidth;
-    canvas.height = previewHeight;
+    // キャンバスの内部解像度を設定（元の解像度を使用）
+    canvas.width = width;
+    canvas.height = height;
 
-    // devicePixelRatioを考慮したCSS表示サイズ
-    const pixelRatio = window.devicePixelRatio || 1;
-    const displayWidth = previewWidth / pixelRatio;
-    const displayHeight = previewHeight / pixelRatio;
+    // コンテナサイズを動的に取得してスケーリング
+    const updateCanvasSize = () => {
+      const container = canvas.parentElement;
+      if (!container) return;
 
-    // CSSで表示サイズを調整
-    canvas.style.width = `${displayWidth}px`;
-    canvas.style.height = `${displayHeight}px`;
+      const containerRect = container.getBoundingClientRect();
+      const availableWidth = containerRect.width - 32; // padding分を考慮（16px * 2）
+      const availableHeight = containerRect.height - 32;
+      
+      // アスペクト比を維持しながら最大サイズを計算
+      const aspectRatio = width / height; // 元の解像度のアスペクト比を使用
+      
+      let displayWidth, displayHeight;
+      
+      // 利用可能エリアのアスペクト比と比較
+      if (availableWidth / availableHeight > aspectRatio) {
+        // コンテナが横長の場合、高さを基準にする
+        displayHeight = availableHeight;
+        displayWidth = displayHeight * aspectRatio;
+      } else {
+        // コンテナが縦長の場合、幅を基準にする
+        displayWidth = availableWidth;
+        displayHeight = displayWidth / aspectRatio;
+      }
+
+      // 最大サイズ制限（必要に応じて）
+      const maxDisplayWidth = Math.min(displayWidth, availableWidth);
+      const maxDisplayHeight = Math.min(displayHeight, availableHeight);
+
+      // CSSで表示サイズを調整
+      canvas.style.width = `${maxDisplayWidth}px`;
+      canvas.style.height = `${maxDisplayHeight}px`;
+      
+      console.log('Canvas size updated:', {
+        internal: `${canvas.width}x${canvas.height}`,
+        container: `${containerRect.width}x${containerRect.height}`,
+        available: `${availableWidth}x${availableHeight}`,
+        display: `${maxDisplayWidth}x${maxDisplayHeight}`,
+        cssSize: `${canvas.style.width} x ${canvas.style.height}`,
+        aspectRatio: aspectRatio.toFixed(3)
+      });
+    };
+
+    // 初期サイズ設定
+    updateCanvasSize();
     canvas.style.imageRendering = 'auto'; // 高解像度対応のため補間を有効に
 
     // レンダラーを初期化
@@ -284,12 +294,25 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
       const renderer = new Renderer(canvas, true);
       rendererRef.current = renderer;
       drawingManager.setRenderer(renderer);
-      debugLog('Renderer initialized');
+      console.log('PreviewCanvas: Renderer initialized successfully', {
+        internalResolution: { width: canvas.width, height: canvas.height },
+        displaySize: { width: canvas.style.width, height: canvas.style.height },
+        originalResolution: { width, height },
+        hasRenderer: !!renderer
+      });
     } catch (error) {
-      logger.error('Failed to initialize renderer:', error);
+      console.error('PreviewCanvas: Failed to initialize renderer:', error);
     }
 
+    // ウィンドウリサイズ時の再計算
+    const handleResize = () => {
+      updateCanvasSize();
+    };
+
+    window.addEventListener('resize', handleResize);
+
     return () => {
+      window.removeEventListener('resize', handleResize);
       // クリーンアップ
       if (rendererRef.current) {
         drawingManager.setRenderer(null);
@@ -297,7 +320,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
         rendererRef.current = null;
       }
     };
-  }, [previewWidth, previewHeight, drawingManager]);
+  }, [width, height, drawingManager]);
 
   // アニメーションフレームの更新
   useEffect(() => {
@@ -313,93 +336,99 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
     };
   }, []);
 
-  // エフェクトのヒットテスト（マウス位置とエフェクトの衝突判定）
-  const hitTestEffects = useCallback((position: Position, effectsList: any[]): any | null => {
-    // 後ろから前の順に検査（表示順の逆順）
-    for (let i = effectsList.length - 1; i >= 0; i--) {
-      const effect = effectsList[i];
-      if (effect.isVisible() && effect.hitTest && effect.hitTest(position)) {
-        return effect;
-      }
-    }
-    return null;
-  }, []);
-
   // マウスクリックイベントハンドラ
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !currentManager) return;
     
     const mousePosition = getMousePosition(canvas, e);
-    logger.debug('Canvas clicked', { mousePosition });
+    logger.debug('Canvas clicked', { mousePosition, canvasSize: { width: canvas.width, height: canvas.height } });
     
-    // getActiveEffectsの代わりにエフェクトをフィルタリング
-    const activeEffects = effects.filter(effect => effect.isActive(currentTime)) || [];
-    const hitEffect = hitTestEffects(mousePosition, activeEffects);
+    // マウス位置を相対座標（0.0-1.0）に変換
+    const relativeX = mousePosition.x / canvas.width;
+    const relativeY = mousePosition.y / canvas.height;
     
-    if (hitEffect) {
-      logger.debug('Selected effect', { effectId: hitEffect.getId() });
-      selectEffect(hitEffect.getId());
+    // エフェクトマネージャーのヒットテストを使用
+    const hitEffectId = currentManager.getEffectAtPoint(relativeX, relativeY, canvas.width, canvas.height);
+    
+    if (hitEffectId) {
+      logger.debug('Selected effect', { effectId: hitEffectId });
+      selectEffect(hitEffectId);
       openSettingsPanel();
     } else {
+      logger.debug('No effect found at position', { relativeX, relativeY });
       deselectEffect();
       closeSettingsPanel();
     }
-  }, [currentTime, hitTestEffects, selectEffect, deselectEffect, openSettingsPanel, closeSettingsPanel, effects]);
+  }, [currentTime, selectEffect, deselectEffect, openSettingsPanel, closeSettingsPanel, currentManager]);
 
   // ダブルクリックハンドラ（テキストエフェクトの編集用）
   const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !currentManager) return;
     
     const mousePosition = getMousePosition(canvas, e);
-    // getActiveEffectsの代わりにエフェクトをフィルタリング
-    const activeEffects = effects.filter(effect => effect.isActive(currentTime)) || [];
-    const hitEffect = hitTestEffects(mousePosition, activeEffects);
     
-    if (hitEffect && hitEffect.getConfig().type === 'text') {
-      logger.info('Text effect double-clicked for inline editing', { 
-        effectId: hitEffect.getId(), 
-        config: hitEffect.getConfig() 
-      });
-      
-      // インラインテキスト編集状態を設定
-      setInlineTextEdit({
-        effectId: hitEffect.getId(),
-        config: hitEffect.getConfig() as TextEffectConfig,
-        position: {
-          x: mousePosition.x,
-          y: mousePosition.y
-        }
-      });
+    // マウス位置を相対座標（0.0-1.0）に変換
+    const relativeX = mousePosition.x / canvas.width;
+    const relativeY = mousePosition.y / canvas.height;
+    
+    // エフェクトマネージャーのヒットテストを使用
+    const hitEffectId = currentManager.getEffectAtPoint(relativeX, relativeY, canvas.width, canvas.height);
+    
+    if (hitEffectId) {
+      const hitEffect = currentManager.getEffect(hitEffectId);
+      if (hitEffect && hitEffect.getConfig().type === 'text') {
+        logger.info('Text effect double-clicked for inline editing', { 
+          effectId: hitEffect.getId(), 
+          config: hitEffect.getConfig() 
+        });
+        
+        // インラインテキスト編集状態を設定
+        setInlineTextEdit({
+          effectId: hitEffect.getId(),
+          config: hitEffect.getConfig() as TextEffectConfig,
+          position: {
+            x: mousePosition.x,
+            y: mousePosition.y
+          }
+        });
+      }
     }
-  }, [currentTime, hitTestEffects, effects]);
+  }, [currentTime, currentManager]);
 
   // マウスダウンイベントハンドラ（ドラッグ開始）
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (inlineTextEdit) return; // テキスト編集中はドラッグを無効化
     
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !currentManager) return;
     
     const mousePosition = getMousePosition(canvas, e);
-    // getActiveEffectsの代わりにエフェクトをフィルタリング
-    const activeEffects = effects.filter(effect => effect.isActive(currentTime)) || [];
-    const hitEffect = hitTestEffects(mousePosition, activeEffects);
     
-    if (hitEffect) {
-      logger.debug('Mouse down on effect', { effectId: hitEffect.getId() });
-      selectEffect(hitEffect.getId());
-      
-      // ドラッグ状態を設定
-      setDragState({
-        effectId: hitEffect.getId(),
-        startPosition: mousePosition,
-        currentPosition: mousePosition,
-        initialEffectPosition: { ...hitEffect.getConfig().position }
-      });
+    // マウス位置を相対座標（0.0-1.0）に変換
+    const relativeX = mousePosition.x / canvas.width;
+    const relativeY = mousePosition.y / canvas.height;
+    
+    // エフェクトマネージャーのヒットテストを使用
+    const hitEffectId = currentManager.getEffectAtPoint(relativeX, relativeY, canvas.width, canvas.height);
+    
+    if (hitEffectId) {
+      const hitEffect = currentManager.getEffect(hitEffectId);
+      if (hitEffect) {
+        logger.debug('Mouse down on effect', { effectId: hitEffect.getId() });
+        selectEffect(hitEffect.getId());
+        
+        // ドラッグ状態を設定
+        setDragState({
+          effectId: hitEffect.getId(),
+          startPosition: mousePosition,
+          currentPosition: mousePosition,
+          initialEffectPosition: { ...hitEffect.getConfig().position }
+        });
+      }
     }
-  }, [currentTime, hitTestEffects, selectEffect, effects, inlineTextEdit]);
+  }, [currentTime, selectEffect, inlineTextEdit, currentManager]);
 
   // マウス移動イベントハンドラ（ドラッグ中）
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -421,7 +450,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
     });
     
     // エフェクト位置の更新
-    const effect = effects.find(e => e.getId() === dragState.effectId);
+    const effect = currentManager?.getEffect(dragState.effectId);
     if (effect) {
       const canvasSize = { width: canvas.width, height: canvas.height };
       
@@ -447,7 +476,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
         updateEffect(dragState.effectId, { position: newPosition });
       }
     }
-  }, [dragState, effects, updateEffect, getMousePosition, inlineTextEdit]);
+  }, [dragState, updateEffect, currentManager, inlineTextEdit]);
 
   // マウスアップイベントハンドラ（ドラッグ終了）
   const handleMouseUp = useCallback(() => {
@@ -494,12 +523,28 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
   }, []);
 
   return (
-    <div className="preview-canvas-container">
+    <div className="preview-canvas-container" style={{ 
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center',
+      backgroundColor: '#1a1a1a',
+      padding: '16px'
+    }}>
       <canvas 
-        ref={canvasRef} 
+        ref={canvasRef}
+        width={width}
+        height={height}
         style={{ 
           cursor: dragState ? 'grabbing' : (inlineTextEdit ? 'text' : 'default'),
-          imageRendering: 'auto' // 高品質表示モードを指定
+          imageRendering: 'auto',
+          border: '1px solid #555',
+          borderRadius: '4px',
+          display: 'block'
         }} 
         onClick={handleClick} 
         onDoubleClick={handleDoubleClick}

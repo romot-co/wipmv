@@ -1,11 +1,14 @@
 import React, { useCallback, useMemo, useEffect, useRef, useState } from 'react';
-import { Container, Flex, Box, Card, Section, IconButton, Heading, Text, Tooltip } from '@radix-ui/themes';
+import { Container, Flex, Box, Card, Section, IconButton, Heading, Text, Tooltip, DropdownMenu } from '@radix-ui/themes';
 import { PlusIcon, DownloadIcon } from '@radix-ui/react-icons';
 import { PlaybackControls } from './ui/PlaybackControls';
 import { PreviewCanvas } from './ui/PreviewCanvas';
 import { ExportButton } from './ui/ExportButton';
 import { AudioUploader } from './ui/AudioUploader';
 import { SettingsPanel } from './ui/SettingsPanel';
+import { EffectToolbar } from './ui/EffectToolbar';
+import { EffectList } from './ui/EffectList';
+import { WelcomeMessage } from './ui/WelcomeMessage';
 import { useApp } from './contexts/AppContext';
 import { ErrorBoundary, CustomErrorFallback } from './ErrorBoundary';
 import { EffectManager } from './core/EffectManager';
@@ -68,6 +71,7 @@ const AppContainer = styled.div`
   width: 100vw;
   overflow: hidden;
   position: relative;
+  margin: 0;
   padding: 0;
   background-color: var(--bg-primary);
 `;
@@ -76,23 +80,38 @@ const Content = styled.div`
   display: flex;
   flex: 1;
   overflow: hidden;
+
+  @media (max-width: 1024px) {
+    flex-direction: column;
+  }
 `;
 
 const Main = styled.main`
   flex: 1;
   overflow: hidden;
   position: relative;
-  display: flex;
-  flex-direction: column;
+  min-height: 0; /* Flexboxの高さ問題を解決 */
+
+  @media (max-width: 1024px) {
+    min-height: 400px;
+  }
 `;
 
 const Sidebar = styled.aside`
-  width: 240px;
+  width: 280px; /* サイドバーの幅を少し小さく */
+  flex-shrink: 0;
   height: 100%;
-  border-right: 1px solid var(--border-color);
+  border-left: 1px solid var(--border-color);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+
+  @media (max-width: 1024px) {
+    width: 100%;
+    min-height: 400px;
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+  }
 `;
 
 const SidebarContent = styled.div`
@@ -138,7 +157,7 @@ const HeaderRight = styled.div`
   gap: 4px;
 `;
 
-const EffectList = styled.ul`
+const StyledEffectList = styled.ul`
   list-style: none;
   margin: 0;
   padding: 0;
@@ -198,61 +217,12 @@ const SectionTitle = styled.h3`
 `;
 
 const Logo = styled.div`
-  fontSize: 16px;
-  fontWeight: 600;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--text-primary);
 `;
 
-const DropdownContainer = styled.div`
-  position: relative;
-  display: inline-block;
-  z-index: 1000;
-`;
 
-const DropdownButton = styled.button`
-  background: none;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  alignItems: center;
-  justifyContent: center;
-  padding: 4px;
-  borderRadius: 4px;
-  color: var(--text-primary);
-
-  &:hover {
-    backgroundColor: var(--bg-hover);
-  }
-`;
-
-const DropdownContent = styled.div<{ isOpen: boolean }>`
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 1001;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  min-width: 180px;
-  display: ${props => props.isOpen ? 'block' : 'none'};
-  padding: 4px 0;
-  margin-top: 4px;
-`;
-
-const DropdownItem = styled.div`
-  padding: 8px 12px;
-  font-size: 13px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-primary);
-
-  &:hover {
-    background-color: var(--bg-hover);
-  }
-`;
 
 const Footer = styled.footer`
   border-top: 1px solid var(--border-color);
@@ -369,13 +339,25 @@ const GlobalStyle = createGlobalStyle`
     --color-border: var(--border-color);
   }
 
-  body {
+  html, body {
     margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background-color: var(--bg-primary);
     color: var(--text-primary);
+  }
+
+  #root {
+    width: 100%;
+    height: 100%;
   }
 
   *,
@@ -431,10 +413,12 @@ function App() {
 
   const isIdle = phase.type === 'idle';
   const isInteractive = !isIdle && phase.type !== 'loadingAudio' && phase.type !== 'analyzing' && phase.type !== 'error';
+  
+
 
   const currentTimeRef = useRef(0);
   const isLoopRunningRef = useRef(false);
-  const lastStateRef = useRef({ currentTime: 0, isPlaying: false });
+  const lastStateRef = useRef({ currentTime: 0, isPlaying: false, lastChangeTime: 0 });
   const lastLogTimeRef = useRef<{ [key: string]: number }>({});
 
   // ログ出力を間引くヘルパー関数
@@ -459,58 +443,74 @@ function App() {
   // アニメーションループのために直接AudioPlaybackServiceを取得
   const audioService = useMemo(() => AudioPlaybackService.getInstance(), []);
 
-  // アニメーションループの制御
+  // アニメーションループの制御（条件付き再描画）
   useEffect(() => {
     let rafId: number;
     let lastLogTime = 0;
+    let lastRenderTime = 0;
     const LOG_INTERVAL = 5000; // ログ出力の間隔を5秒に延長
+    const RENDER_INTERVAL_PLAYING = 16; // 再生中: 約60FPS（16ms間隔）
+    const RENDER_INTERVAL_PAUSED = 1000; // 停止中: 約1FPS（1000ms間隔）
     
     const animate = () => {
       if (!isLoopRunningRef.current) return;
       
       try {
-        // 参照元を AppContext の audioState.currentTime に変更
-        const currentPlaybackTime = audioState.currentTime;
+        // AudioServiceから直接最新の時間と再生状態を取得
+        const currentPlaybackTime = audioService.getCurrentTime();
+        const playbackState = audioService.getPlaybackState();
+        const isCurrentlyPlaying = playbackState.isPlaying;
+        const now = performance.now();
         
-        // 最新の再生時間をサービスから直接取得し、必要に応じて更新
-        if (audioState.isPlaying) {
-          const actualPlaybackTime = audioService.getCurrentTime();
-          if (Math.abs(audioState.currentTime - actualPlaybackTime) > 0.01) {
-            dispatch({ 
-              type: 'SET_AUDIO', 
-              payload: { currentTime: actualPlaybackTime } 
-            });
-          }
+        // 再生状態に応じてレンダリング間隔を調整
+        const currentRenderInterval = isCurrentlyPlaying 
+          ? RENDER_INTERVAL_PLAYING 
+          : RENDER_INTERVAL_PAUSED;
+        
+        // 再描画が必要かどうかを判定
+        const hasTimeChanged = Math.abs(lastStateRef.current.currentTime - currentPlaybackTime) > 0.001;
+        const hasPlayStateChanged = lastStateRef.current.isPlaying !== isCurrentlyPlaying;
+        const hasTimeElapsed = (now - lastRenderTime) > currentRenderInterval;
+        const isFirstRender = lastRenderTime === 0;
+        
+        // シンプルな条件：再生中は常にレンダリング、停止中は変化があった時のみ
+        const needsRedraw = isCurrentlyPlaying ||          // 再生中は必ずレンダリング
+                           isFirstRender ||               // 初回は必ずレンダリング
+                           hasPlayStateChanged ||         // 再生状態が変化した場合
+                           (hasTimeChanged && hasTimeElapsed); // 停止中で時間変化かつ間隔経過時
+        
+        // 常にデバッグログを出力（間引きあり）
+        if ((now - lastLogTime) > 1000) { // 1秒間隔でログ出力
+          console.log('アニメーションループ状況:', {
+            isLoopRunning: isLoopRunningRef.current,
+            needsRedraw,
+            currentTime: currentPlaybackTime,
+            audioStateTime: audioState.currentTime,
+            isPlaying: isCurrentlyPlaying,
+            audioStateIsPlaying: audioState.isPlaying,
+            hasRenderer: !!drawingManager?.getRenderer(),
+            hasManager: !!managerInstance,
+            hasTimeChanged,
+            hasPlayStateChanged,
+            hasTimeElapsed,
+            timeSinceLastRender: now - lastRenderTime
+          });
+          lastLogTime = now;
         }
-        
-        if (drawingManager && drawingManager.getRenderer()) {
-          const now = performance.now();
-          
-          // 状態が大きく変化した時のみログを出力
-          if ((Math.abs(lastStateRef.current.currentTime - currentPlaybackTime) > 1.0 || 
-               lastStateRef.current.isPlaying !== audioState.isPlaying) &&
-              now - lastLogTime > LOG_INTERVAL) {
-            if (shouldLog('animation-frame')) {
-              console.log('アニメーションフレーム詳細:', {
-                currentTime: currentPlaybackTime,
-                phase: phase.type,
-                isPlaying: audioState.isPlaying,
-                hasRenderer: true,
-                effectCount: managerInstance.getEffects().length,
-                isLoopRunning: isLoopRunningRef.current
-              });
-            }
-            
-            lastStateRef.current = {
-              currentTime: currentPlaybackTime,
-              isPlaying: audioState.isPlaying
-            };
-            lastLogTime = now;
-          }
 
+        
+        if (drawingManager && drawingManager.getRenderer() && needsRedraw) {
           // エフェクトの更新と描画を実行
           managerInstance.updateAll(currentPlaybackTime);
           drawingManager.renderAll(currentPlaybackTime, undefined, ui.selectedEffectId);
+          lastRenderTime = now;
+          
+          // レンダリング実行後は常に状態を更新
+          lastStateRef.current = {
+            currentTime: currentPlaybackTime,
+            isPlaying: isCurrentlyPlaying,
+            lastChangeTime: now
+          };
         }
         
         rafId = requestAnimationFrame(animate);
@@ -521,16 +521,25 @@ function App() {
     };
 
     if (isInteractive && drawingManager && drawingManager.getRenderer() && !isLoopRunningRef.current) {
-      if (shouldLog('animation-loop')) {
-        console.log('アニメーションループ開始:', {
-          phase: phase.type,
-          currentTime: audioState.currentTime,
-          hasManager: !!managerInstance,
-          hasRenderer: true
-        });
-      }
+      console.log('アニメーションループ開始:', {
+        phase: phase.type,
+        currentTime: audioState.currentTime,
+        hasManager: !!managerInstance,
+        hasRenderer: true,
+        isInteractive,
+        hasDrawingManager: !!drawingManager,
+        rendererExists: !!drawingManager?.getRenderer()
+      });
       isLoopRunningRef.current = true;
       rafId = requestAnimationFrame(animate);
+    } else {
+      console.log('アニメーションループ開始条件不足:', {
+        isInteractive,
+        hasDrawingManager: !!drawingManager,
+        hasRenderer: !!drawingManager?.getRenderer(),
+        isLoopRunning: isLoopRunningRef.current,
+        phase: phase.type
+      });
     }
 
     return () => {
@@ -542,7 +551,7 @@ function App() {
         cancelAnimationFrame(rafId);
       }
     };
-  }, [managerInstance, drawingManager, isInteractive, audioState.currentTime, audioState.isPlaying, ui.selectedEffectId, audioService]);
+  }, [managerInstance, drawingManager, isInteractive, ui.selectedEffectId, audioService, effectState.effects]);
 
   // audioStateの変更を監視（ログ出力を間引く）
   const lastAudioStateLogRef = useRef(0);
@@ -560,58 +569,60 @@ function App() {
 
   // エフェクトマネージャーの初期化
   useEffect(() => {
-    if (!managerInstance || !effectState.effects.length) return;
+    if (!managerInstance) return;
 
     if (shouldLog('effect-restore')) {
       log('App: 既存エフェクトの復元開始');
     }
 
     try {
-      // エフェクトIDのセットを作成して重複チェック
-      const effectIds = new Set<string>();
-      
       // 既存のエフェクトを復元
       effectState.effects.forEach((effect: EffectBase<EffectConfig>) => {
         const effectId = effect.getId();
         
-        // 重複チェック
-        if (effectIds.has(effectId)) {
-          console.warn(`重複するエフェクトID検出: ${effectId}、スキップします`);
-          return;
-        }
-        
-        // セットにIDを追加
-        effectIds.add(effectId);
-        
-        // マネージャーにエフェクトを追加
-        try {
-          managerInstance.addEffect(effect);
-          
-          if (hasSetAudioSource(effect) && audioState.source) {
-            const audioSource = {
-              ...audioState.source,
-              waveformData: audioState.analysis?.waveformData || [],
-              frequencyData: audioState.analysis?.frequencyData?.map(data => 
-                data instanceof Uint8Array ? data : new Uint8Array(data.length)
-              ) || []
-            };
-            effect.setAudioSource(audioSource);
+        // マネージャーに存在しない場合のみ追加
+        if (!managerInstance.getEffect(effectId)) {
+          try {
+            managerInstance.addEffect(effect); // zIndexの再計算はEffectManagerに任せる
+            
+            if (hasSetAudioSource(effect) && audioState.source) {
+              const audioSource = {
+                ...audioState.source,
+                waveformData: audioState.analysis?.waveformData || [],
+                frequencyData: audioState.analysis?.frequencyData?.map(data => 
+                  data instanceof Uint8Array ? data : new Uint8Array(data.length)
+                ) || []
+              };
+              effect.setAudioSource(audioSource);
+            }
+          } catch (error) {
+            console.error(`エフェクト復元エラー (新規追加試行): ${effectId}`, error);
           }
-        } catch (error) {
-          console.error(`エフェクト復元エラー: ${effectId}`, error);
+        } else if (hasSetAudioSource(effect) && audioState.source) {
+          // 既に存在する場合でも、audioSourceの更新は必要かもしれない
+          const existingEffect = managerInstance.getEffect(effectId);
+          if (existingEffect && hasSetAudioSource(existingEffect)) {
+            const audioSource = {
+                ...audioState.source,
+                waveformData: audioState.analysis?.waveformData || [],
+                frequencyData: audioState.analysis?.frequencyData?.map(data =>
+                  data instanceof Uint8Array ? data : new Uint8Array(data.length)
+                ) || []
+              };
+            existingEffect.setAudioSource(audioSource);
+          }
         }
       });
 
       if (shouldLog('effect-restore')) {
-        log(`App: ${effectIds.size}個のエフェクトを復元完了`);
+        log(`App: ${effectState.effects.length}個のエフェクトの復元処理を試行`);
       }
     } catch (error) {
       console.error('エフェクト復元中に予期せぬエラー:', error);
     }
-  }, [managerInstance, effectState.effects, audioState.source]);
+  }, [managerInstance, audioState.source, effectState.effects]);
 
-  // ドロップダウンの開閉状態
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
 
   // エフェクト追加
   const handleAddEffectClick = useCallback(async (type: EffectType) => {
@@ -677,6 +688,7 @@ function App() {
 
   // オーディオアップローダーのコールバック
   const handleAudioFileSelect = useCallback(async (file: File) => {
+    console.warn('[App.tsx] handleAudioFileSelect called with file:', file.name, new Date().toISOString());
     try {
       await loadAudio(file);
     } catch (error) {
@@ -732,8 +744,18 @@ function App() {
   }, [transitionTo]);
 
   // Default video settings (use context or defaults)
-  const currentVideoSettings = projectState.currentProject?.videoSettings ?? { 
-      width: 1280, height: 720, frameRate: 30, videoBitrate: 5000000, audioBitrate: 128000 
+  const currentVideoSettings: VideoSettings = projectState.currentProject?.videoSettings ?? { 
+      width: 1280, 
+      height: 720, 
+      frameRate: 30, 
+      videoBitrate: 5000000, 
+      audioBitrate: 128000,
+      codec: { video: 'avc', audio: 'aac' },
+      container: 'mp4',
+      latencyMode: 'quality',
+      sampleRate: 48000,
+      channels: 2,
+      hardwareAcceleration: 'no-preference'
   };
 
   return (
@@ -745,63 +767,7 @@ function App() {
             <Logo>WIP Motion Video</Logo>
           </HeaderLeft>
           <HeaderCenter>
-            {/* Header Center Actions - Show only when interactive */} 
-            {isInteractive && (
-              <Flex gap="3" align="center">
-                {/* 独自のドロップダウンメニューに置き換え */}
-                <DropdownContainer>
-                  <Tooltip content="エフェクトを追加">
-                    <IconButton 
-                      variant="ghost" 
-                      onClick={() => {
-                        console.log('Toggle dropdown');
-                        setIsDropdownOpen(!isDropdownOpen);
-                      }}
-                    >
-                      <PlusIcon width="18" height="18" />
-                    </IconButton>
-                  </Tooltip>
-                  <DropdownContent isOpen={isDropdownOpen}>
-                    <DropdownItem 
-                      onClick={() => {
-                        console.log('Background effect clicked');
-                        handleAddEffectClick('background');
-                        setIsDropdownOpen(false);
-                      }}
-                    >
-                      背景
-                    </DropdownItem>
-                    <DropdownItem 
-                      onClick={() => {
-                        console.log('Text effect clicked');
-                        handleAddEffectClick('text'); 
-                        setIsDropdownOpen(false);
-                      }}
-                    >
-                      テキスト
-                    </DropdownItem>
-                    <DropdownItem 
-                      onClick={() => {
-                        console.log('Waveform effect clicked');
-                        handleAddEffectClick('waveform');
-                        setIsDropdownOpen(false);
-                      }}
-                    >
-                      波形
-                    </DropdownItem>
-                    <DropdownItem 
-                      onClick={() => {
-                        console.log('Watermark effect clicked');
-                        handleAddEffectClick('watermark');
-                        setIsDropdownOpen(false);
-                      }}
-                    >
-                      透かし
-                    </DropdownItem>
-                  </DropdownContent>
-                </DropdownContainer>
-              </Flex>
-            )}
+            {/* Header Center - Empty for cleaner look */}
           </HeaderCenter>
           <HeaderRight>
             {/* Export Button */} 
@@ -820,16 +786,28 @@ function App() {
           <Main>
             {/* Show Uploader only in Idle state */} 
             {isIdle && (
-              <Card size="4" style={{ width: '80%', maxWidth: '600px' }}>
-                  <AudioUploader 
-                    onFileSelect={handleAudioFileSelect} 
-                    onError={handleUploaderError} 
-                  />
-              </Card>
+              <div style={{ 
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'center',
+                padding: '20px'
+              }}>
+                <Card size="4" style={{ width: '100%', maxWidth: '600px' }}>
+                    <AudioUploader 
+                      onFileSelect={handleAudioFileSelect} 
+                      onError={handleUploaderError} 
+                    />
+                </Card>
+              </div>
             )}
             
-            {/* Show PreviewCanvas when interactive */} 
-            {isInteractive && (
+            {/* Show PreviewCanvas when interactive or has audio source */} 
+            {(isInteractive || audioState.source) && (
               <PreviewCanvas
                 width={currentVideoSettings.width}
                 height={currentVideoSettings.height}
@@ -838,8 +816,27 @@ function App() {
             )}
           </Main>
           <Sidebar>
-            {/* Settings Panel - Conditionally rendered by its own state via useApp */} 
-            <SettingsPanel /> 
+            <SidebarContent>
+              {/* Idle state: Show welcome message */}
+              {isIdle && <WelcomeMessage />}
+              
+              {/* Interactive state: Always show toolbar and effect list */}
+              {isInteractive && (
+                <>
+                  <EffectToolbar onAddEffect={handleAddEffectClick} />
+                  <EffectList
+                    effects={effectState.effects.map(e => e.getConfig())}
+                    selectedEffectId={ui.selectedEffectId}
+                    onSelectEffect={selectEffect}
+                    onDeleteEffect={handleEffectDelete}
+                    onToggleVisibility={(id, visible) => updateEffect(id, { visible })}
+                    onMoveEffect={handleEffectMove}
+                  />
+                  {/* Show settings panel only when an effect is selected */}
+                  {ui.selectedEffectId && <SettingsPanel />}
+                </>
+              )}
+            </SidebarContent>
           </Sidebar>
         </Content>
 
@@ -861,19 +858,21 @@ function App() {
                     onLoopChange={onLoopChange}
                   />
                 </PlaybackControlsContainer>
-                <TimelineContainer>
-                  <Timeline 
-                    duration={audioState.duration}
-                    currentTime={audioState.currentTime}
-                    effects={effectState.effects.map((e: EffectBase<EffectConfig>) => e.getConfig())}
-                    selectedEffectId={ui.selectedEffectId}
-                    onSelectEffect={selectEffect}
-                    onSeek={seekAudio}
-                    onEffectTimeChange={(id, startTime, endTime) => 
-                      updateEffect(id, { startTime, endTime })
-                    }
-                  />
-                </TimelineContainer>
+                {isInteractive && effectState.effects.length > 0 && (
+                  <TimelineContainer>
+                    <Timeline 
+                      duration={audioState.duration}
+                      currentTime={audioState.currentTime}
+                      effects={effectState.effects.map((e: EffectBase<EffectConfig>) => e.getConfig())}
+                      selectedEffectId={ui.selectedEffectId}
+                      onSelectEffect={selectEffect}
+                      onSeek={seekAudio}
+                      onEffectTimeChange={(id, startTime, endTime) => 
+                        updateEffect(id, { startTime, endTime })
+                      }
+                    />
+                  </TimelineContainer>
+                )}
               </>
             )}
         </Footer>

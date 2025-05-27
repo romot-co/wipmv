@@ -17,8 +17,10 @@ export default defineConfig({
     plugins: () => []
   },
   optimizeDeps: {
-    exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util']
+    exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
+    include: ['webcodecs-encoder']
   },
+  assetsInclude: ['**/*.js'], // webcodecs-encoderのworker.jsを含める
   build: {
     target: 'esnext',
     rollupOptions: {
@@ -31,5 +33,7 @@ export default defineConfig({
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
     'process.env.DEBUG': JSON.stringify(process.env.DEBUG || 'app:*'),
+    // Service Worker無効化フラグ（開発環境用）
+    '__DISABLE_SW__': JSON.stringify(process.env.NODE_ENV === 'development'),
   }
 });

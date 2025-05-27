@@ -1,4 +1,4 @@
-import { Disposable, AudioSource } from './base';
+import { Disposable, AudioSource, VideoSettings } from './base';
 import { EffectConfig } from './effect';
 import { HasAudioSource } from './state';
 
@@ -109,20 +109,8 @@ export interface Renderer extends Disposable {
 export interface ExportButtonProps {
   onError: (error: Error) => void;
   onProgress?: (progress: number) => void;
-  videoSettings: {
-    width: number;
-    height: number;
-    frameRate: number;
-    videoBitrate: number;
-    audioBitrate: number;
-  };
-  onSettingsChange: (settings: {
-    width: number;
-    height: number;
-    frameRate: number;
-    videoBitrate: number;
-    audioBitrate: number;
-  }) => void;
+  videoSettings: VideoSettings;
+  onSettingsChange: (settings: VideoSettings) => void;
   audioSource: AudioSource | null;
   onExportStart?: () => void;
   onExportComplete?: () => void;

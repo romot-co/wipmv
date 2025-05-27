@@ -9,25 +9,25 @@ export interface AudioUploaderProps {
   disabled?: boolean;
 }
 
-const UploadArea = styled.div<{ isDragOver: boolean; isDisabled: boolean }>`
+const UploadArea = styled.div<{ $isDragOver: boolean; $isDisabled: boolean }>`
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 32px 16px;
-  border: 1px solid ${props => props.isDragOver ? 'var(--primary-color)' : 'var(--border-color)'};
+  border: 1px solid ${props => props.$isDragOver ? 'var(--primary-color)' : 'var(--border-color)'};
   border-radius: 4px;
-  background-color: ${props => props.isDragOver ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-tertiary)'};
-  cursor: ${props => props.isDisabled ? 'not-allowed' : 'pointer'};
+  background-color: ${props => props.$isDragOver ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-tertiary)'};
+  cursor: ${props => props.$isDisabled ? 'not-allowed' : 'pointer'};
   transition: all 0.15s ease;
   width: 100%;
   max-width: 450px;
   text-align: center;
-  opacity: ${props => props.isDisabled ? 0.6 : 1};
+  opacity: ${props => props.$isDisabled ? 0.6 : 1};
   
   &:hover {
-    border-color: ${props => !props.isDisabled && 'var(--primary-color)'};
-    background-color: ${props => !props.isDisabled && 'rgba(59, 130, 246, 0.1)'};
+    border-color: ${props => !props.$isDisabled && 'var(--primary-color)'};
+    background-color: ${props => !props.$isDisabled && 'rgba(59, 130, 246, 0.1)'};
   }
 `;
 
@@ -145,8 +145,8 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({ onFileSelect, onEr
       <Text size="5" weight="medium" mb="3">WIP Motion Video</Text>
       
       <UploadArea 
-        isDragOver={isDragOver} 
-        isDisabled={disabled || isLoading}
+        $isDragOver={isDragOver} 
+        $isDisabled={disabled || isLoading}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}

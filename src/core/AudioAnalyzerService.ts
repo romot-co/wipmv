@@ -42,12 +42,17 @@ export class AudioAnalyzerService implements AudioAnalyzer {
   }
 
   public async analyze(source: AudioSource): Promise<AnalysisResult> {
+    console.warn('[AudioAnalyzerService] analyze called', new Date().toISOString());
     return withAudioError(
       async () => {
         log('音声解析開始');
         if (!this.worker) {
-          log('エラー: Worker未初期化');
-          throw new Error('Worker is not initialized');
+          log('Worker未初期化のため再初期化を試行');
+          this.initWorker();
+          if (!this.worker) {
+            log('エラー: Worker再初期化失敗');
+            throw new Error('Worker initialization failed');
+          }
         }
 
         if (!source.buffer) {

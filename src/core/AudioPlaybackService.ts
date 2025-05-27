@@ -175,7 +175,12 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
     if (this.isPlaying || !this.audioContext) return;
     
     this.startTime = this.audioContext.currentTime;
-    this.offset = this.pausedTime;
+    // シーク時はoffsetを使用、それ以外はpausedTimeを使用
+    if (this.offset !== this.pausedTime) {
+      this.pausedTime = this.offset;
+    } else {
+      this.offset = this.pausedTime;
+    }
 
     if (!this.audioBuffer || !this.gainNode) return;
 
@@ -212,7 +217,10 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
   public pause(): void {
     if (!this.isPlaying || !this.audioContext || !this.sourceNode) return;
     
-    // 現在の再生位置を保存
+    // 先にisPlayingをfalseにして無限再帰を防ぐ
+    this.isPlaying = false;
+    
+    // 現在の再生位置を保存（isPlayingがfalseなのでoffsetが返される）
     const currentTime = this.getCurrentTime();
     this.pausedTime = currentTime;
     this.offset = currentTime;
@@ -221,7 +229,6 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
     this.sourceNode.stop();
     this.sourceNode.disconnect();
     this.sourceNode = null;
-    this.isPlaying = false;
     
     // 状態を更新
     this.stateManager.update({
@@ -232,29 +239,61 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
 
   public stop(): void {
     if (this.sourceNode) {
-      this.sourceNode.stop();
+      try {
+        this.sourceNode.stop();
+      } catch (error) {
+        console.debug('SourceNode already stopped');
+      }
       this.sourceNode.disconnect();
       this.sourceNode = null;
     }
+    this.isPlaying = false;
+    this.offset = 0;
     this.pausedTime = 0;
     this.stateManager.update({ isPlaying: false, currentTime: 0 });
   }
 
   public seek(time: number): void {
     const wasPlaying = this.isPlaying;
-    if (wasPlaying) {
-      if (this.sourceNode) {
+    
+    // 現在の再生を停止
+    if (this.sourceNode) {
+      try {
         this.sourceNode.stop();
-        this.sourceNode.disconnect();
-        this.sourceNode = null;
+      } catch (error) {
+        // SourceNodeが既に停止されている場合のエラーを無視
+        console.debug('SourceNode already stopped');
       }
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
     }
     
+    // シーク位置を設定
     this.offset = Math.max(0, Math.min(time, this.getDuration()));
-    this.stateManager.update({ currentTime: this.offset });
+    this.pausedTime = this.offset; // pausedTimeも同期
+    this.isPlaying = false; // 一旦停止状態にする
     
+    // 状態を更新
+    this.stateManager.update({ 
+      currentTime: this.offset,
+      isPlaying: false 
+    });
+    
+    // 再生中だった場合は再開
     if (wasPlaying) {
-      this.play();
+      // 少し遅延を入れてから再生を開始
+      setTimeout(() => {
+        this.play();
+      }, 10);
+    }
+    
+    if (this.shouldLog('seek')) {
+      console.log('シーク実行:', {
+        time,
+        offset: this.offset,
+        wasPlaying,
+        willResumePlayback: wasPlaying
+      });
     }
   }
 
@@ -273,7 +312,21 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
           this.startTime = this.audioContext.currentTime;
         }
       } else if (!this.loop && currentTime >= this.audioBuffer.duration) {
-        this.pause();
+        // 音声終了時は直接停止処理を行う（pauseメソッドを呼ばない）
+        if (this.sourceNode) {
+          this.sourceNode.stop();
+          this.sourceNode.disconnect();
+          this.sourceNode = null;
+        }
+        this.isPlaying = false;
+        this.offset = this.audioBuffer.duration;
+        this.pausedTime = this.audioBuffer.duration;
+        
+        this.stateManager.update({
+          currentTime: this.audioBuffer.duration,
+          isPlaying: false
+        });
+        
         return this.audioBuffer.duration;
       }
       
@@ -347,9 +400,11 @@ export class AudioPlaybackService implements AudioPlayback, AudioSourceControl {
               });
             }
             this.isPlaying = false;
-            this.offset = 0;
+            // 再生終了時も現在位置を保持（0にリセットしない）
+            this.offset = duration;
+            this.pausedTime = duration;
             this.stateManager.update({
-              currentTime: 0,
+              currentTime: duration,
               isPlaying: false
             });
             return;

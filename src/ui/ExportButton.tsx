@@ -6,6 +6,7 @@ import { ExportButtonProps } from '../core/types/core';
 import { VideoEncoderService, ProgressCallback } from '../core/VideoEncoderService';
 import { AppError, ErrorType } from '../core/types/error';
 import { useApp } from '../contexts/AppContext';
+import type { VideoSettings } from '../core/types/base';
 
 /**
  * ExportButton コンポーネント
@@ -61,15 +62,24 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         console.log(`Export Progress: ${progress.toFixed(1)}% (${processedFrames}/${totalFrames})`);
       };
 
-      encoderRef.current = new VideoEncoderService({
+      // webcodecs-encoderに対応した設定を構築
+      const encoderConfig = {
         width: videoSettings.width,
         height: videoSettings.height,
         frameRate: videoSettings.frameRate,
         videoBitrate: videoSettings.videoBitrate,
         audioBitrate: videoSettings.audioBitrate,
-        sampleRate: buffer.sampleRate,
-        channels: buffer.numberOfChannels
-      });
+        sampleRate: videoSettings.sampleRate || buffer.sampleRate,
+        channels: videoSettings.channels || buffer.numberOfChannels,
+        codec: videoSettings.codec || { video: 'avc', audio: 'aac' },
+        container: videoSettings.container || 'mp4',
+        latencyMode: videoSettings.latencyMode || 'quality',
+        hardwareAcceleration: videoSettings.hardwareAcceleration || 'no-preference',
+        codecString: videoSettings.codecString,
+        audioEncoderConfig: videoSettings.audioEncoderConfig
+      };
+
+      encoderRef.current = new VideoEncoderService(encoderConfig);
       const encoder = encoderRef.current;
 
       const totalFrames = Math.ceil(buffer.duration * videoSettings.frameRate);
@@ -90,25 +100,31 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         managerInstance.updateAll(currentTime);
         drawingManager.renderExportFrame(canvas, currentTime);
 
-        encoder.encodeVideoFrame(canvas, frameIndex);
-        encoder.encodeAudioBuffer(buffer, frameIndex);
+        await encoder.encodeVideoFrame(canvas, frameIndex);
       }
-      console.log("Frame encoding loop finished. Finalizing...");
+      console.log("Frame encoding loop finished.");
+
+      console.log("Encoding audio buffer...");
+      await encoder.encodeAudioBuffer(buffer, 0);
+      console.log("Audio buffer encoding finished. Finalizing...");
 
       const mp4Binary = await encoder.finalize();
       console.log("Export finalized, MP4 size:", mp4Binary.byteLength);
 
-      const blob = new Blob([mp4Binary], { type: 'video/mp4' });
+      const fileExtension = videoSettings.container === 'webm' ? 'webm' : 'mp4';
+      const mimeType = videoSettings.container === 'webm' ? 'video/webm' : 'video/mp4';
+      
+      const blob = new Blob([mp4Binary], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'output.mp4';
+      a.download = `output.${fileExtension}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      console.log("MP4 download initiated.");
+      console.log(`${fileExtension.toUpperCase()} download initiated.`);
       onExportComplete?.();
 
     } catch (error) {
@@ -132,6 +148,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       encoderRef.current = null;
       setIsExporting(false);
       setExportProgress(0);
+      setShowSettings(false);
     }
   }, [
     managerInstance,
@@ -164,6 +181,10 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
     setShowSettings(false);
   }, []);
 
+  const handleSettingsChange = useCallback((newSettings: VideoSettings) => {
+    onSettingsChange(newSettings);
+  }, [onSettingsChange]);
+
   const isButtonDisabled = disabled || !audioSource || !managerInstance || !drawingManager;
 
   return (
@@ -181,41 +202,51 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
             &nbsp;Export Settings
           </Button>
         </Dialog.Trigger>
-        <Dialog.Content style={{ maxWidth: 450 }}>
-          <Flex justify="end">
+        <Dialog.Content style={{ maxWidth: '700px', maxHeight: '90vh' }}>
+          <Flex justify="end" style={{ position: 'absolute', top: '12px', right: '12px', zIndex: 1 }}>
             <Dialog.Close>
               <IconButton variant="ghost" color="gray" onClick={handleCloseSettings}>
                   <Cross2Icon />
               </IconButton>
             </Dialog.Close>
           </Flex>
-          <Dialog.Title>Export Settings</Dialog.Title>
           <EncodeSettings
-            {...videoSettings}
-            onSettingsChange={onSettingsChange}
+            settings={videoSettings}
+            onSettingsChange={handleSettingsChange}
+            onExport={handleExport}
+            onCancel={handleCloseSettings}
           />
         </Dialog.Content>
       </Dialog.Root>
 
-      {!isExporting ? (
+      {/* エクスポート実行ボタン */}
+      <Button
+        variant="solid"
+        color="blue"
+        size="3"
+        disabled={isButtonDisabled || isExporting}
+        onClick={handleExport}
+        style={{ minWidth: '120px' }}
+      >
+        {isExporting ? (
+          <Flex align="center" gap="2">
+            <Text size="2">エクスポート中...</Text>
+            <Text size="1">{exportProgress.toFixed(0)}%</Text>
+          </Flex>
+        ) : (
+          'エクスポート'
+        )}
+      </Button>
+
+      {isExporting && (
         <Button
-          variant="solid"
-          color="blue"
+          variant="soft"
+          color="red"
           size="2"
-          disabled={isButtonDisabled}
-          onClick={handleExport}
+          onClick={handleCancel}
         >
-          Export Video
+          キャンセル
         </Button>
-      ) : (
-        <Flex align="center" gap="2">
-          <Text size="2" color="gray">
-            Exporting... {Math.round(exportProgress)}%
-          </Text>
-          <Button variant="soft" color="red" size="2" onClick={handleCancel}>
-            Cancel
-          </Button>
-        </Flex>
       )}
     </Flex>
   );

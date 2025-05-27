@@ -1,5 +1,6 @@
 import React, { useState, useEffect, memo } from 'react';
-import { Card, Flex, Heading, Text, Switch } from '@radix-ui/themes';
+import { Card, Flex, Heading, Text, Switch, Separator, Badge, IconButton, Tooltip } from '@radix-ui/themes';
+import { EyeOpenIcon, EyeClosedIcon, LayersIcon, ClockIcon } from '@radix-ui/react-icons';
 import { EffectBase } from '../core/types/core';
 import { BackgroundEffectConfig, TextEffectConfig, WaveformEffectConfig, WatermarkEffectConfig } from '../core/types/effect';
 import { AppError, ErrorType } from '../core/types/error';
@@ -8,9 +9,123 @@ import { BackgroundSettings } from './features/background/BackgroundSettings';
 import { WatermarkSettings } from './features/watermark/WatermarkSettings';
 import { WaveformSettings } from './features/waveform/WaveformSettings';
 import { TextSettings } from './features/text/TextSettings';
+import styled from 'styled-components';
 import './EffectSettings.css';
 
 type EffectConfig = BackgroundEffectConfig | TextEffectConfig | WaveformEffectConfig | WatermarkEffectConfig;
+
+const SettingsContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+`;
+
+const ScrollableContent = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+  
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+    border-radius: 3px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--border-color);
+    border-radius: 3px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: var(--text-muted);
+  }
+`;
+
+const CompactSection = styled(Card)`
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+`;
+
+const SectionHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+`;
+
+const SectionTitle = styled.h4`
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  flex: 1;
+`;
+
+const SectionIcon = styled.div`
+  color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+`;
+
+const CompactControlRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  min-height: 24px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const CompactLabel = styled(Text)`
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  min-width: 60px;
+`;
+
+const CompactValue = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
+`;
+
+const CompactInput = styled.input`
+  width: 50px;
+  padding: 2px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+  text-align: center;
+
+  &:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 1px var(--primary-color)40;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const CompactBadge = styled(Badge)`
+  font-size: 10px;
+  padding: 2px 4px;
+`;
 
 /**
  * エフェクト設定のプロパティ
@@ -23,11 +138,19 @@ interface EffectSettingsProps {
   disabled?: boolean;
 }
 
+// エフェクトタイプのアイコンとラベル
+const effectTypeInfo: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+  background: { icon: <LayersIcon width="12" height="12" />, label: '背景', color: 'blue' },
+  text: { icon: <span style={{ fontSize: '10px' }}>T</span>, label: 'テキスト', color: 'purple' },
+  waveform: { icon: <span style={{ fontSize: '8px' }}>♪</span>, label: '波形', color: 'red' },
+  watermark: { icon: <span style={{ fontSize: '8px' }}>🏷️</span>, label: '透かし', color: 'green' }
+};
+
 /**
  * エフェクト設定コンポーネント
- * - エフェクトの時間設定
- * - エフェクト固有の設定
- * - 表示/非表示とレイヤー順序の設定
+ * - コンパクトなデザインでスクロール対応
+ * - サポートしている値のみ表示
+ * - 最適化されたUI/UX
  */
 export const EffectSettings = memo<EffectSettingsProps>(({
   effect,
@@ -130,61 +253,119 @@ export const EffectSettings = memo<EffectSettingsProps>(({
     }
   };
 
+  const effectInfo = effectTypeInfo[config.type] || { 
+    icon: <LayersIcon width="12" height="12" />, 
+    label: config.type, 
+    color: 'gray' 
+  };
+
   return (
-    <div className="effect-settings">
-      <div className="effect-settings-content">
-        {/* 時間設定 */}
-        <Card size="1">
+    <SettingsContainer>
+      <ScrollableContent>
+        {/* エフェクト情報ヘッダー */}
+        <CompactSection>
+          <SectionHeader>
+            <SectionIcon>{effectInfo.icon}</SectionIcon>
+            <SectionTitle>{effectInfo.label}</SectionTitle>
+            <CompactBadge color={effectInfo.color as any} size="1">
+              {effectInfo.label}
+            </CompactBadge>
+          </SectionHeader>
+          
           <Flex direction="column" gap="1">
-            <Heading as="h4" size="2">表示時間</Heading>
-            <EffectTimeSettings
-              startTime={config.startTime ?? 0}
-              endTime={config.endTime ?? duration}
-              duration={duration ?? 0}
-              onTimeChange={handleTimeChange}
-              disabled={disabled}
-            />
+            <CompactControlRow>
+              <CompactLabel>表示</CompactLabel>
+              <CompactValue>
+                <Switch
+                  checked={config.visible}
+                  onCheckedChange={(checked) => handleConfigChange({ visible: checked })}
+                  disabled={disabled}
+                  size="1"
+                />
+                <Tooltip content={config.visible ? '表示中' : '非表示'}>
+                  <IconButton variant="ghost" size="1">
+                    {config.visible ? <EyeOpenIcon width="10" height="10" /> : <EyeClosedIcon width="10" height="10" />}
+                  </IconButton>
+                </Tooltip>
+              </CompactValue>
+            </CompactControlRow>
+            
+            <CompactControlRow>
+              <CompactLabel>レイヤー</CompactLabel>
+              <CompactValue>
+                <CompactInput
+                  type="number"
+                  value={config.zIndex}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                    handleConfigChange({ zIndex: parseInt(e.target.value, 10) })
+                  }
+                  min={0}
+                  max={9999}
+                  disabled={disabled}
+                />
+                <Tooltip content="高い値ほど前面に表示">
+                  <Text size="1" color="gray">#</Text>
+                </Tooltip>
+              </CompactValue>
+            </CompactControlRow>
           </Flex>
-        </Card>
+        </CompactSection>
+
+        {/* 表示時間設定 - コンパクト版 */}
+        <CompactSection>
+          <SectionHeader>
+            <SectionIcon><ClockIcon width="12" height="12" /></SectionIcon>
+            <SectionTitle>時間</SectionTitle>
+          </SectionHeader>
+          
+          <Flex direction="column" gap="1">
+            <CompactControlRow>
+              <CompactLabel>開始</CompactLabel>
+              <CompactValue>
+                <CompactInput
+                  type="number"
+                  value={config.startTime ?? 0}
+                  onChange={(e) => handleTimeChange(parseFloat(e.target.value), config.endTime ?? duration ?? 0)}
+                  min={0}
+                  max={duration ?? 1000}
+                  step={0.1}
+                  disabled={disabled}
+                />
+                <Text size="1" color="gray">秒</Text>
+              </CompactValue>
+            </CompactControlRow>
+            
+            <CompactControlRow>
+              <CompactLabel>終了</CompactLabel>
+              <CompactValue>
+                <CompactInput
+                  type="number"
+                  value={config.endTime ?? duration ?? 0}
+                  onChange={(e) => handleTimeChange(config.startTime ?? 0, parseFloat(e.target.value))}
+                  min={config.startTime ?? 0}
+                  max={duration ?? 1000}
+                  step={0.1}
+                  disabled={disabled}
+                />
+                <Text size="1" color="gray">秒</Text>
+              </CompactValue>
+            </CompactControlRow>
+          </Flex>
+        </CompactSection>
 
         {/* エフェクト固有の設定 */}
-        <Card size="1">
-          <Flex direction="column" gap="1">
-            <div className="effect-specific-settings">
-              {renderEffectSpecificSettings()}
-            </div>
-          </Flex>
-        </Card>
-
-        {/* 表示/非表示切り替えとzIndex設定 */}
-        <Card size="1">
-          <Flex direction="column" gap="2">
-            <Flex align="center" justify="between" gap="2">
-              <Text as="label" size="1">表示</Text>
-              <Switch
-                checked={config.visible}
-                onCheckedChange={(checked) => handleConfigChange({ visible: checked })}
-                disabled={disabled}
-              />
-            </Flex>
-            <Flex direction="column" gap="1">
-              <Text as="label" size="1" htmlFor="zIndex">レイヤー順序</Text>
-              <input
-                id="zIndex"
-                type="number"
-                value={config.zIndex}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
-                  handleConfigChange({ zIndex: parseInt(e.target.value, 10) })
-                }
-                min={0}
-                className="rt-TextFieldInput rt-r-size-1"
-                disabled={disabled}
-              />
-            </Flex>
-          </Flex>
-        </Card>
-      </div>
-    </div>
+        <CompactSection>
+          <SectionHeader>
+            <SectionIcon>{effectInfo.icon}</SectionIcon>
+            <SectionTitle>詳細設定</SectionTitle>
+          </SectionHeader>
+          
+          <div>
+            {renderEffectSpecificSettings()}
+          </div>
+        </CompactSection>
+      </ScrollableContent>
+    </SettingsContainer>
   );
 });
 

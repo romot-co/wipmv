@@ -91,11 +91,11 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       return;
     }
 
-    console.log('WatermarkEffect.render: Rendering watermark effect', { 
-      id: this.getId(),
-      visible: this.isVisible(),
-      config: this.config
-    });
+    // console.log('WatermarkEffect.render: Rendering watermark effect', { 
+    //   id: this.getId(),
+    //   visible: this.isVisible(),
+    //   config: this.config
+    // });
 
     const { width, height } = ctx.canvas;
     const {
@@ -144,12 +144,12 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       const x = position.x + (size.width - finalWidth) / 2;
       const y = position.y + (size.height - finalHeight) / 2;
 
-      console.log('WatermarkEffect: Maintaining aspect ratio', {
-        originalSize: { width: this.image.width, height: this.image.height },
-        aspectRatio: origAspectRatio,
-        requestedSize: { width: size.width, height: size.height },
-        finalSize: { width: finalWidth, height: finalHeight }
-      });
+      // console.log('WatermarkEffect: Maintaining aspect ratio', {
+      //   originalSize: { width: this.image.width, height: this.image.height },
+      //   aspectRatio: origAspectRatio,
+      //   requestedSize: { width: size.width, height: size.height },
+      //   finalSize: { width: finalWidth, height: finalHeight }
+      // });
 
       if (effectiveRotation !== 0) {
         // 回転の中心を設定
@@ -161,9 +161,9 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       }
 
       ctx.drawImage(this.image, x, y, finalWidth, finalHeight);
-      console.log('WatermarkEffect.render: Image drawn at', {
-        x, y, width: finalWidth, height: finalHeight
-      });
+      // console.log('WatermarkEffect.render: Image drawn at', {
+      //   x, y, width: finalWidth, height: finalHeight
+      // });
     }
 
     ctx.restore();

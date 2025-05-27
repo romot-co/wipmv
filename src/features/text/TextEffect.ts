@@ -1,11 +1,15 @@
 import { EffectBase } from '../../core/types/core';
 import { TextEffectConfig } from '../../core/types/effect';
 import { AnimationController } from '../../core/animation/AnimationController';
-import { Color } from '../../core/types/base';
-import { convertPosition } from '../../utils/coordinates';
-import { AudioSource } from '../../core/audio/AudioSource';
-import { RenderContext } from '../../core/types/render';
-import { BoundingBox } from '../../core/types/base';
+import { AudioSource } from '../../core/types/base';
+
+// BoundingBox型の定義
+interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 /**
  * テキストエフェクト
@@ -18,7 +22,7 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
 
   constructor(config: TextEffectConfig, audioSource?: AudioSource) {
     super(config, true);
-    this.isDraggable = true; // テキストエフェクトはドラッグ可能
+    // this.isDraggable = true; // テキストエフェクトはドラッグ可能（読み取り専用のため削除）
     if (audioSource) {
       this.setAudioSource(audioSource);
     }
@@ -42,12 +46,12 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
     }
   }
 
-  render(ctx: RenderContext): void {
+  render(ctx: CanvasRenderingContext2D): void {
     const config = this.getConfig();
     
     if (!config.visible) return;
     
-    const { text, position, size, color, font, shadow, alignment = 'center' } = config;
+    const { text, position, size, color, font, alignment = 'center' } = config;
     
     // キャンバスの寸法を取得
     const width = ctx.canvas.width;
@@ -81,17 +85,8 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
     ctx.textAlign = alignment as CanvasTextAlign;
     ctx.textBaseline = 'middle';
     
-    // シャドウ設定（設定されている場合）
-    if (shadow && shadow.enabled) {
-      // テキストが黒/濃い色の場合、明るいシャドウを使用してコントラストを高める
-      const isColorDark = color && this.isColorDark(color);
-      const defaultBlur = Math.max(2, fontSize / 15); // フォントサイズに基づいてぼかしを調整
-      
-      ctx.shadowColor = shadow.color || (isColorDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.65)');
-      ctx.shadowBlur = shadow.blur !== undefined ? shadow.blur : defaultBlur;
-      ctx.shadowOffsetX = shadow.offsetX || 0;
-      ctx.shadowOffsetY = shadow.offsetY || 0;
-    }
+    // シャドウ設定（現在は無効化）
+    // TODO: TextEffectConfigにshadowプロパティを追加する場合は有効化
     
     // テキスト位置の計算（相対座標をピクセル座標に変換）
     const x = position.x * width;
@@ -105,32 +100,12 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
       // メインのテキストを描画
       this.drawAlignedText(ctx, text, x, y, width, alignment);
       
-      if (shadow && shadow.enabled) {
-        // シャドウをリセットして微調整描画
-        const originalShadowColor = ctx.shadowColor;
-        const originalShadowBlur = ctx.shadowBlur;
-        
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-        
-        // 輪郭を微調整（薄いシャープニング効果）
-        ctx.globalAlpha = 0.25;
-        this.drawAlignedText(ctx, text, x + delta, y, width, alignment);
-        this.drawAlignedText(ctx, text, x - delta, y, width, alignment);
-        this.drawAlignedText(ctx, text, x, y + delta, width, alignment);
-        this.drawAlignedText(ctx, text, x, y - delta, width, alignment);
-        
-        // 元のシャドウ設定を復元しない（すでに本体テキストは描画済み）
-      } else {
-        // シャドウがない場合は微調整のみ
-        ctx.globalAlpha = 0.25;
-        this.drawAlignedText(ctx, text, x + delta, y, width, alignment);
-        this.drawAlignedText(ctx, text, x - delta, y, width, alignment);
-        this.drawAlignedText(ctx, text, x, y + delta, width, alignment);
-        this.drawAlignedText(ctx, text, x, y - delta, width, alignment);
-      }
+      // 微調整描画（シャープニング効果）
+      ctx.globalAlpha = 0.25;
+      this.drawAlignedText(ctx, text, x + delta, y, width, alignment);
+      this.drawAlignedText(ctx, text, x - delta, y, width, alignment);
+      this.drawAlignedText(ctx, text, x, y + delta, width, alignment);
+      this.drawAlignedText(ctx, text, x, y - delta, width, alignment);
       
       ctx.globalAlpha = 1.0;
     } else {
@@ -142,7 +117,7 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
   }
 
   // 配置に応じてテキストを描画するヘルパーメソッド
-  private drawAlignedText(ctx: RenderContext, text: string, x: number, y: number, width: number, alignment: string): void {
+  private drawAlignedText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, width: number, alignment: string): void {
     if (alignment === 'center') {
       ctx.fillText(text, x, y);
     } else if (alignment === 'left') {
@@ -188,36 +163,39 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
     return luminance < 0.5;
   }
 
-  // ヒットテスト（クリック判定）
-  hitTest(relativePos: { x: number; y: number }): boolean {
-    const config = this.getConfig();
-    if (!config.visible) return false;
-    
-    const bbox = this.getBoundingBox();
-    
-    return (
-      relativePos.x >= bbox.x &&
-      relativePos.x <= bbox.x + bbox.width &&
-      relativePos.y >= bbox.y &&
-      relativePos.y <= bbox.y + bbox.height
-    );
-  }
-
-  // バウンディングボックスの計算
-  getBoundingBox(): BoundingBox {
+  // バウンディングボックスの計算（統一されたインターフェース）
+  getBoundingBox(canvasWidth: number, canvasHeight: number): { x: number; y: number; width: number; height: number; } | null {
     const config = this.getConfig();
     const { position, font, text } = config;
     
-    // テキストの長さに基づいた幅の計算（推定）
-    // 実際のテキスト測定には Canvas の measureText API を使用するのが正確
-    const estimatedWidth = text.length * (font.size / 2) / 500; // 500は canvas width の仮定値
-    const estimatedHeight = font.size / 250; // 250は canvas height の仮定値
+    if (!config.visible) return null;
+    
+    // テキストサイズの実際の推定（より正確な計算）
+    const charWidth = font.size * 0.6; // 文字幅の推定値
+    const textWidth = text.length * charWidth;
+    const textHeight = font.size * 1.2; // 行の高さを考慮
+    
+    // 相対座標を絶対座標に変換
+    const absoluteX = position.x * canvasWidth;
+    const absoluteY = position.y * canvasHeight;
+    
+    // テキストの配置に応じてバウンディングボックスを調整
+    const { alignment = 'center' } = config;
+    let x = absoluteX;
+    
+    if (alignment === 'center') {
+      x = absoluteX - textWidth / 2;
+    } else if (alignment === 'left') {
+      x = 10; // 左端から少し余白
+    } else if (alignment === 'right') {
+      x = canvasWidth - textWidth - 10; // 右端から少し余白
+    }
     
     return {
-      x: position.x - estimatedWidth / 2,
-      y: position.y - estimatedHeight / 2,
-      width: estimatedWidth,
-      height: estimatedHeight
+      x: x,
+      y: absoluteY - textHeight / 2,
+      width: textWidth,
+      height: textHeight
     };
   }
 

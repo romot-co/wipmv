@@ -4,14 +4,14 @@
 .timeline-container {
   width: 100%;
   height: 130px;
-  background-color: #F1F5F9;
-  border-top: 1px solid #E2E8F0;
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
   overflow-x: auto;
   overflow-y: hidden;
   position: relative;
   user-select: none;
   border-radius: 0 0 8px 8px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 /* プレースホルダ */
@@ -21,8 +21,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #64748B;
-  background-color: #F8FAFC;
+  color: var(--text-secondary);
+  background-color: var(--bg-primary);
   border-radius: 6px;
 }
 
@@ -33,13 +33,13 @@
   top: 0;
   width: 60px;
   height: 100%;
-  border-right: 1px solid #CBD5E1;
-  background-color: #E2E8F0;
+  border-right: 1px solid var(--border-color);
+  background-color: var(--bg-tertiary);
   z-index: 5;
   display: flex;
   flex-direction: column;
   padding: 0px;
-  box-shadow: 1px 0 3px rgba(0, 0, 0, 0.05);
+  box-shadow: 1px 0 3px rgba(0, 0, 0, 0.1);
 }
 
 .timeline-labels-header {
@@ -47,11 +47,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-bottom: 1px solid #CBD5E1;
+  border-bottom: 1px solid var(--border-color);
   font-weight: bold;
   font-size: 10px;
-  color: #475569;
-  background-color: #CBD5E1;
+  color: var(--text-primary);
+  background-color: var(--bg-hover);
 }
 
 .timeline-track-label {
@@ -98,8 +98,8 @@
   left: 0;
   right: 0;
   height: 25px;
-  background-color: #CBD5E1;
-  border-bottom: 1px solid #94A3B8;
+  background-color: var(--bg-hover);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   z-index: 4;
@@ -115,7 +115,7 @@
   font-weight: bold;
   display: flex;
   align-items: center;
-  color: #334155;
+  color: var(--text-primary);
   width: 20px;
 }
 

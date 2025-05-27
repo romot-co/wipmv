@@ -195,6 +195,7 @@ async function analyzeAudio(audioData: AudioData, config: AnalysisConfig = DEFAU
 
 // メッセージハンドラ
 self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
+  // console.log('Worker: 受信メッセージ:', e); // 受信したイベント全体をログ出力
   try {
     if (e.data.type === 'cancel') {
       console.log('Worker: キャンセル要求を受信');
