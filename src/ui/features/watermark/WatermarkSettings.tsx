@@ -226,4 +226,4 @@ export const WatermarkSettings = memo<WatermarkSettingsProps>(({
   );
 });
 
-WatermarkSettings.displayName = 'WatermarkSettings'; 
+WatermarkSettings.displayName = 'WatermarkSettings';

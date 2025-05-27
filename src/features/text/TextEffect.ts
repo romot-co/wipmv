@@ -1,6 +1,7 @@
 import { EffectBase } from '../../core/types/core';
 import { TextEffectConfig } from '../../core/types/effect';
 import { AnimationController } from '../../core/animation/AnimationController';
+<<<<<<< HEAD
 import { AudioSource } from '../../core/types/base';
 
 // BoundingBox型の定義
@@ -10,6 +11,16 @@ interface BoundingBox {
   width: number;
   height: number;
 }
+=======
+import { Color, AudioSource, BoundingBox } from '../../core/types/base';
+import { convertPosition } from '../../utils/coordinates';
+import { RenderContext } from '../../core/types/render';
+interface CanvasTextRenderingContext2D extends CanvasRenderingContext2D {
+  fontKerning?: string;
+  textRendering?: string;
+}
+import { BoundingBox } from '../../core/types/base';
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
 /**
  * テキストエフェクト
@@ -70,10 +81,10 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
     
     // テキストレンダリングの最適化（高品質設定）
     if ('fontKerning' in ctx) {
-      (ctx as any).fontKerning = 'normal';
+      (ctx as CanvasTextRenderingContext2D).fontKerning = 'normal';
     }
     if ('textRendering' in ctx) {
-      (ctx as any).textRendering = 'optimizeLegibility';
+      (ctx as CanvasTextRenderingContext2D).textRendering = 'optimizeLegibility';
     }
     
     // フォント設定の最適化（より正確なピクセル合わせ）
@@ -202,4 +213,4 @@ export class TextEffect extends EffectBase<TextEffectConfig> {
   dispose(): void {
     this.animationController = null;
   }
-} 
+}

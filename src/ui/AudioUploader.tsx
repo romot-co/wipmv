@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Button, Flex, Box, Text } from '@radix-ui/themes';
 import { UploadIcon, FileIcon, Cross2Icon } from '@radix-ui/react-icons';
 import styled from 'styled-components';
+import { isAudioFormatSupported } from '../utils/audio';
 
 export interface AudioUploaderProps {
   onFileSelect: (file: File) => Promise<void>;
@@ -77,6 +78,12 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({ onFileSelect, onEr
   const handleFileChange = async (file: File) => {
     if (!file || disabled) return;
 
+    // Check supported audio format
+    if (!isAudioFormatSupported(file.type)) {
+      onError(new Error('対応していないファイル形式です。音声ファイルをアップロードしてください。'));
+      return;
+    }
+
     try {
       setIsLoading(true);
       setSelectedFile(file);
@@ -114,7 +121,7 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({ onFileSelect, onEr
     if (disabled) return;
     
     const file = event.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('audio/')) {
+    if (file && isAudioFormatSupported(file.type)) {
       handleFileChange(file);
     } else {
       onError(new Error('対応していないファイル形式です。音声ファイルをアップロードしてください。'));
@@ -206,4 +213,4 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({ onFileSelect, onEr
       )}
     </Flex>
   );
-}; 
+};

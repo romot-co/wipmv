@@ -9,7 +9,13 @@ import { BackgroundSettings } from './features/background/BackgroundSettings';
 import { WatermarkSettings } from './features/watermark/WatermarkSettings';
 import { WaveformSettings } from './features/waveform/WaveformSettings';
 import { TextSettings } from './features/text/TextSettings';
+<<<<<<< HEAD
 import styled from 'styled-components';
+=======
+import debug from 'debug';
+
+const log = debug('app:EffectSettings');
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 import './EffectSettings.css';
 
 type EffectConfig = BackgroundEffectConfig | TextEffectConfig | WaveformEffectConfig | WatermarkEffectConfig;
@@ -164,7 +170,7 @@ export const EffectSettings = memo<EffectSettingsProps>(({
   useEffect(() => {
     try {
       const newConfig = effect.getConfig();
-      console.log('エフェクト設定更新:', { effectId: effect.getId(), newConfig });
+      log('エフェクト設定更新:', { effectId: effect.getId(), newConfig });
       setConfig(newConfig);
     } catch (error) {
       onError?.(new AppError(
@@ -369,4 +375,4 @@ export const EffectSettings = memo<EffectSettingsProps>(({
   );
 });
 
-EffectSettings.displayName = 'EffectSettings'; 
+EffectSettings.displayName = 'EffectSettings';

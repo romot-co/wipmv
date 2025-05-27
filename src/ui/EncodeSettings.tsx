@@ -442,4 +442,4 @@ export const EncodeSettings: React.FC<EncodeSettingsProps> = ({
       </Flex>
     </SettingsContainer>
   );
-}; 
+};

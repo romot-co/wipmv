@@ -2,6 +2,9 @@ import { EffectManager } from './EffectManager';
 import { Renderer } from './Renderer';
 import { EffectBase, EffectConfig } from './types';
 import { AppError, ErrorType } from './types/error';
+import debug from 'debug';
+
+const log = debug('app:DrawingManager');
 
 /**
  * 描画処理を統括するクラス
@@ -58,7 +61,11 @@ export class DrawingManager {
         return true;
       });
       
+<<<<<<< HEAD
       // console.log('DrawingManager.renderAll: Drawing', uniqueEffects.length, 'unique effects at time', currentTime);
+=======
+      log('DrawingManager.renderAll: Drawing', uniqueEffects.length, 'unique effects at time', currentTime);
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
       
       const context = ctx ?? this.renderer!.getOffscreenContext();
       if (!ctx && this.renderer) {
@@ -68,15 +75,30 @@ export class DrawingManager {
       // 表示状態のエフェクトのみ描画
       for (const effect of uniqueEffects) {
         if (effect.isVisible()) { 
+<<<<<<< HEAD
           // console.log(`Drawing effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
+=======
+          log(`Drawing effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
           try {
             effect.render(context);
           } catch (error) {
-            console.error('Effect render error:', { effectId: effect.getId(), error });
-            // TODO: エラーハンドリングを改善
+            const appError =
+              error instanceof AppError
+                ? error
+                : new AppError(
+                    ErrorType.RENDERER_ERROR,
+                    'Effect render failed',
+                    error
+                  );
+            console.error('Effect render error:', {
+              effectId: effect.getId(),
+              error: appError,
+            });
+            // 個々のエフェクトの描画失敗は致命的ではないため継続する
           }
         } else {
-          console.log(`Skipping invisible effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
+          log(`Skipping invisible effect: ${effect.getId()}, type: ${effect.getConfig().type}`);
         }
       }
 
@@ -106,8 +128,16 @@ export class DrawingManager {
       }
 
     } catch (error) {
-      console.error('DrawingManager renderAll error:', error);
-      // TODO: エラーハンドリング
+      const appError =
+        error instanceof AppError
+          ? error
+          : new AppError(
+              ErrorType.RENDERER_ERROR,
+              'Failed to render all effects',
+              error
+            );
+      console.error('DrawingManager renderAll error:', appError);
+      // 上位へは投げずにログのみ行う
     }
   }
 
@@ -141,4 +171,4 @@ export class DrawingManager {
     // EffectManager の参照は解除するが、EffectManager 自体の dispose はここでは行わない
     // this.effectManager = null;
   }
-} 
+}

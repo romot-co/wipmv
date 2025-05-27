@@ -2,6 +2,9 @@ import { EffectBase } from '../../core/types/core';
 import { WatermarkEffectConfig } from '../../core/types/effect';
 import { AnimationController } from '../../core/animation/AnimationController';
 import { convertRect } from '../../utils/coordinates';
+import debug from 'debug';
+
+const log = debug('app:WatermarkEffect');
 
 /**
  * ウォーターマークエフェクト
@@ -14,7 +17,7 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
   private animationController: AnimationController | null = null;
 
   constructor(config: WatermarkEffectConfig) {
-    console.log('WatermarkEffect: Initializing with config:', config);
+    log('WatermarkEffect: Initializing with config:', config);
     super({
       ...config,
       position: config.position ?? { x: 0, y: 0 },
@@ -32,12 +35,12 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
 
     // 画像URLが指定されている場合は読み込みを開始
     if (config.imageUrl) {
-      console.log('WatermarkEffect: Image URL provided, loading image:', config.imageUrl);
+      log('WatermarkEffect: Image URL provided, loading image:', config.imageUrl);
       this.setImage(config.imageUrl).catch(error => {
         console.error('Failed to load watermark image:', error);
       });
     } else {
-      console.log('WatermarkEffect: No image URL provided in config');
+      log('WatermarkEffect: No image URL provided in config');
     }
   }
 
@@ -45,19 +48,19 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
    * 画像を設定
    */
   async setImage(url: string): Promise<void> {
-    console.log('WatermarkEffect.setImage called with URL:', url);
+    log('WatermarkEffect.setImage called with URL:', url);
     if (!url) {
-      console.log('WatermarkEffect: Empty URL provided, setting image to null');
+      log('WatermarkEffect: Empty URL provided, setting image to null');
       this.image = null;
       return;
     }
 
     try {
       const img = new Image();
-      console.log('WatermarkEffect: Creating image element for:', url);
+      log('WatermarkEffect: Creating image element for:', url);
       img.src = url;
       await img.decode();
-      console.log('WatermarkEffect: Image loaded successfully:', url);
+      log('WatermarkEffect: Image loaded successfully:', url);
       this.image = img;
     } catch (error) {
       console.error('Failed to load watermark image:', error);
@@ -87,15 +90,23 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
    */
   render(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void {
     if (!this.image) {
-      console.log('WatermarkEffect.render: No image available, skipping render');
+      log('WatermarkEffect.render: No image available, skipping render');
       return;
     }
 
+<<<<<<< HEAD
     // console.log('WatermarkEffect.render: Rendering watermark effect', { 
     //   id: this.getId(),
     //   visible: this.isVisible(),
     //   config: this.config
     // });
+=======
+    log('WatermarkEffect.render: Rendering watermark effect', { 
+      id: this.getId(),
+      visible: this.isVisible(),
+      config: this.config
+    });
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
     const { width, height } = ctx.canvas;
     const {
@@ -144,12 +155,21 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       const x = position.x + (size.width - finalWidth) / 2;
       const y = position.y + (size.height - finalHeight) / 2;
 
+<<<<<<< HEAD
       // console.log('WatermarkEffect: Maintaining aspect ratio', {
       //   originalSize: { width: this.image.width, height: this.image.height },
       //   aspectRatio: origAspectRatio,
       //   requestedSize: { width: size.width, height: size.height },
       //   finalSize: { width: finalWidth, height: finalHeight }
       // });
+=======
+      log('WatermarkEffect: Maintaining aspect ratio', {
+        originalSize: { width: this.image.width, height: this.image.height },
+        aspectRatio: origAspectRatio,
+        requestedSize: { width: size.width, height: size.height },
+        finalSize: { width: finalWidth, height: finalHeight }
+      });
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
       if (effectiveRotation !== 0) {
         // 回転の中心を設定
@@ -161,9 +181,15 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       }
 
       ctx.drawImage(this.image, x, y, finalWidth, finalHeight);
+<<<<<<< HEAD
       // console.log('WatermarkEffect.render: Image drawn at', {
       //   x, y, width: finalWidth, height: finalHeight
       // });
+=======
+      log('WatermarkEffect.render: Image drawn at', {
+        x, y, width: finalWidth, height: finalHeight
+      });
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
     }
 
     ctx.restore();
@@ -199,4 +225,4 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       height: absoluteRectData.size.height
     };
   }
-} 
+}

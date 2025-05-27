@@ -6,7 +6,13 @@ import { ExportButtonProps } from '../core/types/core';
 import { VideoEncoderService, ProgressCallback } from '../core/VideoEncoderService';
 import { AppError, ErrorType } from '../core/types/error';
 import { useApp } from '../contexts/AppContext';
+<<<<<<< HEAD
 import type { VideoSettings } from '../core/types/base';
+=======
+import debug from 'debug';
+
+const log = debug('app:ExportButton');
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
 /**
  * ExportButton コンポーネント
@@ -59,7 +65,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         const progress = totalFrames > 0 ? (processedFrames / totalFrames) * 100 : 0;
         setExportProgress(progress);
         onProgress?.(progress);
-        console.log(`Export Progress: ${progress.toFixed(1)}% (${processedFrames}/${totalFrames})`);
+        log(`Export Progress: ${progress.toFixed(1)}% (${processedFrames}/${totalFrames})`);
       };
 
       // webcodecs-encoderに対応した設定を構築
@@ -83,17 +89,17 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       const encoder = encoderRef.current;
 
       const totalFrames = Math.ceil(buffer.duration * videoSettings.frameRate);
-      console.log(`Starting export for ${totalFrames} frames.`);
+      log(`Starting export for ${totalFrames} frames.`);
 
       await encoder.initialize(handleProgress, totalFrames);
-      console.log("Encoder initialized successfully.");
+      log("Encoder initialized successfully.");
 
       const canvas = drawingManager.createExportCanvas({
         width: videoSettings.width,
         height: videoSettings.height
       });
 
-      console.log("Starting frame encoding loop...");
+      log("Starting frame encoding loop...");
       for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
         const currentTime = (frameIndex / videoSettings.frameRate);
 
@@ -102,14 +108,18 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
 
         await encoder.encodeVideoFrame(canvas, frameIndex);
       }
+<<<<<<< HEAD
       console.log("Frame encoding loop finished.");
 
       console.log("Encoding audio buffer...");
       await encoder.encodeAudioBuffer(buffer, 0);
       console.log("Audio buffer encoding finished. Finalizing...");
+=======
+      log("Frame encoding loop finished. Finalizing...");
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
       const mp4Binary = await encoder.finalize();
-      console.log("Export finalized, MP4 size:", mp4Binary.byteLength);
+      log("Export finalized, MP4 size:", mp4Binary.byteLength);
 
       const fileExtension = videoSettings.container === 'webm' ? 'webm' : 'mp4';
       const mimeType = videoSettings.container === 'webm' ? 'video/webm' : 'video/mp4';
@@ -124,14 +134,18 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
+<<<<<<< HEAD
       console.log(`${fileExtension.toUpperCase()} download initiated.`);
+=======
+      log("MP4 download initiated.");
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
       onExportComplete?.();
 
     } catch (error) {
       console.error('エクスポート処理中にエラー発生:', error);
       if (error instanceof AppError) {
         if (error.type === ErrorType.EXPORT_CANCELLED) {
-          console.log("Export was cancelled by user request.");
+          log("Export was cancelled by user request.");
           onExportError?.(error);
         } else {
           onError(error);
@@ -143,7 +157,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         onExportError?.(genericError);
       }
     } finally {
-      console.log("Cleaning up export resources...");
+      log("Cleaning up export resources...");
       encoderRef.current?.dispose();
       encoderRef.current = null;
       setIsExporting(false);
@@ -164,7 +178,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
 
   const handleCancel = useCallback(() => {
     if (encoderRef.current) {
-      console.log("User requested export cancellation...");
+      log("User requested export cancellation...");
       encoderRef.current.cancel();
     } else {
        console.warn("Cannot cancel export: encoder instance not found.");

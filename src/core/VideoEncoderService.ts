@@ -3,6 +3,20 @@
 import { WebCodecsEncoder, type EncoderConfig as WCEncoderConfig } from 'webcodecs-encoder';
 import { AppError, ErrorType, ErrorMessages } from './types/error';
 import { Disposable } from './types/base';
+<<<<<<< HEAD
+=======
+// Import types from the worker
+import {
+    WorkerInitializeMessage,
+    WorkerOutgoingMessage,
+    WorkerEncodeVideoMessage,
+    WorkerEncodeAudioMessage,
+    WorkerFinalizeMessage
+} from './workers/encodeWorker';
+import debug from 'debug';
+
+const log = debug('app:VideoEncoderService');
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
 /**
  * VideoEncoderServiceの設定
@@ -42,7 +56,19 @@ export class VideoEncoderService implements Disposable {
   private config: EncoderConfig;
   private isCancelled: boolean = false;
   private isDisposed: boolean = false;
+<<<<<<< HEAD
   private isInitialized: boolean = false;
+=======
+  private isInitialized: boolean = false; // Worker initialization status
+  private totalFrames: number = 0; // Should be set before starting encode
+
+  // Promise for finalize result
+  private finalizePromise: Promise<Uint8Array> | null = null;
+  private resolveFinalize: ((value: Uint8Array | PromiseLike<Uint8Array>) => void) | null = null;
+  private rejectFinalize: ((reason?: AppError) => void) | null = null;
+
+  // Progress callback
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
   private onProgress: ProgressCallback | null = null;
   private totalFrames: number = 0;
   private processedFrames: number = 0;
@@ -74,7 +100,11 @@ export class VideoEncoderService implements Disposable {
    */
   public cancel(): void {
     if (this.isDisposed || this.isCancelled) return;
+<<<<<<< HEAD
     console.warn('VideoEncoderService: Cancelling...');
+=======
+    log('VideoEncoderService: Cancelling...');
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
     this.isCancelled = true;
     
     if (this.encoder) {
@@ -149,6 +179,7 @@ export class VideoEncoderService implements Disposable {
         }
       };
 
+<<<<<<< HEAD
       console.warn('VideoEncoderService: Initializing with config:', {
         resolution: `${encoderConfig.width}x${encoderConfig.height}`,
         frameRate: encoderConfig.frameRate,
@@ -156,10 +187,17 @@ export class VideoEncoderService implements Disposable {
         audioBitrate: `${Math.round(encoderConfig.audioBitrate / 1000)}kbps`,
         codec: encoderConfig.codec
       });
+=======
+        // --- Worker Message Handler ---
+        this.worker.onmessage = (event: MessageEvent<WorkerOutgoingMessage>) => {
+          const message = event.data;
+          // log('[Main] Received message from worker:', message.type); // Verbose log
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
       // エンコーダーを作成
       this.encoder = new WebCodecsEncoder(encoderConfig);
 
+<<<<<<< HEAD
       // 初期化オプション（webcodecs-encoder制限対応）
       const initOptions = {
         onProgress: (processed: number, total?: number) => {
@@ -168,6 +206,55 @@ export class VideoEncoderService implements Disposable {
           this.processedFrames = processed;
           if (this.onProgress) {
             this.onProgress(processed, total ?? this.totalFrames);
+=======
+          switch (message.type) {
+            case 'progress':
+              if (this.onProgress) {
+                const total = message.totalFrames > 0 ? message.totalFrames : this.totalFrames;
+                if (this.totalFrames === 0 && message.totalFrames > 0) {
+                  this.totalFrames = message.totalFrames;
+                }
+                this.onProgress(message.processedFrames, total);
+              }
+              break;
+            case 'result':
+              if (this.resolveFinalize) {
+                this.resolveFinalize(message.data);
+                // Reset finalize promise state after resolving
+                this.finalizePromise = null;
+                this.resolveFinalize = null;
+                this.rejectFinalize = null;
+              } else {
+                 console.warn("[Main] Received finalize result but no promise is pending.");
+              }
+              this.dispose(); // Clean up worker after successful completion
+              break;
+            case 'error':
+              console.error('[Main] Worker reported error:', message.message);
+              const error = new AppError(
+                ErrorType.EXPORT_ENCODE_FAILED, // Use a specific error type
+                `Worker Error: ${message.message}`
+              );
+              if (this.rejectFinalize) {
+                this.rejectFinalize(error);
+                // Reset finalize promise state after rejecting
+                this.finalizePromise = null;
+                this.resolveFinalize = null;
+                this.rejectFinalize = null;
+              } else {
+                 // If error occurs before finalize was called (e.g., during init)
+                 console.error("Worker error occurred, but no finalize promise was active.");
+                 reject(error); // Reject the initialize promise itself
+              }
+               this.dispose(); // Clean up worker on error
+              break;
+            // Handle potential 'initialized' confirmation message from worker if needed
+            // case 'initialized':
+            //   this.isInitialized = true;
+            //   log('VideoEncoderService: Worker confirmed initialization.');
+            //   resolve(); // Resolve the initialize promise here
+            //   break;
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
           }
         },
         onError: (error: any) => {
@@ -186,6 +273,7 @@ export class VideoEncoderService implements Disposable {
       this.isInitialized = true;
       console.warn('VideoEncoderService: Successfully initialized with webcodecs-encoder v0.1.0');
 
+<<<<<<< HEAD
     } catch (error: unknown) {
       console.warn('Failed to initialize VideoEncoderService:', error);
       this.dispose();
@@ -194,6 +282,25 @@ export class VideoEncoderService implements Disposable {
       if (error instanceof Error) {
         if (error.message.includes('WebCodecs')) {
           throw new AppError(
+=======
+        // Send initialization message to worker
+        const initMessage: WorkerInitializeMessage = {
+          type: 'initialize',
+          config: this.config
+        };
+        this.worker.postMessage(initMessage);
+
+        // Assume initialization is successful immediately after posting message.
+        // For robust handling, wait for an 'initialized' confirmation from worker.
+        this.isInitialized = true;
+        log('VideoEncoderService: Worker initialization message sent.');
+        resolve(); // Resolve the initialize promise now
+
+      } catch (error: unknown) {
+        console.error('Failed to initialize VideoEncoderService Worker:', error);
+        this.dispose(); // Ensure cleanup on initialization failure
+        const appError = new AppError(
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
             ErrorType.EXPORT_INIT_FAILED,
             `WebCodecs APIが利用できません。\n\n対処法:\n• Chrome/Edge (バージョン94以降) を使用\n• ブラウザでWebCodecs機能が有効か確認\n• HTTPSまたはlocalhostで実行`,
             error
@@ -266,6 +373,7 @@ export class VideoEncoderService implements Disposable {
     }
 
     try {
+<<<<<<< HEAD
       console.warn('VideoEncoderService: Encoding audio buffer');
       const totalLength = audioBuffer.length;
       const duration = audioBuffer.duration;
@@ -280,6 +388,19 @@ export class VideoEncoderService implements Disposable {
           ErrorType.EXPORT_ENCODE_FAILED,
           `音声ファイルが長すぎます（${Math.round(duration)}秒）。webcodecs-encoderの制限により、${maxDuration}秒以下の音声ファイルを使用してください。`
         );
+=======
+      // Calculate sample position and count for this frame
+      // Ensure samplesPerFrame is calculated correctly in constructor
+      const startSample = frameIndex * this.samplesPerFrame;
+      const sampleCount = Math.min(
+        this.samplesPerFrame,
+        audioBuffer.length - startSample
+      );
+
+      if (sampleCount <= 0) {
+        // log(`No audio samples for frame ${frameIndex}`);
+        return; // No samples for this frame index
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
       }
       
       if (totalLength > maxSampleLength) {
@@ -476,6 +597,30 @@ export class VideoEncoderService implements Disposable {
       console.warn('[DEBUG] Finalize finally block. Calling dispose.');
       this.dispose();
     }
+<<<<<<< HEAD
+=======
+
+    // Create a new promise to await the result from the worker
+    this.finalizePromise = new Promise<Uint8Array>((resolve, reject) => {
+        // Store resolve/reject handlers for the message listener
+        this.resolveFinalize = resolve;
+        this.rejectFinalize = reject;
+
+        // Send finalize message to worker
+        log('VideoEncoderService: Sending finalize message to worker.');
+        const message: WorkerFinalizeMessage = { type: 'finalize' };
+        try {
+          this.worker!.postMessage(message);
+        } catch (error) {
+            // Handle potential errors during postMessage itself (e.g., worker terminated)
+            console.error("Error sending finalize message to worker:", error);
+            reject(new AppError(ErrorType.EXPORT_FINALIZE_FAILED, "ワーカーへの finalize メッセージ送信に失敗しました", error));
+            this.dispose(); // Clean up if sending fails
+        }
+    });
+
+    return this.finalizePromise;
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
   }
 
   /**
@@ -483,6 +628,7 @@ export class VideoEncoderService implements Disposable {
    */
   public dispose(): void {
     if (this.isDisposed) return;
+<<<<<<< HEAD
     
     console.warn('VideoEncoderService: Disposing...');
     this.isDisposed = true;
@@ -490,6 +636,13 @@ export class VideoEncoderService implements Disposable {
     if (this.encoder) {
       this.encoder.cancel(); // webcodecs-encoderのcancelメソッドを呼び出し
       this.encoder = null;
+=======
+    log('VideoEncoderService: Disposing...');
+    this.isDisposed = true; // Mark as disposed first
+    if (this.worker) {
+      this.worker.terminate(); // Terminate the worker
+      this.worker = null;
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
     }
     
     this.onProgress = null;

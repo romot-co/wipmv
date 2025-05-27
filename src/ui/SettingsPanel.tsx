@@ -7,6 +7,9 @@ import { AppError, ErrorType } from '../core/types/error';
 import { EffectBase } from '../core/types/core';
 import { EffectConfig } from '../core/types/effect';
 import './SettingsPanel.css';
+import debug from 'debug';
+
+const log = debug('app:SettingsPanel');
 
 export const SettingsPanel: React.FC = () => {
   const {
@@ -24,7 +27,7 @@ export const SettingsPanel: React.FC = () => {
   const handleUpdateEffect = (config: Partial<EffectConfig>) => {
     if (selectedEffectId) {
       try {
-        console.log('Updating effect from panel:', selectedEffectId, config);
+        log('Updating effect from panel:', selectedEffectId, config);
         updateEffect(selectedEffectId, config);
       } catch (error) {
         const appError = error instanceof AppError ? error : new AppError(ErrorType.EFFECT_CONFIG_INVALID, 'エフェクト設定の更新に失敗しました', error as Error);
@@ -59,4 +62,4 @@ export const SettingsPanel: React.FC = () => {
       </Box>
     </Box>
   );
-}; 
+};

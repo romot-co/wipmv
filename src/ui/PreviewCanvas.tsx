@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, memo, useMemo, useCallback, useState } from 'react';
 import debug from 'debug';
-import { EffectManager } from '../core/types/core';
+import { EffectManager, EffectBase, EffectConfig } from '../core/types/core';
 import { AppError, ErrorType } from '../core/types/error';
 import { withAppError } from '../core/types/app';
 import { Renderer } from '../core/Renderer';
@@ -52,25 +52,25 @@ const lastLogTimes = {
 
 // ログ出力のユーティリティオブジェクト
 const logger = {
-  error: (message: string, data?: any) => {
+  error: (message: string, data?: unknown) => {
     if (CURRENT_LOG_LEVEL >= LOG_LEVEL.ERROR) {
       console.error(`[PreviewCanvas:ERROR] ${message}`, data);
     }
   },
   
-  warn: (message: string, data?: any) => {
+  warn: (message: string, data?: unknown) => {
     if (CURRENT_LOG_LEVEL >= LOG_LEVEL.WARN) {
       console.warn(`[PreviewCanvas:WARN] ${message}`, data);
     }
   },
   
-  info: (message: string, data?: any) => {
+  info: (message: string, data?: unknown) => {
     if (CURRENT_LOG_LEVEL >= LOG_LEVEL.INFO) {
       console.info(`[PreviewCanvas:INFO] ${message}`, data);
     }
   },
   
-  debug: (message: string, data?: any) => {
+  debug: (message: string, data?: unknown) => {
     if (CURRENT_LOG_LEVEL >= LOG_LEVEL.DEBUG && DEBUG_ENABLED) {
       const now = Date.now();
       // 500ms以内に同じカテゴリのログは出力しない（頻発するログの間引き）
@@ -81,7 +81,7 @@ const logger = {
     }
   },
   
-  verbose: (message: string, data?: any, throttleInterval = 500) => {
+  verbose: (message: string, data?: unknown, throttleInterval = 500) => {
     if (CURRENT_LOG_LEVEL >= LOG_LEVEL.VERBOSE && DEBUG_ENABLED) {
       const now = Date.now();
       // throttleIntervalミリ秒以内に同じカテゴリのログは出力しない
@@ -94,9 +94,9 @@ const logger = {
 };
 
 // 従来のdebugLog関数（後方互換性用）
-function debugLog(...args: any[]): void {
+function debugLog(message: string, ...args: unknown[]): void {
   if (DEBUG_ENABLED) {
-    logger.debug(args[0], args.slice(1));
+    logger.debug(message, args);
   }
 }
 
@@ -110,7 +110,7 @@ interface PreviewCanvasProps {
 }
 
 // テキストエフェクト型ガード
-function isTextEffect(config: any): config is TextEffectConfig {
+function isTextEffect(config: EffectConfig): config is TextEffectConfig {
   return config && config.type === 'text';
 }
 
@@ -336,6 +336,21 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = memo(({
     };
   }, []);
 
+<<<<<<< HEAD
+=======
+  // エフェクトのヒットテスト（マウス位置とエフェクトの衝突判定）
+  const hitTestEffects = useCallback((position: Position, effectsList: EffectBase<EffectConfig>[]): EffectBase<EffectConfig> | null => {
+    // 後ろから前の順に検査（表示順の逆順）
+    for (let i = effectsList.length - 1; i >= 0; i--) {
+      const effect = effectsList[i];
+      if (effect.isVisible() && effect.hitTest && effect.hitTest(position)) {
+        return effect;
+      }
+    }
+    return null;
+  }, []);
+
+>>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
   // マウスクリックイベントハンドラ
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;

@@ -10,10 +10,13 @@ export type {
   Position,
   Size,
   Rectangle,
+  BoundingBox,
   Color,
   Disposable,
   BlendMode
 } from './base';
+
+export type { RenderContext } from './render';
 
 // アニメーション関連
 export type {
@@ -58,6 +61,8 @@ export type {
   Renderer
 } from './core';
 
+export type { RenderContext } from './render';
+
 // 状態管理関連
 export type { AppPhase } from './state';
 export type {
@@ -78,4 +83,4 @@ export type {
   AudioSourceControl,
   PlaybackState
 } from './audio';
-export { withAudioError } from './audio'; 
+export { withAudioError } from './audio';
