@@ -497,34 +497,6 @@ function App() {
           });
           lastLogTime = now;
         }
-<<<<<<< HEAD
-=======
-        
-        if (drawingManager && drawingManager.getRenderer()) {
-          const now = performance.now();
-          
-          // 状態が大きく変化した時のみログを出力
-          if ((Math.abs(lastStateRef.current.currentTime - currentPlaybackTime) > 1.0 || 
-               lastStateRef.current.isPlaying !== audioState.isPlaying) &&
-              now - lastLogTime > LOG_INTERVAL) {
-            if (shouldLog('animation-frame')) {
-              log('アニメーションフレーム詳細:', {
-                currentTime: currentPlaybackTime,
-                phase: phase.type,
-                isPlaying: audioState.isPlaying,
-                hasRenderer: true,
-                effectCount: managerInstance.getEffects().length,
-                isLoopRunning: isLoopRunningRef.current
-              });
-            }
-            
-            lastStateRef.current = {
-              currentTime: currentPlaybackTime,
-              isPlaying: audioState.isPlaying
-            };
-            lastLogTime = now;
-          }
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
         
         if (drawingManager && drawingManager.getRenderer() && needsRedraw) {
@@ -549,7 +521,6 @@ function App() {
     };
 
     if (isInteractive && drawingManager && drawingManager.getRenderer() && !isLoopRunningRef.current) {
-<<<<<<< HEAD
       console.log('アニメーションループ開始:', {
         phase: phase.type,
         currentTime: audioState.currentTime,
@@ -559,16 +530,6 @@ function App() {
         hasDrawingManager: !!drawingManager,
         rendererExists: !!drawingManager?.getRenderer()
       });
-=======
-      if (shouldLog('animation-loop')) {
-        log('アニメーションループ開始:', {
-          phase: phase.type,
-          currentTime: audioState.currentTime,
-          hasManager: !!managerInstance,
-          hasRenderer: true
-        });
-      }
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
       isLoopRunningRef.current = true;
       rafId = requestAnimationFrame(animate);
     } else {
@@ -584,7 +545,7 @@ function App() {
     return () => {
       if (isLoopRunningRef.current) {
         if (shouldLog('animation-loop')) {
-          log('アニメーションループ停止');
+          console.log('アニメーションループ停止');
         }
         isLoopRunningRef.current = false;
         cancelAnimationFrame(rafId);
@@ -597,7 +558,7 @@ function App() {
   useEffect(() => {
     const now = performance.now();
     if (now - lastAudioStateLogRef.current > 1000) {
-      log('audioState更新:', {
+      console.log('audioState更新:', {
         currentTime: audioState.currentTime,
         isPlaying: audioState.isPlaying,
         phase: phase.type
@@ -666,7 +627,7 @@ function App() {
   // エフェクト追加
   const handleAddEffectClick = useCallback(async (type: EffectType) => {
     try {
-      log('Adding effect:', type);
+      console.log('Adding effect:', type);
       const newEffect = createEffectByType(type);
       if (hasSetAudioSource(newEffect) && audioState.source) {
         newEffect.setAudioSource(audioState.source); // Set audio source immediately
@@ -806,73 +767,13 @@ function App() {
             <Logo>WIP Motion Video</Logo>
           </HeaderLeft>
           <HeaderCenter>
-<<<<<<< HEAD
             {/* Header Center - Empty for cleaner look */}
-=======
-            {/* Header Center Actions - Show only when interactive */} 
-            {isInteractive && (
-              <Flex gap="3" align="center">
-                {/* 独自のドロップダウンメニューに置き換え */}
-                <DropdownContainer>
-                  <Tooltip content="エフェクトを追加">
-                    <IconButton 
-                      variant="ghost" 
-                      onClick={() => {
-                        log('Toggle dropdown');
-                        setIsDropdownOpen(!isDropdownOpen);
-                      }}
-                    >
-                      <PlusIcon width="18" height="18" />
-                    </IconButton>
-                  </Tooltip>
-                  <DropdownContent isOpen={isDropdownOpen}>
-                    <DropdownItem 
-                      onClick={() => {
-                        log('Background effect clicked');
-                        handleAddEffectClick('background');
-                        setIsDropdownOpen(false);
-                      }}
-                    >
-                      背景
-                    </DropdownItem>
-                    <DropdownItem 
-                      onClick={() => {
-                        log('Text effect clicked');
-                        handleAddEffectClick('text'); 
-                        setIsDropdownOpen(false);
-                      }}
-                    >
-                      テキスト
-                    </DropdownItem>
-                    <DropdownItem 
-                      onClick={() => {
-                        log('Waveform effect clicked');
-                        handleAddEffectClick('waveform');
-                        setIsDropdownOpen(false);
-                      }}
-                    >
-                      波形
-                    </DropdownItem>
-                    <DropdownItem 
-                      onClick={() => {
-                        log('Watermark effect clicked');
-                        handleAddEffectClick('watermark');
-                        setIsDropdownOpen(false);
-                      }}
-                    >
-                      透かし
-                    </DropdownItem>
-                  </DropdownContent>
-                </DropdownContainer>
-              </Flex>
-            )}
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
           </HeaderCenter>
           <HeaderRight>
             {/* Export Button */} 
             <ExportButton 
               onError={(error) => transitionTo({ type: 'error', error })} 
-              onProgress={(progress) => log('Export progress:', progress)}
+              onProgress={(progress) => console.log('Export progress:', progress)}
               videoSettings={currentVideoSettings}
               onSettingsChange={handleVideoSettingsUpdate}
               audioSource={audioState.source}

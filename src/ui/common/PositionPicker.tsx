@@ -1,11 +1,11 @@
 import React from 'react';
 import { Flex, Text } from '@radix-ui/themes';
-import { Position2D } from '../../core/types';
+import { Position } from '../../core/types';
 
 interface PositionPickerProps {
   label: string;
-  value: Position2D;
-  onChange: (position: Position2D) => void;
+  value: Position;
+  onChange: (position: Position) => void;
 }
 
 export const PositionPicker: React.FC<PositionPickerProps> = ({

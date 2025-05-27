@@ -26,7 +26,6 @@ import {
   WatermarkEffectConfig
 } from '../core/types/effect';
 import { PlaybackState } from '../core/types/audio';
-import { VideoEncoderService } from '../core/VideoEncoderService';
 import debug from 'debug';
 
 const log = debug('app:AppContext');
@@ -45,7 +44,7 @@ const PHASE_TRANSITIONS: Record<AppPhase['type'], AppPhase['type'][]> = {
 // 状態遷移のバリデーション
 function validatePhaseTransition(current: AppPhase['type'], next: AppPhase['type']): boolean {
   const isValid = PHASE_TRANSITIONS[current]?.includes(next) ?? false;
-  log(`フェーズ遷移: ${current} -> ${next} (${isValid ? '有効' : '無効'})`);
+  console.log(`フェーズ遷移: ${current} -> ${next} (${isValid ? '有効' : '無効'})`);
   return isValid;
 }
 
@@ -239,7 +238,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const managerInstance = useMemo(() => new EffectManager(), []);
   const drawingManager = useMemo(() => new DrawingManager(managerInstance), [managerInstance]);
   const analyzerService = useMemo(() => AudioAnalyzerService.getInstance(), []);
-  const encoderRef = useRef<VideoEncoderService | null>(null);
 
   const handleErrorCallback = useCallback((error: AppError) => {
     log('Handling error:', error);
@@ -249,7 +247,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [dispatch]);
 
-<<<<<<< HEAD
   // アプリ起動時の自動復元
   useEffect(() => {
     const autoRestoreProject = async () => {
@@ -308,9 +305,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [managerInstance, dispatch]);
 
   const addEffect = useCallback(async (effect: EffectBase<any>) => {
-=======
-  const addEffect = useCallback(async (effect: EffectBase<EffectConfig>) => {
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
     try {
       await managerInstance.addEffect(effect);
       // Get the updated list from the manager to ensure consistency
@@ -390,9 +384,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       try {
-        log("Starting audio analysis with AudioSource...");
+        console.log("Starting audio analysis with AudioSource...");
         const analysisResult = await analyzerService.analyze(source);
-        log("Audio analysis complete:"); 
+        console.log("Audio analysis complete:"); 
         // Combine source and analysis result
         // Updated AudioSource definition now accepts both Float32Array[][] and Uint8Array[]
         const sourceWithAnalysis = {
@@ -403,7 +397,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Dispatch the original analysis result to state
         dispatch({ type: 'SET_AUDIO', payload: { analysis: analysisResult } });
 
-        log("Adding default effects...");
+        console.log("Adding default effects...");
         const backgroundEffect = new BackgroundEffect(createDefaultBackgroundEffect());
         const waveformEffect = new WaveformEffect(createDefaultWaveformEffect());
         const watermarkEffect = new WatermarkEffect(createDefaultWatermarkEffect());
@@ -417,7 +411,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await addEffect(backgroundEffect);
         await addEffect(waveformEffect);
         await addEffect(watermarkEffect);
-        log("Default effects added.");
+        console.log("Default effects added.");
 
         transitionTo({ type: 'ready' });
       } catch (analysisError) {
@@ -479,7 +473,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   
   const updateEffect = useCallback((id: string, config: Partial<EffectConfig>) => {
     try {
-      log('Updating effect:', id, config);
+      console.log('Updating effect:', id, config);
       // EffectManagerを使用してエフェクトを更新
       const effect = managerInstance.getEffect(id);
       if (!effect) {
@@ -547,44 +541,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [managerInstance, dispatch, handleErrorCallback]);
 
   const createProject = useCallback(async (name: string, settings: VideoSettings) => {
-    try {
-      const projectService = ProjectService.getInstance();
-      const project = await projectService.createProject(name, settings);
-
-      // Reset manager and clear existing effects
-      managerInstance.dispose();
-
-      dispatch({
-        type: 'SET_PROJECT',
-        payload: {
-          currentProject: project,
-          isLoading: false,
-          lastSaved: project.updatedAt
-        }
-      });
-
-      // Clear effects and audio state for the new project
-      dispatch({ type: 'SET_EFFECTS', payload: { effects: [], selectedEffect: null } });
-      dispatch({
-        type: 'SET_AUDIO',
-        payload: {
-          source: null,
-          currentTime: 0,
-          duration: 0,
-          isPlaying: false,
-          volume: 1,
-          loop: false,
-          analysis: undefined
-        }
-      });
-
-      dispatch({ type: 'SET_UI', payload: { selectedEffectId: null, isSettingsPanelOpen: false } });
-      transitionTo({ type: 'idle' });
-    } catch (error) {
-      console.error('Failed to create project:', error);
-      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.ProjectCreateFailed, 'プロジェクトの作成に失敗しました', error as Error));
-    }
-  }, [dispatch, managerInstance, transitionTo, handleErrorCallback]);
+    console.log('[TODO] createProject called', name, settings);
+    // Implement project creation logic
+  }, []);
 
   const saveProject = useCallback(async () => {
     log('Attempting to save project...');
@@ -637,9 +596,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // エフェクトの復元
       managerInstance.dispose();
-      loadedProjectData.effects.forEach((config: EffectConfig) => {
+      loadedProjectData.effects.forEach((config: any) => {
         try {
-          let effectInstance: EffectBase<EffectConfig>;
+          let effectInstance: EffectBase<any>;
           if (config.type === 'background') {
               effectInstance = new BackgroundEffect(config as BackgroundEffectConfig);
           } else if (config.type === 'text') {
@@ -681,73 +640,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [dispatch, managerInstance, handleErrorCallback]);
 
   const startExport = useCallback(async (settings: VideoSettings) => {
-    if (!state.audioState.source?.buffer) {
-      handleErrorCallback(new AppError(ErrorType.INVALID_STATE, 'Valid audio source is required for export.'));
-      return;
-    }
-
-    try {
-      transitionTo({ type: 'exporting', settings });
-
-      const buffer = state.audioState.source.buffer;
-      encoderRef.current = new VideoEncoderService({
-        width: settings.width,
-        height: settings.height,
-        frameRate: settings.frameRate,
-        videoBitrate: settings.videoBitrate,
-        audioBitrate: settings.audioBitrate,
-        sampleRate: buffer.sampleRate,
-        channels: buffer.numberOfChannels
-      });
-
-      const totalFrames = Math.ceil(buffer.duration * settings.frameRate);
-      const encoder = encoderRef.current;
-      await encoder.initialize(undefined, totalFrames);
-
-      const canvas = drawingManager.createExportCanvas({
-        width: settings.width,
-        height: settings.height
-      });
-
-      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-        const currentTime = frameIndex / settings.frameRate;
-        managerInstance.updateAll(currentTime);
-        drawingManager.renderExportFrame(canvas, currentTime);
-        await encoder.encodeVideoFrame(canvas, frameIndex);
-        await encoder.encodeAudioBuffer(buffer, frameIndex);
-      }
-
-      const mp4Binary = await encoder.finalize();
-      const blob = new Blob([mp4Binary], { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${state.projectState.currentProject?.name || 'output'}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      transitionTo({ type: 'ready' });
-    } catch (error) {
-      console.error('Export failed:', error);
-      handleErrorCallback(error instanceof AppError ? error : new AppError(ErrorType.EXPORT_ENCODE_FAILED, 'エクスポートに失敗しました', error as Error));
-      transitionTo({ type: 'ready' });
-    } finally {
-      encoderRef.current?.dispose();
-      encoderRef.current = null;
-    }
-  }, [state.audioState.source, drawingManager, managerInstance, transitionTo, handleErrorCallback]);
+    console.log('[TODO] startExport called', settings);
+    // Implement export logic
+  }, []);
 
   const cancelExport = useCallback(() => {
-    if (encoderRef.current) {
-      encoderRef.current.cancel();
-      encoderRef.current.dispose();
-      encoderRef.current = null;
-    }
-    transitionTo({ type: 'ready' });
-  }, [transitionTo]);
-  
+    console.log('[TODO] cancelExport called');
+    // Implement export cancellation logic
+  }, []);
+
   const contextValue = useMemo<AppContextType>(() => ({
     ...state,
     dispatch,
@@ -806,4 +707,4 @@ export const useApp = (): AppContextType => {
   }
   // Remove the cast to ModifiedAppState
   return context;
-};
+}; 

@@ -65,16 +65,6 @@ export interface Size {
 export interface Rectangle extends Position, Size {}
 
 /**
- * 四角形の領域を表します
- */
-export interface BoundingBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/**
  * 色情報
  */
 export interface Color {
@@ -106,4 +96,4 @@ export type BlendMode =
   | 'hard-light'
   | 'soft-light'
   | 'difference'
-  | 'exclusion';
+  | 'exclusion'; 

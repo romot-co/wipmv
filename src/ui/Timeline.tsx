@@ -277,4 +277,4 @@ export const Timeline: React.FC<TimelineProps> = ({
       </div>
     </div>
   );
-};
+}; 

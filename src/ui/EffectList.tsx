@@ -274,10 +274,4 @@ export const EffectList: React.FC<EffectListProps> = ({
       </div>
     </ListContainer>
   );
-<<<<<<< HEAD
 }; 
-=======
-});
-
-EffectList.displayName = 'EffectList';
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f

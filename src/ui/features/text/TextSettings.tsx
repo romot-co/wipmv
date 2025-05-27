@@ -270,8 +270,5 @@ export const TextSettings = memo<TextSettingsProps>(({
     </div>
   );
 });
-<<<<<<< HEAD
 
 TextSettings.displayName = 'TextSettings'; 
-=======
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f

@@ -96,4 +96,4 @@ export function createDefaultWatermarkEffect(audioSource?: AudioSource): Waterma
     zIndex: 40,
     coordinateSystem: 'absolute'
   };
-}
+} 

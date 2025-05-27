@@ -3,20 +3,6 @@
 import { WebCodecsEncoder, type EncoderConfig as WCEncoderConfig } from 'webcodecs-encoder';
 import { AppError, ErrorType, ErrorMessages } from './types/error';
 import { Disposable } from './types/base';
-<<<<<<< HEAD
-=======
-// Import types from the worker
-import {
-    WorkerInitializeMessage,
-    WorkerOutgoingMessage,
-    WorkerEncodeVideoMessage,
-    WorkerEncodeAudioMessage,
-    WorkerFinalizeMessage
-} from './workers/encodeWorker';
-import debug from 'debug';
-
-const log = debug('app:VideoEncoderService');
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
 /**
  * VideoEncoderServiceの設定
@@ -56,19 +42,7 @@ export class VideoEncoderService implements Disposable {
   private config: EncoderConfig;
   private isCancelled: boolean = false;
   private isDisposed: boolean = false;
-<<<<<<< HEAD
   private isInitialized: boolean = false;
-=======
-  private isInitialized: boolean = false; // Worker initialization status
-  private totalFrames: number = 0; // Should be set before starting encode
-
-  // Promise for finalize result
-  private finalizePromise: Promise<Uint8Array> | null = null;
-  private resolveFinalize: ((value: Uint8Array | PromiseLike<Uint8Array>) => void) | null = null;
-  private rejectFinalize: ((reason?: AppError) => void) | null = null;
-
-  // Progress callback
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
   private onProgress: ProgressCallback | null = null;
   private totalFrames: number = 0;
   private processedFrames: number = 0;
@@ -100,11 +74,7 @@ export class VideoEncoderService implements Disposable {
    */
   public cancel(): void {
     if (this.isDisposed || this.isCancelled) return;
-<<<<<<< HEAD
     console.warn('VideoEncoderService: Cancelling...');
-=======
-    log('VideoEncoderService: Cancelling...');
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
     this.isCancelled = true;
     
     if (this.encoder) {
@@ -155,18 +125,18 @@ export class VideoEncoderService implements Disposable {
     this.processedFrames = 0;
 
     try {
-      // webcodecs-encoder 0.1.0に最適化された設定
+      // webcodecs-encoder設定を準備
       const encoderConfig: WCEncoderConfig = {
         width: this.config.width,
         height: this.config.height,
         frameRate: this.config.frameRate,
-        videoBitrate: Math.min(this.config.videoBitrate, 20000000), // 20Mbps制限
-        audioBitrate: Math.min(this.config.audioBitrate, 320000),   // 320kbps制限
+        videoBitrate: this.config.videoBitrate,
+        audioBitrate: this.config.audioBitrate,
         sampleRate: this.config.sampleRate,
-        channels: Math.min(this.config.channels, 2), // ステレオ制限
+        channels: this.config.channels,
         codec: {
-          video: this.config.codec?.video || 'avc', // H.264推奨
-          audio: this.config.codec?.audio || 'aac'  // AAC推奨
+          video: this.config.codec?.video || 'avc',
+          audio: this.config.codec?.audio || 'aac'
         },
         latencyMode: this.config.latencyMode || 'quality',
         hardwareAcceleration: this.config.hardwareAcceleration || 'no-preference',
@@ -179,26 +149,10 @@ export class VideoEncoderService implements Disposable {
         }
       };
 
-<<<<<<< HEAD
-      console.warn('VideoEncoderService: Initializing with config:', {
-        resolution: `${encoderConfig.width}x${encoderConfig.height}`,
-        frameRate: encoderConfig.frameRate,
-        videoBitrate: `${Math.round(encoderConfig.videoBitrate / 1000000)}Mbps`,
-        audioBitrate: `${Math.round(encoderConfig.audioBitrate / 1000)}kbps`,
-        codec: encoderConfig.codec
-      });
-=======
-        // --- Worker Message Handler ---
-        this.worker.onmessage = (event: MessageEvent<WorkerOutgoingMessage>) => {
-          const message = event.data;
-          // log('[Main] Received message from worker:', message.type); // Verbose log
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
-
       // エンコーダーを作成
       this.encoder = new WebCodecsEncoder(encoderConfig);
 
-<<<<<<< HEAD
-      // 初期化オプション（webcodecs-encoder制限対応）
+      // 初期化オプション（プログレス処理を簡素化）
       const initOptions = {
         onProgress: (processed: number, total?: number) => {
           if (this.isCancelled) return; // キャンセル時は処理しない
@@ -206,55 +160,6 @@ export class VideoEncoderService implements Disposable {
           this.processedFrames = processed;
           if (this.onProgress) {
             this.onProgress(processed, total ?? this.totalFrames);
-=======
-          switch (message.type) {
-            case 'progress':
-              if (this.onProgress) {
-                const total = message.totalFrames > 0 ? message.totalFrames : this.totalFrames;
-                if (this.totalFrames === 0 && message.totalFrames > 0) {
-                  this.totalFrames = message.totalFrames;
-                }
-                this.onProgress(message.processedFrames, total);
-              }
-              break;
-            case 'result':
-              if (this.resolveFinalize) {
-                this.resolveFinalize(message.data);
-                // Reset finalize promise state after resolving
-                this.finalizePromise = null;
-                this.resolveFinalize = null;
-                this.rejectFinalize = null;
-              } else {
-                 console.warn("[Main] Received finalize result but no promise is pending.");
-              }
-              this.dispose(); // Clean up worker after successful completion
-              break;
-            case 'error':
-              console.error('[Main] Worker reported error:', message.message);
-              const error = new AppError(
-                ErrorType.EXPORT_ENCODE_FAILED, // Use a specific error type
-                `Worker Error: ${message.message}`
-              );
-              if (this.rejectFinalize) {
-                this.rejectFinalize(error);
-                // Reset finalize promise state after rejecting
-                this.finalizePromise = null;
-                this.resolveFinalize = null;
-                this.rejectFinalize = null;
-              } else {
-                 // If error occurs before finalize was called (e.g., during init)
-                 console.error("Worker error occurred, but no finalize promise was active.");
-                 reject(error); // Reject the initialize promise itself
-              }
-               this.dispose(); // Clean up worker on error
-              break;
-            // Handle potential 'initialized' confirmation message from worker if needed
-            // case 'initialized':
-            //   this.isInitialized = true;
-            //   log('VideoEncoderService: Worker confirmed initialization.');
-            //   resolve(); // Resolve the initialize promise here
-            //   break;
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
           }
         },
         onError: (error: any) => {
@@ -263,7 +168,7 @@ export class VideoEncoderService implements Disposable {
           console.warn('WebCodecsEncoder error:', error);
           throw new AppError(
             ErrorType.EXPORT_ENCODE_FAILED,
-            `webcodecs-encoderエラー: ${error.message || error}\n\n一般的な解決策:\n• 音声ファイルを短くする\n• 解像度やビットレートを下げる\n• H.264 + AAC設定を使用`
+            `エンコードエラー: ${error.message || error}`
           );
         },
         totalFrames: this.totalFrames
@@ -271,53 +176,14 @@ export class VideoEncoderService implements Disposable {
 
       await this.encoder.initialize(initOptions);
       this.isInitialized = true;
-      console.warn('VideoEncoderService: Successfully initialized with webcodecs-encoder v0.1.0');
+      console.warn('VideoEncoderService: Initialized with webcodecs-encoder');
 
-<<<<<<< HEAD
     } catch (error: unknown) {
       console.warn('Failed to initialize VideoEncoderService:', error);
       this.dispose();
-      
-      // webcodecs-encoder固有のエラーメッセージ
-      if (error instanceof Error) {
-        if (error.message.includes('WebCodecs')) {
-          throw new AppError(
-=======
-        // Send initialization message to worker
-        const initMessage: WorkerInitializeMessage = {
-          type: 'initialize',
-          config: this.config
-        };
-        this.worker.postMessage(initMessage);
-
-        // Assume initialization is successful immediately after posting message.
-        // For robust handling, wait for an 'initialized' confirmation from worker.
-        this.isInitialized = true;
-        log('VideoEncoderService: Worker initialization message sent.');
-        resolve(); // Resolve the initialize promise now
-
-      } catch (error: unknown) {
-        console.error('Failed to initialize VideoEncoderService Worker:', error);
-        this.dispose(); // Ensure cleanup on initialization failure
-        const appError = new AppError(
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
-            ErrorType.EXPORT_INIT_FAILED,
-            `WebCodecs APIが利用できません。\n\n対処法:\n• Chrome/Edge (バージョン94以降) を使用\n• ブラウザでWebCodecs機能が有効か確認\n• HTTPSまたはlocalhostで実行`,
-            error
-          );
-        }
-        if (error.message.includes('codec') || error.message.includes('format')) {
-          throw new AppError(
-            ErrorType.EXPORT_INIT_FAILED,
-            `コーデック設定エラー。\n\n推奨設定:\n• 映像: H.264 (AVC)\n• 音声: AAC\n• コンテナ: MP4`,
-            error
-          );
-        }
-      }
-      
       throw new AppError(
         ErrorType.EXPORT_INIT_FAILED,
-        `エンコーダーの初期化に失敗しました。\n\nエラー: ${error instanceof Error ? error.message : String(error)}\n\n対処法:\n• ブラウザを再起動\n• 設定を初期値に戻す`,
+        ErrorMessages[ErrorType.EXPORT_INIT_FAILED],
         error
       );
     }
@@ -356,7 +222,7 @@ export class VideoEncoderService implements Disposable {
   }
 
   /**
-   * 音声バッファをエンコード（webcodecs-encoder制限対応版）
+   * 音声バッファをエンコード（分割処理対応・改善版）
    */
   public async encodeAudioBuffer(
     audioBuffer: AudioBuffer,
@@ -373,48 +239,14 @@ export class VideoEncoderService implements Disposable {
     }
 
     try {
-<<<<<<< HEAD
       console.warn('VideoEncoderService: Encoding audio buffer');
       const totalLength = audioBuffer.length;
-      const duration = audioBuffer.duration;
-      
-      // webcodecs-encoder 0.1.0の制限を考慮した保守的な設定
-      const maxSampleLength = 48000; // 1秒分（48kHz想定）- より保守的
-      const maxDuration = 300; // 5分の制限
-      
-      // 長すぎる音声の事前チェック
-      if (duration > maxDuration) {
-        throw new AppError(
-          ErrorType.EXPORT_ENCODE_FAILED,
-          `音声ファイルが長すぎます（${Math.round(duration)}秒）。webcodecs-encoderの制限により、${maxDuration}秒以下の音声ファイルを使用してください。`
-        );
-=======
-      // Calculate sample position and count for this frame
-      // Ensure samplesPerFrame is calculated correctly in constructor
-      const startSample = frameIndex * this.samplesPerFrame;
-      const sampleCount = Math.min(
-        this.samplesPerFrame,
-        audioBuffer.length - startSample
-      );
-
-      if (sampleCount <= 0) {
-        // log(`No audio samples for frame ${frameIndex}`);
-        return; // No samples for this frame index
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
-      }
+      const maxSampleLength = 96000; // 2秒分（48kHz想定）
       
       if (totalLength > maxSampleLength) {
         // 大きなバッファを分割処理
         const chunkCount = Math.ceil(totalLength / maxSampleLength);
-        console.warn(`Splitting large audio buffer into ${chunkCount} chunks (webcodecs-encoder limitation)`);
-        
-        // チャンク数の制限チェック
-        if (chunkCount > 300) { // 約5分相当
-          throw new AppError(
-            ErrorType.EXPORT_ENCODE_FAILED,
-            `音声ファイルのチャンク数が多すぎます（${chunkCount}チャンク）。webcodecs-encoderの制限により、より短い音声ファイルを使用してください。`
-          );
-        }
+        console.warn(`Splitting large audio buffer into ${chunkCount} chunks`);
         
         for (let i = 0; i < chunkCount; i++) {
           this.checkCancellation();
@@ -434,28 +266,38 @@ export class VideoEncoderService implements Disposable {
           } catch (chunkError) {
             console.warn(`Error processing audio chunk ${i + 1}:`, chunkError);
             
-            // webcodecs-encoderのエラー状態を検出
+            // エンコーダーがエラー状態になった場合の特別な処理
             if (chunkError instanceof Error && 
                 (chunkError.message.includes('state \'error\'') || 
                  chunkError.message.includes('Cannot add audio buffer in state'))) {
               throw new AppError(
                 ErrorType.EXPORT_ENCODE_FAILED,
-                `オーディオエンコーダーがエラー状態になりました（チャンク${i + 1}/${chunkCount}）。\n\n考えられる原因：\n• 音声ファイルが大きすぎる\n• 音声データが破損している\n• ブラウザのWebCodecs制限\n\n対処法：\n• より短い音声ファイルを使用\n• 別のブラウザを試す\n• 音声品質設定を下げる`,
+                'オーディオエンコーダーがエラー状態になりました。音声データが大きすぎるか、コーデック設定に問題がある可能性があります。音声ファイルを短くするか、異なるコーデック設定を試してください。',
                 chunkError
               );
             }
             
-            // その他のエラーは直接リスロー（小さなチャンクでのリトライはしない）
-            throw new AppError(
-              ErrorType.EXPORT_ENCODE_FAILED,
-              `音声チャンク${i + 1}の処理に失敗しました。音声ファイルを短くするか、別の音声ファイルを試してください。`,
-              chunkError
-            );
+            // チャンクエラーの場合、さらに小さく分割を試行
+            if (chunkLength > 24000) { // 0.5秒未満まで分割
+              console.warn(`Retrying with smaller chunks for chunk ${i + 1}...`);
+              try {
+                await this.processSmallAudioChunks(audioBuffer, offset, chunkLength);
+              } catch (smallChunkError) {
+                // 小さなチャンクでも失敗した場合は諦める
+                throw new AppError(
+                  ErrorType.EXPORT_ENCODE_FAILED,
+                  'オーディオデータの処理に失敗しました。音声ファイルが破損しているか、設定に問題がある可能性があります。',
+                  smallChunkError
+                );
+              }
+            } else {
+              throw chunkError; // もう分割できない場合はエラーとして扱う
+            }
           }
           
-          // チャンク間で待機（webcodecs-encoderの負荷軽減）
+          // チャンク間で少し待機（メモリ解放とフリーズ防止）
           if (i < chunkCount - 1) {
-            await new Promise(resolve => setTimeout(resolve, 10)); // 少し長めの待機
+            await new Promise(resolve => setTimeout(resolve, 5));
           }
         }
       } else {
@@ -478,28 +320,82 @@ export class VideoEncoderService implements Disposable {
            error.message.includes('Cannot add audio buffer in state'))) {
         throw new AppError(
           ErrorType.EXPORT_ENCODE_FAILED,
-          'webcodecs-encoderが不正な状態になりました。\n\n一般的な解決策：\n• ページを再読み込み\n• より短い音声ファイルを使用\n• 異なるコーデック設定を試す（H.264 + AAC推奨）',
+          'オーディオエンコーダーが不正な状態になりました。別のコーデック設定を試すか、音声ファイルのサイズを小さくしてください。',
           error
         );
       }
       
-      // メモリ不足の場合
+      // メモリ不足の場合は専用エラーメッセージ
       if (error instanceof Error && 
           (error.message.includes('allocation failed') || 
            error.message.includes('out of memory') ||
            error.message.includes('memory'))) {
         throw new AppError(
           ErrorType.EXPORT_ENCODE_FAILED,
-          '音声データのメモリ不足です。\n\n対処法：\n• より短い音声ファイルを使用\n• 音質設定を下げる（ビットレート、サンプルレート）\n• 他のタブやアプリケーションを閉じる',
+          '音声データのメモリ割り当てに失敗しました。より短い音声ファイルを使用するか、音質設定を下げてください。',
           error
         );
       }
       
       throw new AppError(
         ErrorType.EXPORT_ENCODE_FAILED,
-        `音声エンコード処理に失敗しました。\n\nエラー: ${error instanceof Error ? error.message : String(error)}\n\n対処法：\n• 音声ファイルのサイズや長さを確認\n• 異なるファイル形式を試す\n• ブラウザを再起動`,
+        ErrorMessages[ErrorType.EXPORT_ENCODE_FAILED] || 'Failed to encode audio buffer',
         error
       );
+    }
+  }
+
+  /**
+   * より小さなオーディオチャンクを処理（フォールバック処理）
+   */
+  private async processSmallAudioChunks(
+    originalBuffer: AudioBuffer,
+    startOffset: number,
+    totalLength: number
+  ): Promise<void> {
+    // エンコーダーの状態をチェック
+    if (!this.encoder) {
+      throw new Error('Encoder is not available');
+    }
+
+    const smallChunkSize = 24000; // 0.5秒分（48kHz想定）
+    const chunkCount = Math.ceil(totalLength / smallChunkSize);
+    
+    console.warn(`Processing ${chunkCount} smaller audio chunks (${smallChunkSize} samples each)`);
+    
+    for (let i = 0; i < chunkCount; i++) {
+      this.checkCancellation();
+      
+      // 各チャンク処理前にエンコーダーの状態を確認
+      if (!this.encoder) {
+        throw new Error('Encoder became unavailable during processing');
+      }
+      
+      try {
+        const offset = startOffset + (i * smallChunkSize);
+        const chunkLength = Math.min(smallChunkSize, totalLength - (i * smallChunkSize));
+        
+        const chunkBuffer = this.createAudioBufferChunk(originalBuffer, offset, chunkLength);
+        await this.encoder.addAudioBuffer(chunkBuffer);
+        
+        console.warn(`Processed small audio chunk ${i + 1}/${chunkCount}`);
+        
+        // 小さなチャンク間でも少し待機
+        if (i < chunkCount - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2));
+        }
+      } catch (chunkError) {
+        console.warn(`Error in small chunk ${i + 1}:`, chunkError);
+        
+        // エンコーダーがエラー状態になった場合、処理を中断
+        if (chunkError instanceof Error && 
+            chunkError.message.includes('state \'error\'')) {
+          throw new Error('Encoder entered error state during audio processing. Audio data may be corrupted or too large.');
+        }
+        
+        // その他のエラーもリスローして上位で処理
+        throw chunkError;
+      }
     }
   }
 
@@ -597,30 +493,6 @@ export class VideoEncoderService implements Disposable {
       console.warn('[DEBUG] Finalize finally block. Calling dispose.');
       this.dispose();
     }
-<<<<<<< HEAD
-=======
-
-    // Create a new promise to await the result from the worker
-    this.finalizePromise = new Promise<Uint8Array>((resolve, reject) => {
-        // Store resolve/reject handlers for the message listener
-        this.resolveFinalize = resolve;
-        this.rejectFinalize = reject;
-
-        // Send finalize message to worker
-        log('VideoEncoderService: Sending finalize message to worker.');
-        const message: WorkerFinalizeMessage = { type: 'finalize' };
-        try {
-          this.worker!.postMessage(message);
-        } catch (error) {
-            // Handle potential errors during postMessage itself (e.g., worker terminated)
-            console.error("Error sending finalize message to worker:", error);
-            reject(new AppError(ErrorType.EXPORT_FINALIZE_FAILED, "ワーカーへの finalize メッセージ送信に失敗しました", error));
-            this.dispose(); // Clean up if sending fails
-        }
-    });
-
-    return this.finalizePromise;
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
   }
 
   /**
@@ -628,7 +500,6 @@ export class VideoEncoderService implements Disposable {
    */
   public dispose(): void {
     if (this.isDisposed) return;
-<<<<<<< HEAD
     
     console.warn('VideoEncoderService: Disposing...');
     this.isDisposed = true;
@@ -636,13 +507,6 @@ export class VideoEncoderService implements Disposable {
     if (this.encoder) {
       this.encoder.cancel(); // webcodecs-encoderのcancelメソッドを呼び出し
       this.encoder = null;
-=======
-    log('VideoEncoderService: Disposing...');
-    this.isDisposed = true; // Mark as disposed first
-    if (this.worker) {
-      this.worker.terminate(); // Terminate the worker
-      this.worker = null;
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
     }
     
     this.onProgress = null;

@@ -94,19 +94,11 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       return;
     }
 
-<<<<<<< HEAD
     // console.log('WatermarkEffect.render: Rendering watermark effect', { 
     //   id: this.getId(),
     //   visible: this.isVisible(),
     //   config: this.config
     // });
-=======
-    log('WatermarkEffect.render: Rendering watermark effect', { 
-      id: this.getId(),
-      visible: this.isVisible(),
-      config: this.config
-    });
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
     const { width, height } = ctx.canvas;
     const {
@@ -155,21 +147,12 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       const x = position.x + (size.width - finalWidth) / 2;
       const y = position.y + (size.height - finalHeight) / 2;
 
-<<<<<<< HEAD
       // console.log('WatermarkEffect: Maintaining aspect ratio', {
       //   originalSize: { width: this.image.width, height: this.image.height },
       //   aspectRatio: origAspectRatio,
       //   requestedSize: { width: size.width, height: size.height },
       //   finalSize: { width: finalWidth, height: finalHeight }
       // });
-=======
-      log('WatermarkEffect: Maintaining aspect ratio', {
-        originalSize: { width: this.image.width, height: this.image.height },
-        aspectRatio: origAspectRatio,
-        requestedSize: { width: size.width, height: size.height },
-        finalSize: { width: finalWidth, height: finalHeight }
-      });
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
 
       if (effectiveRotation !== 0) {
         // 回転の中心を設定
@@ -181,15 +164,9 @@ export class WatermarkEffect extends EffectBase<WatermarkEffectConfig> {
       }
 
       ctx.drawImage(this.image, x, y, finalWidth, finalHeight);
-<<<<<<< HEAD
       // console.log('WatermarkEffect.render: Image drawn at', {
       //   x, y, width: finalWidth, height: finalHeight
       // });
-=======
-      log('WatermarkEffect.render: Image drawn at', {
-        x, y, width: finalWidth, height: finalHeight
-      });
->>>>>>> 4b34a4e5aa778551329353847f0a002c35789a9f
     }
 
     ctx.restore();
