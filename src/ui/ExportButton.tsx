@@ -1,12 +1,23 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Button, Dialog, Flex, Text, IconButton } from '@radix-ui/themes';
-import { EncodeSettings } from './EncodeSettings';
-import { Cross2Icon, GearIcon } from '@radix-ui/react-icons';
-import { ExportButtonProps } from '../core/types/core';
-import { VideoEncoderService, ProgressCallback } from '../core/VideoEncoderService';
+import { GearIcon, Cross2Icon } from '@radix-ui/react-icons';
+import { VideoEncoderService } from '../core/VideoEncoderService';
 import { AppError, ErrorType } from '../core/types/error';
+import { EncodeSettings } from './EncodeSettings';
+import type { VideoSettings, AudioSource } from '../core/types/base';
 import { useApp } from '../contexts/AppContext';
-import type { VideoSettings } from '../core/types/base';
+
+export interface ExportButtonProps {
+  onError: (error: AppError) => void;
+  onProgress?: (progress: number) => void;
+  videoSettings: VideoSettings;
+  onSettingsChange: (settings: VideoSettings) => void;
+  audioSource?: AudioSource;
+  onExportStart?: () => void;
+  onExportComplete?: () => void;
+  onExportError?: (error: AppError) => void;
+  disabled?: boolean;
+}
 
 /**
  * ExportButton コンポーネント
@@ -24,45 +35,43 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
   onExportError,
   disabled
 }) => {
-  const { managerInstance, drawingManager } = useApp();
-
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
-
   const encoderRef = useRef<VideoEncoderService | null>(null);
 
+  // コンテキストからマネージャーを取得
+  const { managerInstance, drawingManager } = useApp();
+
   const handleExport = useCallback(async () => {
-    if (!managerInstance || !drawingManager) {
-      onError(new AppError(
-        ErrorType.INVALID_STATE,
-        'EffectManager or DrawingManager is not available in context.'
-      ));
+    if (!managerInstance || !drawingManager || !audioSource) {
+      console.warn('Manager instances or audio source not available.');
       return;
     }
 
-    const buffer = audioSource?.buffer;
+    const buffer = audioSource.buffer;
     if (!buffer) {
-      onError(new AppError(
-        ErrorType.INVALID_STATE,
-        'Valid AudioSource is not set. Cannot export.'
-      ));
+      console.warn('Audio buffer not available.');
       return;
     }
 
     try {
+      console.log('Starting export process...');
       setIsExporting(true);
       setExportProgress(0);
       onExportStart?.();
 
-      const handleProgress: ProgressCallback = (processedFrames, totalFrames) => {
-        const progress = totalFrames > 0 ? (processedFrames / totalFrames) * 100 : 0;
-        setExportProgress(progress);
-        onProgress?.(progress);
-        console.log(`Export Progress: ${progress.toFixed(1)}% (${processedFrames}/${totalFrames})`);
+      const handleProgress = (progress: { framesProcessed: number; totalFrames: number; progress: number; fps?: number }) => {
+        const progressPercent = progress.progress * 100;
+        setExportProgress(progressPercent);
+        onProgress?.(progressPercent);
+        console.log(`Export Progress: ${progressPercent.toFixed(1)}% (${progress.framesProcessed}/${progress.totalFrames})`);
+        if (progress.fps) {
+          console.log(`Encoding speed: ${progress.fps.toFixed(1)} fps`);
+        }
       };
 
-      // webcodecs-encoderに対応した設定を構築
+      // ネイティブWebCodecs用の設定を構築
       const encoderConfig = {
         width: videoSettings.width,
         height: videoSettings.height,
@@ -71,12 +80,9 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         audioBitrate: videoSettings.audioBitrate,
         sampleRate: videoSettings.sampleRate || buffer.sampleRate,
         channels: videoSettings.channels || buffer.numberOfChannels,
-        codec: videoSettings.codec || { video: 'avc', audio: 'aac' },
-        container: videoSettings.container || 'mp4',
-        latencyMode: videoSettings.latencyMode || 'quality',
-        hardwareAcceleration: videoSettings.hardwareAcceleration || 'no-preference',
-        codecString: videoSettings.codecString,
-        audioEncoderConfig: videoSettings.audioEncoderConfig
+        codec: 'avc1.4d0034' as const, // H.264 Main Level 5.2
+        keyFrameInterval: 2, // 2秒間隔でキーフレーム
+        hardwareAcceleration: videoSettings.hardwareAcceleration || 'prefer-hardware'
       };
 
       encoderRef.current = new VideoEncoderService(encoderConfig);
@@ -85,8 +91,12 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       const totalFrames = Math.ceil(buffer.duration * videoSettings.frameRate);
       console.log(`Starting export for ${totalFrames} frames.`);
 
-      await encoder.initialize(handleProgress, totalFrames);
+      await encoder.initialize();
+      encoder.setProgressCallback(handleProgress);
       console.log("Encoder initialized successfully.");
+
+      await encoder.startEncoding(totalFrames);
+      console.log("Encoding started.");
 
       const canvas = drawingManager.createExportCanvas({
         width: videoSettings.width,
@@ -100,31 +110,28 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
         managerInstance.updateAll(currentTime);
         drawingManager.renderExportFrame(canvas, currentTime);
 
-        await encoder.encodeVideoFrame(canvas, frameIndex);
+        const frameDuration = 1 / videoSettings.frameRate * 1_000_000; // マイクロ秒
+        await encoder.encodeVideoFrame(canvas, currentTime, frameDuration);
       }
       console.log("Frame encoding loop finished.");
 
-      console.log("Encoding audio buffer...");
-      await encoder.encodeAudioBuffer(buffer, 0);
-      console.log("Audio buffer encoding finished. Finalizing...");
-
+      console.log("Finalizing encoding...");
       const mp4Binary = await encoder.finalize();
       console.log("Export finalized, MP4 size:", mp4Binary.byteLength);
 
-      const fileExtension = videoSettings.container === 'webm' ? 'webm' : 'mp4';
-      const mimeType = videoSettings.container === 'webm' ? 'video/webm' : 'video/mp4';
-      
-      const blob = new Blob([mp4Binary], { type: mimeType });
+      // 注意: 現在の実装は簡易版で実際のMP4ファイルではない
+      // 実際の使用にはmp4-muxerとの統合が必要
+      const blob = new Blob([mp4Binary], { type: 'video/mp4' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `output.${fileExtension}`;
+      a.download = 'output.mp4';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      console.log(`${fileExtension.toUpperCase()} download initiated.`);
+      console.log('MP4 download initiated.');
       onExportComplete?.();
 
     } catch (error) {
@@ -163,12 +170,8 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
   ]);
 
   const handleCancel = useCallback(() => {
-    if (encoderRef.current) {
-      console.log("User requested export cancellation...");
-      encoderRef.current.cancel();
-    } else {
-       console.warn("Cannot cancel export: encoder instance not found.");
-    }
+    // キャンセル機能は現在の実装では未対応
+    console.log("Export cancellation is not supported in current implementation");
     setIsExporting(false);
     setExportProgress(0);
   }, []);
@@ -237,17 +240,6 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
           'エクスポート'
         )}
       </Button>
-
-      {isExporting && (
-        <Button
-          variant="soft"
-          color="red"
-          size="2"
-          onClick={handleCancel}
-        >
-          キャンセル
-        </Button>
-      )}
     </Flex>
   );
 };

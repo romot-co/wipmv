@@ -771,13 +771,21 @@ function App() {
           </HeaderCenter>
           <HeaderRight>
             {/* Export Button */} 
-            <ExportButton 
-              onError={(error) => transitionTo({ type: 'error', error })} 
-              onProgress={(progress) => console.log('Export progress:', progress)}
+            <ExportButton
+              onError={(error) => {
+                console.error('Export error:', error);
+                transitionTo({ type: 'error', error });
+              }}
+              onProgress={(progress) => {
+                console.log('Export progress:', progress);
+              }}
               videoSettings={currentVideoSettings}
               onSettingsChange={handleVideoSettingsUpdate}
-              audioSource={audioState.source}
-              disabled={phase.type === 'exporting'}
+              audioSource={audioState.source || undefined}
+              onExportStart={() => console.log('Export started')}
+              onExportComplete={() => console.log('Export completed')}
+              onExportError={(error) => console.error('Export error:', error)}
+              disabled={phase.type !== 'ready'}
             />
           </HeaderRight>
         </Header>

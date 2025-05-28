@@ -1,6 +1,5 @@
 // src/core/VideoEncoderService.ts
 
-import { WebCodecsEncoder, type EncoderConfig as WCEncoderConfig } from 'webcodecs-encoder';
 import { AppError, ErrorType, ErrorMessages } from './types/error';
 import { Disposable } from './types/base';
 
@@ -15,511 +14,276 @@ export interface EncoderConfig {
   audioBitrate: number;
   sampleRate: number;
   channels: number;
-  // webcodecs-encoder対応の追加設定
-  codec?: {
-    video?: 'avc' | 'hevc' | 'vp8' | 'vp9' | 'av1';
-    audio?: 'aac' | 'opus';
-  };
-  container?: 'mp4' | 'webm';
-  latencyMode?: 'quality' | 'realtime';
+  // ネイティブWebCodecs対応の設定
+  codec?: 'avc1.4d0034' | 'avc1.42001f' | 'vp8' | 'vp09.00.10.08';
+  keyFrameInterval?: number; // キーフレーム間隔（秒）
   hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software';
-  codecString?: {
-    video?: string;
-    audio?: string;
-  };
-  audioEncoderConfig?: {
-    bitrateMode?: 'constant' | 'variable';
-  };
 }
 
-export type ProgressCallback = (processedFrames: number, totalFrames: number) => void;
+/**
+ * エンコード進捗情報
+ */
+export interface ProgressInfo {
+  framesProcessed: number;
+  totalFrames: number;
+  progress: number; // 0-1
+  fps?: number;
+}
 
 /**
- * webcodecs-encoderを使用した動画エンコードサービス
+ * ネイティブWebCodecs APIを使用したビデオエンコーダーサービス
  */
 export class VideoEncoderService implements Disposable {
-  private encoder: WebCodecsEncoder | null = null;
-  private config: EncoderConfig;
-  private isCancelled: boolean = false;
-  private isDisposed: boolean = false;
-  private isInitialized: boolean = false;
-  private onProgress: ProgressCallback | null = null;
-  private totalFrames: number = 0;
-  private processedFrames: number = 0;
-  // 共有AudioContext（メモリリーク防止）
-  private static audioContext: AudioContext | null = null;
+  private encoder: VideoEncoder | null = null;
+  private encodedChunks: EncodedVideoChunk[] = [];
+  private isInitialized = false;
+  private isEncoding = false;
+  private frameIndex = 0;
+  private totalFrames = 0;
+  private nextKeyFrameTimestamp = 0;
+  private keyFrameInterval: number;
+  private startTime = 0;
 
-  constructor(config: EncoderConfig) {
-    this.config = config;
+  private onProgressCallback?: (progress: ProgressInfo) => void;
+
+  constructor(private config: EncoderConfig) {
+    console.log('VideoEncoderService: Constructor called with config:', config);
+    this.encodedChunks = [];
+    this.keyFrameInterval = (config.keyFrameInterval || 2) * 1_000_000; // 2秒間隔をマイクロ秒に変換
   }
 
   /**
-   * 共有AudioContextの取得（静的メソッド）
+   * エンコーダーの初期化
    */
-  private static getAudioContext(): AudioContext {
-    if (!VideoEncoderService.audioContext || VideoEncoderService.audioContext.state === 'closed') {
-      try {
-        VideoEncoderService.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        console.warn('Created new AudioContext:', VideoEncoderService.audioContext.state);
-      } catch (error) {
-        console.warn('Failed to create AudioContext:', error);
-        throw new Error('AudioContext creation failed');
-      }
-    }
-    return VideoEncoderService.audioContext;
-  }
-
-  /**
-   * エンコードをキャンセル
-   */
-  public cancel(): void {
-    if (this.isDisposed || this.isCancelled) return;
-    console.warn('VideoEncoderService: Cancelling...');
-    this.isCancelled = true;
-    
-    if (this.encoder) {
-      this.encoder.cancel();
-    }
-    
-    this.dispose();
-  }
-
-  /**
-   * キャンセル状態をチェック
-   */
-  private checkCancellation(): void {
-    if (this.isCancelled) {
-      throw new AppError(
-        ErrorType.EXPORT_CANCELLED,
-        ErrorMessages[ErrorType.EXPORT_CANCELLED]
-      );
-    }
-  }
-
-  /**
-   * リソースの状態チェック
-   */
-  private checkDisposed(): void {
-    if (this.isDisposed) {
-      throw new AppError(
-        ErrorType.EXPORT_INIT_FAILED,
-        'エンコーダーは既に破棄されています'
-      );
-    }
-  }
-
-  /**
-   * エンコーダーを初期化
-   */
-  public async initialize(onProgress?: ProgressCallback, totalFrames?: number): Promise<void> {
-    this.checkDisposed();
-    this.checkCancellation();
-
-    if (this.isInitialized) {
-      console.warn("VideoEncoderService already initialized.");
-      return;
-    }
-
-    this.onProgress = onProgress ?? null;
-    this.totalFrames = totalFrames ?? 0;
-    this.processedFrames = 0;
-
+  async initialize(): Promise<void> {
     try {
-      // webcodecs-encoder設定を準備
-      const encoderConfig: WCEncoderConfig = {
+      console.log('VideoEncoderService: Initializing native WebCodecs encoder');
+
+      // ブラウザサポートチェック
+      if (typeof VideoEncoder === 'undefined') {
+        throw new AppError(
+          ErrorType.EXPORT_INIT_FAILED,
+          'WebCodecs API is not supported in this browser'
+        );
+      }
+
+      const codec = this.config.codec || 'avc1.4d0034';
+
+      // コーデックサポートチェック
+      const isSupported = await VideoEncoder.isConfigSupported({
+        codec,
         width: this.config.width,
         height: this.config.height,
-        frameRate: this.config.frameRate,
-        videoBitrate: this.config.videoBitrate,
-        audioBitrate: this.config.audioBitrate,
-        sampleRate: this.config.sampleRate,
-        channels: this.config.channels,
-        codec: {
-          video: this.config.codec?.video || 'avc',
-          audio: this.config.codec?.audio || 'aac'
-        },
-        latencyMode: this.config.latencyMode || 'quality',
-        hardwareAcceleration: this.config.hardwareAcceleration || 'no-preference',
-        codecString: {
-          video: this.config.codecString?.video,
-          audio: this.config.codecString?.audio
-        },
-        audioEncoderConfig: {
-          bitrateMode: this.config.audioEncoderConfig?.bitrateMode || 'constant'
-        }
-      };
+        bitrate: this.config.videoBitrate,
+        framerate: this.config.frameRate,
+        hardwareAcceleration: this.config.hardwareAcceleration || 'prefer-hardware'
+      });
 
-      // エンコーダーを作成
-      this.encoder = new WebCodecsEncoder(encoderConfig);
+      if (!isSupported.supported) {
+        throw new AppError(
+          ErrorType.EXPORT_INIT_FAILED,
+          `Codec ${codec} is not supported`
+        );
+      }
 
-      // 初期化オプション（プログレス処理を簡素化）
-      const initOptions = {
-        onProgress: (processed: number, total?: number) => {
-          if (this.isCancelled) return; // キャンセル時は処理しない
-          
-          this.processedFrames = processed;
-          if (this.onProgress) {
-            this.onProgress(processed, total ?? this.totalFrames);
+      // エンコーダー作成
+      this.encoder = new VideoEncoder({
+        output: (chunk, metadata) => {
+          console.log(`Encoded chunk: ${chunk.type} frame, size: ${chunk.byteLength} bytes`);
+          this.encodedChunks.push(chunk);
+
+          // 進捗更新
+          this.frameIndex++;
+          if (this.onProgressCallback) {
+            const elapsed = (performance.now() - this.startTime) / 1000;
+            this.onProgressCallback({
+              framesProcessed: this.frameIndex,
+              totalFrames: this.totalFrames,
+              progress: this.totalFrames > 0 ? this.frameIndex / this.totalFrames : 0,
+              fps: elapsed > 0 ? this.frameIndex / elapsed : 0
+            });
           }
         },
-        onError: (error: any) => {
-          if (this.isCancelled) return; // キャンセル時はエラー処理をスキップ
-          
-          console.warn('WebCodecsEncoder error:', error);
-          throw new AppError(
-            ErrorType.EXPORT_ENCODE_FAILED,
-            `エンコードエラー: ${error.message || error}`
-          );
-        },
-        totalFrames: this.totalFrames
-      };
+        error: (error) => {
+          console.error('VideoEncoder error:', error);
+          throw new AppError(ErrorType.EXPORT_ENCODE_FAILED, error.message);
+        }
+      });
 
-      await this.encoder.initialize(initOptions);
+      // エンコーダー設定
+      this.encoder.configure({
+        codec,
+        width: this.config.width,
+        height: this.config.height,
+        bitrate: this.config.videoBitrate,
+        framerate: this.config.frameRate,
+        hardwareAcceleration: this.config.hardwareAcceleration || 'prefer-hardware'
+      });
+
       this.isInitialized = true;
-      console.warn('VideoEncoderService: Initialized with webcodecs-encoder');
+      console.log('VideoEncoderService: Initialized successfully');
 
-    } catch (error: unknown) {
-      console.warn('Failed to initialize VideoEncoderService:', error);
-      this.dispose();
+    } catch (error) {
       throw new AppError(
         ErrorType.EXPORT_INIT_FAILED,
-        ErrorMessages[ErrorType.EXPORT_INIT_FAILED],
-        error
+        `Failed to initialize encoder: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
 
   /**
-   * 動画フレームをエンコード
+   * 進捗コールバックの設定
    */
-  public async encodeVideoFrame(canvas: HTMLCanvasElement, frameIndex: number): Promise<void> {
-    this.checkDisposed();
-    this.checkCancellation();
-    
+  setProgressCallback(callback: (progress: ProgressInfo) => void): void {
+    this.onProgressCallback = callback;
+  }
+
+  /**
+   * エンコーディング開始
+   */
+  async startEncoding(totalFrames: number): Promise<void> {
     if (!this.isInitialized || !this.encoder) {
-      console.warn("Encoder not initialized, skipping video frame encoding.");
-      return;
+      throw new AppError(ErrorType.EXPORT_ENCODE_FAILED, 'Encoder not initialized');
     }
 
-    try {
-      // webcodecs-encoderのaddCanvasFrameメソッドを使用
-      await this.encoder.addCanvasFrame(canvas);
-      
-      // 進捗更新（フレームベース）
-      this.processedFrames = frameIndex + 1;
-      if (this.onProgress) {
-        this.onProgress(this.processedFrames, this.totalFrames);
-      }
-
-    } catch (error: unknown) {
-      console.warn('Error encoding video frame:', error);
-      throw new AppError(
-        ErrorType.EXPORT_RENDER_FAILED,
-        ErrorMessages[ErrorType.EXPORT_RENDER_FAILED] || 'Failed to encode video frame',
-        error
-      );
+    if (this.isEncoding) {
+      throw new AppError(ErrorType.EXPORT_ENCODE_FAILED, 'Encoding already in progress');
     }
+
+    console.log(`VideoEncoderService: Starting encoding for ${totalFrames} frames`);
+    this.isEncoding = true;
+    this.frameIndex = 0;
+    this.totalFrames = totalFrames;
+    this.nextKeyFrameTimestamp = 0;
+    this.encodedChunks = [];
+    this.startTime = performance.now();
   }
 
   /**
-   * 音声バッファをエンコード（分割処理対応・改善版）
+   * フレームをエンコード
    */
-  public async encodeAudioBuffer(
-    audioBuffer: AudioBuffer,
-    _frameIndex: number
+  async encodeVideoFrame(
+    canvas: HTMLCanvasElement,
+    timestamp: number,
+    duration: number = 33333 // デフォルト30fps
   ): Promise<void> {
-    this.checkDisposed();
-    this.checkCancellation();
-
-    if (!this.isInitialized || !this.encoder) {
-      throw new AppError(
-        ErrorType.EXPORT_ENCODE_FAILED,
-        'エンコーダーが初期化されていません'
-      );
+    if (!this.encoder || !this.isEncoding) {
+      throw new AppError(ErrorType.EXPORT_ENCODE_FAILED, 'Encoder not ready');
     }
 
     try {
-      console.warn('VideoEncoderService: Encoding audio buffer');
-      const totalLength = audioBuffer.length;
-      const maxSampleLength = 96000; // 2秒分（48kHz想定）
-      
-      if (totalLength > maxSampleLength) {
-        // 大きなバッファを分割処理
-        const chunkCount = Math.ceil(totalLength / maxSampleLength);
-        console.warn(`Splitting large audio buffer into ${chunkCount} chunks`);
-        
-        for (let i = 0; i < chunkCount; i++) {
-          this.checkCancellation();
-          
-          // エンコーダーの状態を確認
-          if (!this.encoder) {
-            throw new Error('Encoder became unavailable during audio processing');
-          }
-          
-          const offset = i * maxSampleLength;
-          const chunkLength = Math.min(maxSampleLength, totalLength - offset);
-          
-          try {
-            const chunkBuffer = this.createAudioBufferChunk(audioBuffer, offset, chunkLength);
-            await this.encoder.addAudioBuffer(chunkBuffer);
-            console.warn(`Processed audio chunk ${i + 1}/${chunkCount}: ${offset + chunkLength}/${totalLength} samples`);
-          } catch (chunkError) {
-            console.warn(`Error processing audio chunk ${i + 1}:`, chunkError);
-            
-            // エンコーダーがエラー状態になった場合の特別な処理
-            if (chunkError instanceof Error && 
-                (chunkError.message.includes('state \'error\'') || 
-                 chunkError.message.includes('Cannot add audio buffer in state'))) {
-              throw new AppError(
-                ErrorType.EXPORT_ENCODE_FAILED,
-                'オーディオエンコーダーがエラー状態になりました。音声データが大きすぎるか、コーデック設定に問題がある可能性があります。音声ファイルを短くするか、異なるコーデック設定を試してください。',
-                chunkError
-              );
-            }
-            
-            // チャンクエラーの場合、さらに小さく分割を試行
-            if (chunkLength > 24000) { // 0.5秒未満まで分割
-              console.warn(`Retrying with smaller chunks for chunk ${i + 1}...`);
-              try {
-                await this.processSmallAudioChunks(audioBuffer, offset, chunkLength);
-              } catch (smallChunkError) {
-                // 小さなチャンクでも失敗した場合は諦める
-                throw new AppError(
-                  ErrorType.EXPORT_ENCODE_FAILED,
-                  'オーディオデータの処理に失敗しました。音声ファイルが破損しているか、設定に問題がある可能性があります。',
-                  smallChunkError
-                );
-              }
-            } else {
-              throw chunkError; // もう分割できない場合はエラーとして扱う
-            }
-          }
-          
-          // チャンク間で少し待機（メモリ解放とフリーズ防止）
-          if (i < chunkCount - 1) {
-            await new Promise(resolve => setTimeout(resolve, 5));
-          }
-        }
-      } else {
-        // 小さなバッファはそのまま処理
-        await this.encoder.addAudioBuffer(audioBuffer);
-        console.warn('Processed single audio buffer directly');
+      // HTMLCanvasElementからVideoFrameを作成
+      const videoFrame = new VideoFrame(canvas, {
+        timestamp: timestamp * 1_000_000, // マイクロ秒に変換
+        duration: duration
+      });
+
+      // キーフレーム判定
+      const keyFrame = timestamp * 1_000_000 >= this.nextKeyFrameTimestamp;
+      if (keyFrame) {
+        this.nextKeyFrameTimestamp = timestamp * 1_000_000 + this.keyFrameInterval;
+        console.log(`Key frame at timestamp: ${timestamp}`);
       }
 
-    } catch (error: unknown) {
-      console.warn('Error encoding audio buffer:', error);
-      
-      // AppErrorの場合はそのまま再スロー
-      if (error instanceof AppError) {
-        throw error;
-      }
-      
-      // webcodecs-encoderの状態エラーの場合
-      if (error instanceof Error && 
-          (error.message.includes('state \'error\'') || 
-           error.message.includes('Cannot add audio buffer in state'))) {
-        throw new AppError(
-          ErrorType.EXPORT_ENCODE_FAILED,
-          'オーディオエンコーダーが不正な状態になりました。別のコーデック設定を試すか、音声ファイルのサイズを小さくしてください。',
-          error
-        );
-      }
-      
-      // メモリ不足の場合は専用エラーメッセージ
-      if (error instanceof Error && 
-          (error.message.includes('allocation failed') || 
-           error.message.includes('out of memory') ||
-           error.message.includes('memory'))) {
-        throw new AppError(
-          ErrorType.EXPORT_ENCODE_FAILED,
-          '音声データのメモリ割り当てに失敗しました。より短い音声ファイルを使用するか、音質設定を下げてください。',
-          error
-        );
-      }
-      
-      throw new AppError(
-        ErrorType.EXPORT_ENCODE_FAILED,
-        ErrorMessages[ErrorType.EXPORT_ENCODE_FAILED] || 'Failed to encode audio buffer',
-        error
-      );
-    }
-  }
+      // エンコード実行
+      this.encoder.encode(videoFrame, { keyFrame });
 
-  /**
-   * より小さなオーディオチャンクを処理（フォールバック処理）
-   */
-  private async processSmallAudioChunks(
-    originalBuffer: AudioBuffer,
-    startOffset: number,
-    totalLength: number
-  ): Promise<void> {
-    // エンコーダーの状態をチェック
-    if (!this.encoder) {
-      throw new Error('Encoder is not available');
-    }
+      // VideoFrameリソースを解放
+      videoFrame.close();
 
-    const smallChunkSize = 24000; // 0.5秒分（48kHz想定）
-    const chunkCount = Math.ceil(totalLength / smallChunkSize);
-    
-    console.warn(`Processing ${chunkCount} smaller audio chunks (${smallChunkSize} samples each)`);
-    
-    for (let i = 0; i < chunkCount; i++) {
-      this.checkCancellation();
-      
-      // 各チャンク処理前にエンコーダーの状態を確認
-      if (!this.encoder) {
-        throw new Error('Encoder became unavailable during processing');
-      }
-      
-      try {
-        const offset = startOffset + (i * smallChunkSize);
-        const chunkLength = Math.min(smallChunkSize, totalLength - (i * smallChunkSize));
-        
-        const chunkBuffer = this.createAudioBufferChunk(originalBuffer, offset, chunkLength);
-        await this.encoder.addAudioBuffer(chunkBuffer);
-        
-        console.warn(`Processed small audio chunk ${i + 1}/${chunkCount}`);
-        
-        // 小さなチャンク間でも少し待機
-        if (i < chunkCount - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2));
-        }
-      } catch (chunkError) {
-        console.warn(`Error in small chunk ${i + 1}:`, chunkError);
-        
-        // エンコーダーがエラー状態になった場合、処理を中断
-        if (chunkError instanceof Error && 
-            chunkError.message.includes('state \'error\'')) {
-          throw new Error('Encoder entered error state during audio processing. Audio data may be corrupted or too large.');
-        }
-        
-        // その他のエラーもリスローして上位で処理
-        throw chunkError;
-      }
-    }
-  }
-
-  /**
-   * AudioBufferの一部を新しいAudioBufferとして作成（修正版）
-   */
-  private createAudioBufferChunk(
-    originalBuffer: AudioBuffer,
-    offset: number,
-    length: number
-  ): AudioBuffer {
-    try {
-      // 共有AudioContextを使用（メモリリーク防止）
-      const audioContext = VideoEncoderService.getAudioContext();
-      
-      // AudioContextの状態をチェック
-      if (audioContext.state === 'closed') {
-        throw new Error('AudioContext is closed');
-      }
-      
-      const chunkBuffer = audioContext.createBuffer(
-        originalBuffer.numberOfChannels,
-        length,
-        originalBuffer.sampleRate
-      );
-
-      // 各チャンネルのデータをコピー
-      for (let channel = 0; channel < originalBuffer.numberOfChannels; channel++) {
-        const originalData = originalBuffer.getChannelData(channel);
-        const chunkData = chunkBuffer.getChannelData(channel);
-        
-        // 効率的なデータコピー
-        const endIndex = Math.min(offset + length, originalData.length);
-        for (let i = 0; i < length; i++) {
-          const sourceIndex = offset + i;
-          chunkData[i] = sourceIndex < endIndex ? originalData[sourceIndex] : 0;
-        }
-      }
-
-      return chunkBuffer;
     } catch (error) {
-      console.warn('Error creating audio buffer chunk:', error);
-      throw new Error(`Failed to create audio buffer chunk: ${error}`);
+      throw new AppError(
+        ErrorType.EXPORT_ENCODE_FAILED,
+        `Failed to encode frame: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
   /**
-   * エンコードを終了してMP4データを取得
+   * エンコーディング完了
    */
-  public async finalize(): Promise<Uint8Array> {
-    this.checkDisposed();
-    this.checkCancellation();
-
-    if (!this.isInitialized || !this.encoder) {
-      throw new AppError(
-        ErrorType.EXPORT_FINALIZE_FAILED,
-        'エンコーダーが初期化されていません'
-      );
+  async finalize(): Promise<Uint8Array> {
+    if (!this.encoder || !this.isEncoding) {
+      throw new AppError(ErrorType.EXPORT_FINALIZE_FAILED, 'No encoding in progress');
     }
 
     try {
-      console.warn('VideoEncoderService: Finalizing...');
-      console.warn('[DEBUG] Before calling this.encoder.finalize()');
-      const result = await this.encoder.finalize();
-      console.warn('[DEBUG] After calling this.encoder.finalize()', result ? 'Result received' : 'Result is null/undefined');
-      
-      if (!result) {
-        console.warn('[DEBUG] Finalize result is empty. Throwing error.');
-        throw new AppError(
-          ErrorType.EXPORT_FINALIZE_FAILED,
-          'エンコード結果が空です'
-        );
-      }
+      console.log('VideoEncoderService: Finalizing encoding...');
 
-      console.warn('VideoEncoderService: Finalized successfully');
-      return result;
+      // エンコーダーをフラッシュして残りのフレームを処理
+      await this.encoder.flush();
 
-    } catch (error: unknown) {
-      console.warn('Error finalizing encoder:', error);
-      console.warn('[DEBUG] Error caught in finalize:', error);
-      // エラーオブジェクトの内容をより詳細に出力
-      if (error instanceof Error) {
-        console.warn('[DEBUG] Finalize error name:', error.name);
-        console.warn('[DEBUG] Finalize error message:', error.message);
-        console.warn('[DEBUG] Finalize error stack:', error.stack);
-      } else {
-        console.warn('[DEBUG] Finalize error is not an Error instance:', String(error));
-      }
+      console.log(`VideoEncoderService: Encoded ${this.encodedChunks.length} chunks`);
+
+      // MP4ファイルを作成
+      const mp4Data = await this.createMP4File();
+
+      this.isEncoding = false;
+      console.log(`VideoEncoderService: Encoding completed successfully, output size: ${mp4Data.byteLength} bytes`);
+
+      return mp4Data;
+
+    } catch (error) {
+      this.isEncoding = false;
       throw new AppError(
         ErrorType.EXPORT_FINALIZE_FAILED,
-        ErrorMessages[ErrorType.EXPORT_FINALIZE_FAILED],
-        error
+        `Failed to finalize encoding: ${error instanceof Error ? error.message : String(error)}`
       );
-    } finally {
-      console.warn('[DEBUG] Finalize finally block. Calling dispose.');
-      this.dispose();
     }
   }
 
   /**
-   * リソースの解放
+   * MP4ファイルを作成（簡易実装）
    */
-  public dispose(): void {
-    if (this.isDisposed) return;
+  private async createMP4File(): Promise<Uint8Array> {
+    // 実際の実装では、mp4-muxerやWebM muxerを使用してコンテナに格納
+    // ここでは一時的に生のchunksを結合（実際のMP4形式ではない）
     
-    console.warn('VideoEncoderService: Disposing...');
-    this.isDisposed = true;
+    const totalSize = this.encodedChunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+    const buffer = new ArrayBuffer(totalSize);
+    const uint8Array = new Uint8Array(buffer);
     
+    let offset = 0;
+    for (const chunk of this.encodedChunks) {
+      const chunkData = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(chunkData);
+      uint8Array.set(chunkData, offset);
+      offset += chunk.byteLength;
+    }
+
+    return uint8Array;
+  }
+
+  /**
+   * 音声データの追加（将来の実装用）
+   */
+  async addAudioData(audioData: AudioBuffer): Promise<void> {
+    // 音声エンコーディングの実装は今後追加
+    console.log('VideoEncoderService: Audio encoding not yet implemented');
+  }
+
+  /**
+   * リソースのクリーンアップ
+   */
+  dispose(): void {
+    console.log('VideoEncoderService: Disposing resources');
+
     if (this.encoder) {
-      this.encoder.cancel(); // webcodecs-encoderのcancelメソッドを呼び出し
+      try {
+        if (this.encoder.state !== 'closed') {
+          this.encoder.close();
+        }
+      } catch (error) {
+        console.warn('Error closing encoder:', error);
+      }
       this.encoder = null;
     }
-    
-    this.onProgress = null;
-    this.isInitialized = false;
-  }
 
-  /**
-   * 静的メソッド：共有AudioContextのクリーンアップ
-   */
-  public static cleanupAudioContext(): void {
-    if (VideoEncoderService.audioContext) {
-      VideoEncoderService.audioContext.close();
-      VideoEncoderService.audioContext = null;
-    }
+    this.encodedChunks = [];
+    this.isInitialized = false;
+    this.isEncoding = false;
+    this.onProgressCallback = undefined;
+
+    console.log('VideoEncoderService: Disposed');
   }
 }

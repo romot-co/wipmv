@@ -2,7 +2,7 @@ import React, { createContext, useContext, useReducer, useCallback, useMemo, use
 import { AppState, AppOperations, AppPhase, AppServices, withAppError, AnalysisResult } from '../core/types/app';
 import { ProjectService } from '../core/ProjectService';
 import { AudioPlaybackService } from '../core/AudioPlaybackService';
-import { AudioAnalyzerService } from '../core/AudioAnalyzerService';
+import { AudioAnalysisService } from '../core/AudioAnalysisService';
 import { EffectBase, EffectConfig } from '../core/types/core';
 import { VideoSettings } from '../core/types/base';
 import { AppError, ErrorType } from '../core/types/error';
@@ -237,7 +237,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const audioService = useMemo(() => AudioPlaybackService.getInstance(), []);
   const managerInstance = useMemo(() => new EffectManager(), []);
   const drawingManager = useMemo(() => new DrawingManager(managerInstance), [managerInstance]);
-  const analyzerService = useMemo(() => AudioAnalyzerService.getInstance(), []);
+  const analyzerService = useMemo(() => AudioAnalysisService.getInstance(), []);
 
   const handleErrorCallback = useCallback((error: AppError) => {
     log('Handling error:', error);
@@ -358,8 +358,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       drawingManager.dispose();
       // オーディオサービスのリソース解放
       audioService.dispose();
-      // アナライザーサービスのリソース解放
-      analyzerService.dispose();
+      // アナライザーサービスはシングルトンなので、開発時のStrictModeでの再実行を避けるためdisposeしない
+      // analyzerService.dispose();
     };
   }, []); // シングルトンサービスは依存配列から除外
 

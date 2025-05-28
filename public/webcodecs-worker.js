@@ -1974,7 +1974,7 @@ If you want to offset all timestamps of a track such that the first one is zero,
     }
   };
 
-  // src/mp4muxer.ts
+  // src/muxers/mp4muxer.ts
   var Mp4MuxerWrapper = class {
     constructor(config, postMessageCallback, options) {
       this.videoConfigured = false;
@@ -2201,7 +2201,7 @@ If you want to offset all timestamps of a track such that the first one is zero,
     }
   };
 
-  // src/webmmuxer.ts
+  // src/muxers/webmmuxer.ts
   var import_webm_muxer = __toESM(require_webm_muxer(), 1);
   var CallbackWritableStream = class {
     constructor(onData) {
@@ -2411,21 +2411,7 @@ If you want to offset all timestamps of a track such that the first one is zero,
     }
   };
 
-  // src/logger.ts
-  var logger = {
-    log: (...args) => {
-      console.log(...args);
-    },
-    warn: (...args) => {
-      console.warn(...args);
-    },
-    error: (...args) => {
-      console.error(...args);
-    }
-  };
-  var logger_default = logger;
-
-  // src/worker.ts
+  // src/worker/encoder-worker.ts
   if (typeof self !== "undefined" && typeof self.addEventListener === "function") {
     self.addEventListener("error", (event) => {
       console.error("Unhandled global error in worker. Event:", event);
@@ -2496,7 +2482,6 @@ If you want to offset all timestamps of a track such that the first one is zero,
       this.processedFrames = 0;
       this.videoFrameCount = 0;
       this.isCancelled = false;
-      this.audioWorkletPort = null;
     }
     postMessageToMainThread(message, transfer) {
       if (transfer && transfer.length > 0) {
@@ -2518,6 +2503,22 @@ If you want to offset all timestamps of a track such that the first one is zero,
       const profileHex = chosenProfile === "high" ? "64" : chosenProfile === "main" ? "4d" : "42";
       const levelHex = level.toString(16).padStart(2, "0");
       return `avc1.${profileHex}00${levelHex}`;
+    }
+    getCodecString(codecType, width, height, frameRate) {
+      switch (codecType) {
+        case "avc":
+          return this.defaultAvcCodecString(width, height, frameRate);
+        case "vp9":
+          return "vp09.00.50.08";
+        case "vp8":
+          return "vp8";
+        case "hevc":
+          return "hvc1";
+        case "av1":
+          return "av01.0.04M.08";
+        default:
+          return codecType;
+      }
     }
     avcProfileFromCodecString(codec) {
       if (codec.startsWith("avc1.64")) return "high";
@@ -2643,36 +2644,84 @@ If you want to offset all timestamps of a track such that the first one is zero,
       } else {
         if (videoCodec === "vp9" || videoCodec === "vp8" || videoCodec === "av1") {
           console.warn(
-            "Worker: Video codec " + videoCodec + " not supported or config invalid. Falling back to AVC."
+            "Worker: Video codec " + videoCodec + " not supported or config invalid. Looking for fallback..."
           );
-          videoCodec = "avc";
-          const avcCodecString = this.defaultAvcCodecString(
-            this.currentConfig.width,
-            this.currentConfig.height,
-            this.currentConfig.frameRate
-          );
-          const avcConfig = {
-            ...videoEncoderConfig,
-            codec: avcCodecString,
-            ...this.currentConfig.container === "mp4" ? { avc: { format: "avc" } } : {}
-          };
-          const support = await this.isConfigSupportedWithHwFallback(
-            VideoEncoderCtor,
-            avcConfig,
-            "VideoEncoder"
-          );
-          if (support) {
-            finalVideoEncoderConfig = support;
-          } else {
-            this.postMessageToMainThread({
-              type: "error",
-              errorDetail: {
-                message: "Worker: AVC (H.264) video codec is not supported after fallback.",
-                type: "not-supported" /* NotSupported */
+          let fallbackSuccessful = false;
+          if (this.currentConfig.container === "webm") {
+            const webmCodecs = ["vp9", "vp8"];
+            for (const fallbackCodec of webmCodecs) {
+              if (fallbackCodec === videoCodec) continue;
+              console.warn(
+                `Worker: Trying fallback to ${fallbackCodec} for WebM container.`
+              );
+              const fallbackCodecString = this.getCodecString(
+                fallbackCodec,
+                this.currentConfig.width,
+                this.currentConfig.height,
+                this.currentConfig.frameRate
+              );
+              const fallbackConfig = {
+                ...videoEncoderConfig,
+                codec: fallbackCodecString
+              };
+              const support = await this.isConfigSupportedWithHwFallback(
+                VideoEncoderCtor,
+                fallbackConfig,
+                "VideoEncoder"
+              );
+              if (support) {
+                console.warn(
+                  `Worker: Successfully fell back to ${fallbackCodec} for WebM.`
+                );
+                videoCodec = fallbackCodec;
+                finalVideoEncoderConfig = support;
+                fallbackSuccessful = true;
+                break;
               }
-            });
-            this.cleanup();
-            return;
+            }
+            if (!fallbackSuccessful) {
+              this.postMessageToMainThread({
+                type: "error",
+                errorDetail: {
+                  message: "Worker: No compatible video codec (VP9, VP8) found for WebM container.",
+                  type: "not-supported" /* NotSupported */
+                }
+              });
+              this.cleanup();
+              return;
+            }
+          } else {
+            console.warn("Worker: Falling back to AVC for MP4 container.");
+            videoCodec = "avc";
+            const avcCodecString = this.defaultAvcCodecString(
+              this.currentConfig.width,
+              this.currentConfig.height,
+              this.currentConfig.frameRate
+            );
+            const avcConfig = {
+              ...videoEncoderConfig,
+              codec: avcCodecString,
+              ...this.currentConfig.container === "mp4" ? { avc: { format: "avc" } } : {}
+            };
+            const support = await this.isConfigSupportedWithHwFallback(
+              VideoEncoderCtor,
+              avcConfig,
+              "VideoEncoder"
+            );
+            if (support) {
+              finalVideoEncoderConfig = support;
+              fallbackSuccessful = true;
+            } else {
+              this.postMessageToMainThread({
+                type: "error",
+                errorDetail: {
+                  message: "Worker: AVC (H.264) video codec is not supported after fallback.",
+                  type: "not-supported" /* NotSupported */
+                }
+              });
+              this.cleanup();
+              return;
+            }
           }
         } else {
           const result = await this.isConfigSupportedWithHwFallback(
@@ -2809,46 +2858,96 @@ If you want to offset all timestamps of a track such that the first one is zero,
           finalAudioEncoderConfig = audioSupportConfig;
         } else if (audioCodec === "opus") {
           console.warn(
-            `Worker: Audio codec ${audioCodec} not supported or config invalid. Falling back to AAC.`
+            `Worker: Audio codec ${audioCodec} not supported or config invalid.`
           );
           if (this.currentConfig.container === "webm") {
             this.postMessageToMainThread({
               type: "error",
               errorDetail: {
-                message: "Worker: Opus audio codec not supported for WebM container.",
+                message: "Worker: Opus audio codec not supported for WebM container. WebM requires Opus audio.",
                 type: "not-supported" /* NotSupported */
               }
             });
             this.cleanup();
             return;
-          }
-          audioCodec = "aac";
-          const fallbackAudioConfig = {
-            ...baseAudioConfig,
-            codec: this.currentConfig.codecString?.audio ?? "mp4a.40.2"
-          };
-          audioSupportConfig = await this.isConfigSupportedWithHwFallback(
-            AudioEncoderCtor,
-            fallbackAudioConfig,
-            "AudioEncoder"
-          );
-          if (audioSupportConfig) {
-            if (audioSupportConfig.numberOfChannels !== this.currentConfig.channels) {
-              this.postMessageToMainThread({
-                type: "error",
-                errorDetail: {
-                  message: `AudioEncoder reported numberOfChannels (${audioSupportConfig.numberOfChannels}) does not match configured channels (${this.currentConfig.channels}).`,
-                  type: "configuration-error" /* ConfigurationError */
-                }
-              });
-              this.cleanup();
-              return;
-            }
-            finalAudioEncoderConfig = audioSupportConfig;
           } else {
-            console.warn(
-              "Worker: AAC audio codec is not supported. Falling back to Opus."
+            console.warn("Worker: Falling back to AAC for MP4 container.");
+            audioCodec = "aac";
+            const fallbackAudioConfig = {
+              ...baseAudioConfig,
+              codec: this.currentConfig.codecString?.audio ?? "mp4a.40.2"
+            };
+            audioSupportConfig = await this.isConfigSupportedWithHwFallback(
+              AudioEncoderCtor,
+              fallbackAudioConfig,
+              "AudioEncoder"
             );
+            if (audioSupportConfig) {
+              if (audioSupportConfig.numberOfChannels !== this.currentConfig.channels) {
+                this.postMessageToMainThread({
+                  type: "error",
+                  errorDetail: {
+                    message: `AudioEncoder reported numberOfChannels (${audioSupportConfig.numberOfChannels}) does not match configured channels (${this.currentConfig.channels}).`,
+                    type: "configuration-error" /* ConfigurationError */
+                  }
+                });
+                this.cleanup();
+                return;
+              }
+              finalAudioEncoderConfig = audioSupportConfig;
+            } else {
+              console.warn(
+                "Worker: AAC audio codec is not supported. Falling back to Opus."
+              );
+              audioCodec = "opus";
+              const opusFallback = { ...baseAudioConfig, codec: "opus" };
+              audioSupportConfig = await this.isConfigSupportedWithHwFallback(
+                AudioEncoderCtor,
+                opusFallback,
+                "AudioEncoder"
+              );
+              if (audioSupportConfig) {
+                if (audioSupportConfig.numberOfChannels !== this.currentConfig.channels) {
+                  this.postMessageToMainThread({
+                    type: "error",
+                    errorDetail: {
+                      message: `AudioEncoder reported numberOfChannels (${audioSupportConfig.numberOfChannels}) does not match configured channels (${this.currentConfig.channels}).`,
+                      type: "configuration-error" /* ConfigurationError */
+                    }
+                  });
+                  this.cleanup();
+                  return;
+                }
+                finalAudioEncoderConfig = audioSupportConfig;
+              } else {
+                this.postMessageToMainThread({
+                  type: "error",
+                  errorDetail: {
+                    message: "Worker: No supported audio codec (AAC, Opus) found for MP4 container.",
+                    type: "not-supported" /* NotSupported */
+                  }
+                });
+                this.cleanup();
+                return;
+              }
+            }
+          }
+        } else if (audioCodec === "aac") {
+          console.warn(
+            `Worker: Audio codec ${audioCodec} not supported or config invalid.`
+          );
+          if (this.currentConfig.container === "webm") {
+            this.postMessageToMainThread({
+              type: "error",
+              errorDetail: {
+                message: "Worker: AAC audio codec not supported. WebM container requires Opus.",
+                type: "not-supported" /* NotSupported */
+              }
+            });
+            this.cleanup();
+            return;
+          } else {
+            console.warn("Worker: Falling back to Opus for MP4 container.");
             audioCodec = "opus";
             const opusFallback = { ...baseAudioConfig, codec: "opus" };
             audioSupportConfig = await this.isConfigSupportedWithHwFallback(
@@ -2873,7 +2972,7 @@ If you want to offset all timestamps of a track such that the first one is zero,
               this.postMessageToMainThread({
                 type: "error",
                 errorDetail: {
-                  message: "Worker: Opus audio codec is not supported after fallback.",
+                  message: "Worker: No supported audio codec (AAC, Opus) found for MP4 container.",
                   type: "not-supported" /* NotSupported */
                 }
               });
@@ -2881,16 +2980,6 @@ If you want to offset all timestamps of a track such that the first one is zero,
               return;
             }
           }
-        } else {
-          this.postMessageToMainThread({
-            type: "error",
-            errorDetail: {
-              message: `Worker: Audio codec ${audioCodec} config not supported.`,
-              type: "not-supported" /* NotSupported */
-            }
-          });
-          this.cleanup();
-          return;
         }
         try {
           this.audioEncoder = new AudioEncoderCtor({
@@ -2912,7 +3001,19 @@ If you want to offset all timestamps of a track such that the first one is zero,
             }
           });
           if (this.audioEncoder) {
-            this.audioEncoder.configure(finalAudioEncoderConfig);
+            if (finalAudioEncoderConfig) {
+              this.audioEncoder.configure(finalAudioEncoderConfig);
+            } else {
+              this.postMessageToMainThread({
+                type: "error",
+                errorDetail: {
+                  message: "Worker: Final audio encoder config is null.",
+                  type: "initialization-failed" /* InitializationFailed */
+                }
+              });
+              this.cleanup();
+              return;
+            }
           } else {
             this.postMessageToMainThread({
               type: "error",
@@ -2942,7 +3043,7 @@ If you want to offset all timestamps of a track such that the first one is zero,
         actualVideoCodec: finalVideoEncoderConfig?.codec,
         actualAudioCodec: audioDisabled ? null : finalAudioEncoderConfig?.codec
       });
-      logger_default.log("Worker: Initialized successfully");
+      console.warn("Worker: Initialized successfully");
     }
     async handleAddVideoFrame(data) {
       if (this.isCancelled || !this.videoEncoder || !this.currentConfig) return;
@@ -2954,7 +3055,7 @@ If you want to offset all timestamps of a track such that the first one is zero,
         try {
           frame.close();
         } catch (closeErr) {
-          logger_default.warn("Worker: Ignored error closing VideoFrame", closeErr);
+          console.warn("Worker: Ignored error closing VideoFrame", closeErr);
         }
         this.videoFrameCount++;
         this.processedFrames++;
@@ -3111,14 +3212,14 @@ If you want to offset all timestamps of a track such that the first one is zero,
     handleCancel(_message) {
       if (this.isCancelled) return;
       this.isCancelled = true;
-      logger_default.log("Worker: Received cancel signal.");
+      console.warn("Worker: Received cancel signal.");
       this.postMessageToMainThread({ type: "cancelled" });
       this.videoEncoder?.close();
       this.audioEncoder?.close();
       this.cleanup(false);
     }
     cleanup(resetCancelled = true) {
-      logger_default.log("Worker: Cleaning up resources.");
+      console.warn("Worker: Cleaning up resources.");
       if (this.videoEncoder && this.videoEncoder.state !== "closed")
         this.videoEncoder.close();
       if (this.audioEncoder && this.audioEncoder.state !== "closed")
@@ -3130,11 +3231,6 @@ If you want to offset all timestamps of a track such that the first one is zero,
       this.totalFramesToProcess = void 0;
       this.processedFrames = 0;
       this.videoFrameCount = 0;
-      if (this.audioWorkletPort) {
-        this.audioWorkletPort.onmessage = null;
-        this.audioWorkletPort.close();
-        this.audioWorkletPort = null;
-      }
       if (resetCancelled) {
         this.isCancelled = false;
       }
@@ -3152,13 +3248,6 @@ If you want to offset all timestamps of a track such that the first one is zero,
             this.isCancelled = false;
             this.cleanup();
             await this.initializeEncoders(eventData);
-            break;
-          case "connectAudioPort":
-            this.audioWorkletPort = eventData.port;
-            this.audioWorkletPort.onmessage = async (e) => {
-              if (this.isCancelled) return;
-              await this.handleAddAudioData(e.data);
-            };
             break;
           case "addVideoFrame":
             await this.handleAddVideoFrame(eventData);

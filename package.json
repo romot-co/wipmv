@@ -16,6 +16,7 @@
     "@radix-ui/themes": "^3.1.6",
     "@types/react-dropzone": "^5.1.0",
     "@types/styled-components": "^5.1.34",
+    "audio-inspect": "github:romot-co/audio-inspect",
     "autoprefixer": "^10.4.20",
     "fft.js": "^4.0.4",
     "monorepo": "github:radix-ui/themes",
@@ -26,7 +27,7 @@
     "react-dropzone": "^14.3.5",
     "styled-components": "^6.1.17",
     "uuid": "^11.0.5",
-    "webcodecs-encoder": "^0.1.0"
+    "webcodecs-encoder": "^0.2.1"
   },
   "devDependencies": {
     "@types/debug": "^4.1.12",

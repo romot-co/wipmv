@@ -65,6 +65,11 @@ export interface Size {
 export interface Rectangle extends Position, Size {}
 
 /**
+ * バウンディングボックス
+ */
+export interface BoundingBox extends Rectangle {}
+
+/**
  * 色情報
  */
 export interface Color {
